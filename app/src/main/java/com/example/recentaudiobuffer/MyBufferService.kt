@@ -15,9 +15,9 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Binder
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
@@ -26,16 +26,24 @@ interface MainActivityInterface {
     fun isRunning(): Boolean
 }
 
-private const val BUFFER_SIZE = 10_000
+data class BitDepth(val bytes: Int, val encodingEnum: Int)
 
-class MyBufferService: Service(), MainActivityInterface {
+private val bitDepths = mapOf(
+    "8" to BitDepth(8, AudioFormat.ENCODING_PCM_8BIT),
+    "16" to BitDepth(16, AudioFormat.ENCODING_PCM_16BIT)
+)
+private val BIT_DEPTH = bitDepths["8"] ?: error("Invalid bit depth")
+private const val SAMPLE_RATE_HZ = 44100
+private const val BUFFER_TIME_LENGTH_S = 120
+private val BUFFER_SIZE = SAMPLE_RATE_HZ * (BIT_DEPTH.bytes / 8) * BUFFER_TIME_LENGTH_S
+
+class MyBufferService : Service(), MainActivityInterface {
     private val logTag = "MyBufferService"
     private var recorder: AudioRecord? = null
     private var buffer: ByteArray = ByteArray(BUFFER_SIZE)
-    private var is_running = false
+    private var isRecorderRunning = false
 
-    override fun onCreate()
-    {
+    override fun onCreate() {
         Log.i(logTag, "onCreate()")
     }
 
@@ -108,8 +116,8 @@ class MyBufferService: Service(), MainActivityInterface {
     private fun startBuffering() {
         var bufferIndex = 0
         val audioFormat = AudioFormat.Builder()
-            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-            .setSampleRate(44100)
+            .setEncoding(BIT_DEPTH.encodingEnum)
+            .setSampleRate(SAMPLE_RATE_HZ)
             .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
             .build()
 
@@ -123,8 +131,14 @@ class MyBufferService: Service(), MainActivityInterface {
         val granted = PackageManager.PERMISSION_GRANTED
 
         if (ContextCompat.checkSelfPermission(this, permission) != granted) {
-            // Permission is not granted
-            // Stop the service or handle the lack of audio permissions appropriately
+            Log.e(logTag, "Audio record permission not granted, exiting the foreground service")
+            Toast.makeText(
+                this,
+                "ERROR: Audio record permission not granted before this was started, exiting the foreground service",
+                Toast.LENGTH_SHORT
+            ).show()
+            stopSelf()
+            return
         } else {
             // Permission has been granted
             recorder = AudioRecord.Builder()
@@ -137,16 +151,19 @@ class MyBufferService: Service(), MainActivityInterface {
         try {
             Thread {
                 while (true) {
-                    val result = recorder!!.read(buffer, bufferIndex, buffer.size)
-                    if (result > 0) {
-                        bufferIndex += result
-                        if (bufferIndex >= buffer.size) {
-                            bufferIndex = 0
+                    synchronized(buffer)
+                    {
+                        val result = recorder!!.read(buffer, bufferIndex, buffer.size)
+                        if (result > 0) {
+                            bufferIndex += result
+                            if (bufferIndex >= buffer.size) {
+                                bufferIndex = 0
+                            }
                         }
                     }
                 }
             }.start()
-            is_running = true
+            isRecorderRunning = true
         } catch (e: Exception) {
             Log.e(logTag, "startBuffering() failed in thread", e)
             stopSelf()
@@ -157,16 +174,18 @@ class MyBufferService: Service(), MainActivityInterface {
         recorder!!.stop()
         recorder!!.release()
         recorder = null
-        is_running = false
+        isRecorderRunning = false
     }
 
     override fun getBuffer(): ByteArray {
-        return buffer
+        synchronized(buffer)
+        {
+            return buffer.copyOf()
+        }
     }
 
-    override fun isRunning(): Boolean
-    {
-        return is_running
+    override fun isRunning(): Boolean {
+        return isRecorderRunning
     }
 
     inner class MyBinder : Binder() {

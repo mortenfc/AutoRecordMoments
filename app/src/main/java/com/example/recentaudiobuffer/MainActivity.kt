@@ -1,21 +1,26 @@
 package com.example.recentaudiobuffer
 
 import android.Manifest
+import android.app.Activity
 import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
+import android.webkit.MimeTypeMap
 import android.widget.Button
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import java.io.File
 import java.io.FileOutputStream
 import java.lang.Exception
@@ -27,10 +32,10 @@ class MainActivity : ComponentActivity() {
         Manifest.permission.FOREGROUND_SERVICE,
         Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
     )
-    private lateinit var foregroundServiceAudioBuffer : Intent
-    private val foregroundServiceAudioBufferConnection  = object : ServiceConnection {
+    private lateinit var foregroundServiceAudioBuffer: Intent
+    private val foregroundServiceAudioBufferConnection = object : ServiceConnection {
         lateinit var service: MainActivityInterface
-        var isBound : Boolean = false
+        var isBound: Boolean = false
 
         override fun onServiceConnected(className: ComponentName, ibinder: IBinder) {
             val binder = ibinder as MyBufferService.MyBinder
@@ -49,15 +54,10 @@ class MainActivity : ComponentActivity() {
             super.onBindingDied(name)
         }
 
-        fun unBind()
-        {
+        fun unBind() {
             unbindService(this)
             isBound = false
         }
-    }
-
-    private val onSettingsExit = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        confirmPermissionsWereSet()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,16 +90,18 @@ class MainActivity : ComponentActivity() {
                         Context.BIND_AUTO_CREATE
                     )
                     Log.i(logTag, "Buffer service started and bound")
-                }
-                else if (foregroundServiceAudioBufferConnection.service.isRunning()){
+                    Toast.makeText(
+                        this,
+                        "Started buffering in the background",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else if (foregroundServiceAudioBufferConnection.service.isRunning()) {
                     Toast.makeText(
                         this,
                         "Buffer is already running!",
                         Toast.LENGTH_SHORT
                     ).show()
-                }
-                else
-                {
+                } else {
                     Log.e(logTag, "Buffer service bound but not running")
                     Toast.makeText(
                         this,
@@ -107,29 +109,28 @@ class MainActivity : ComponentActivity() {
                         Toast.LENGTH_SHORT
                     ).show()
                 }
-            }
-            else
-            {
-                AlertDialog.Builder(this)
-                    .setTitle("Not all permissions were given")
-                    .setMessage("All permissions are required for this app to work")
-                    .setPositiveButton("Open settings") { _, _ ->
-                        goToSettings()
-                    }
-                    .create().show()
+            } else {
+                getPermissions()
+                Toast.makeText(
+                    this,
+                    "Accept the permissions and then start again",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
 
         val stop: Button = findViewById(R.id.StopBuffering)
         stop.setOnClickListener {
-            if (haveAllPermissions(requiredPermissions))
-            {
-                if(foregroundServiceAudioBufferConnection.isBound) {
+            if (haveAllPermissions(requiredPermissions)) {
+                if (foregroundServiceAudioBufferConnection.isBound) {
                     Log.i(logTag, "Stopping bound MyBufferService by unbinding it")
                     foregroundServiceAudioBufferConnection.unBind()
-                }
-                else
-                {
+                    Toast.makeText(
+                        this,
+                        "Stopped buffering in the background",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
                     Log.e(logTag, "Buffer service is not running")
                     Toast.makeText(
                         this,
@@ -137,27 +138,16 @@ class MainActivity : ComponentActivity() {
                         Toast.LENGTH_SHORT
                     ).show()
                 }
-            }
-            else
-            {
-                AlertDialog.Builder(this)
-                    .setTitle("Not all permissions were given")
-                    .setMessage("All permissions are required for this app to work")
-                    .setPositiveButton("Open settings") { _, _ ->
-                        goToSettings()
-                    }
-                    .create().show()
+            } else {
+                getPermissions()
             }
         }
 
         val save: Button = findViewById(R.id.SaveBuffer)
         save.setOnClickListener {
-            if(foregroundServiceAudioBufferConnection.isBound)
-            {
+            if (foregroundServiceAudioBufferConnection.isBound) {
                 saveBufferToFile(foregroundServiceAudioBufferConnection.service.getBuffer())
-            }
-            else
-            {
+            } else {
                 Toast.makeText(
                     this,
                     "Buffer is not running. It has to be running to save it!",
@@ -165,37 +155,28 @@ class MainActivity : ComponentActivity() {
                 ).show()
             }
         }
+
+        val pickAndPlay: Button = findViewById(R.id.PickAndPlayFile)
+        pickAndPlay.setOnClickListener {
+            pickAndPlayFile()
+        }
     }
 
     private fun haveAllPermissions(permissions: Array<String>): Boolean {
-        Log.i(logTag, "haveAllPermissions()")
         for (permission in permissions) {
             if (PackageManager.PERMISSION_GRANTED != checkSelfPermission(permission)) {
+                Log.i(logTag, "FALSE haveAllPermissions()")
                 return false
             }
         }
 
+        Log.i(logTag, "TRUE haveAllPermissions()")
         return true
     }
 
-
-    private fun confirmPermissionsWereSet()
-    {
-        Log.i(logTag, "confirmPermissionsWereSet()")
-
-        if (haveAllPermissions(requiredPermissions)) {
-            Toast.makeText(
-                this,
-                "All permissions were granted, you can now use the app!",
-                Toast.LENGTH_SHORT
-            ).show()
-        } else {
-            Toast.makeText(
-                this,
-                "Not all permissions were given. All are required for the app to work.",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
+    private val settingsLauncher: ActivityResultLauncher<Intent> = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
     }
 
     private fun goToSettings() {
@@ -208,35 +189,38 @@ class MainActivity : ComponentActivity() {
         thisAppSettings.addCategory(Intent.CATEGORY_DEFAULT)
         thisAppSettings.flags = Intent.FLAG_ACTIVITY_NEW_TASK
 
-        onSettingsExit.launch(thisAppSettings)
+        settingsLauncher.launch(thisAppSettings)
+    }
+
+    private lateinit var permissionIn: String
+
+    private val permissionLauncher: ActivityResultLauncher<String> = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            Toast.makeText(
+                this,
+                "$permissionIn permission granted!",
+                Toast.LENGTH_SHORT
+            ).show()
+        } else {
+            AlertDialog.Builder(this)
+                .setTitle("$permissionIn permission required")
+                .setMessage("This permission is needed for this app to work")
+                .setPositiveButton("Open settings") { _, _ ->
+                    goToSettings()
+                }
+                .create().show()
+        }
     }
 
     private fun getPermissions() {
         Log.i(logTag, "getPermissions()")
         for (permission in requiredPermissions) {
             if (PackageManager.PERMISSION_GRANTED != checkSelfPermission(permission)) {
-                val requestForegroundServicePermission =
-                    registerForActivityResult(
-                        ActivityResultContracts.RequestPermission()
-                    ) { isGranted: Boolean ->
-                        if (isGranted) {
-                            Toast.makeText(
-                                this,
-                                "$permission permission granted!",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        } else {
-                            AlertDialog.Builder(this)
-                                .setTitle("$permission permission required")
-                                .setMessage("This permission is needed for this app to work")
-                                .setPositiveButton("Open settings") { _, _ ->
-                                    goToSettings()
-                                }
-                                .create().show()
-                        }
-                    }
-                requestForegroundServicePermission.launch(
-                    permission
+                permissionIn = permission
+                permissionLauncher.launch(
+                    permissionIn
                 )
             }
         }
@@ -244,28 +228,93 @@ class MainActivity : ComponentActivity() {
         Log.i(logTag, "done getPermissions()")
     }
 
-    private fun saveBufferToFile(data: ByteArray) {
-        Log.i(logTag, "saveBufferToFile()")
-        val file = File(this.filesDir, "recorded_audio.wav")
-        try {
-            val outputStream = FileOutputStream(file, true)
-            outputStream.write(data)
-            outputStream.close()
-            Log.i(logTag, "Saved file to ${file.absolutePath}")
-            Toast.makeText(
-                this,
-                "Saved file to ${file.path}",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-        catch (e: Exception)
-        {
-            Log.e(logTag, "Failed to save file to ${file.absolutePath}")
-            Toast.makeText(
-                this,
-                "Failed to save file to ${file.path}",
-                Toast.LENGTH_LONG
-            ).show()
-        }
+    private lateinit var dataIn: ByteArray
+
+    private fun addAudioExtension(uri: Uri?): Uri {
+        val oldPath: String = uri?.path!!
+        val newPath = "$oldPath.wav"
+        return Uri.parse(newPath)
     }
+
+    private val directoryChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                var uri: Uri? = result.data?.data
+
+                // Check if the user provided a file extension
+                val extension = MimeTypeMap.getFileExtensionFromUrl(uri?.toString())
+                val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+                if (mimeType != null) {
+                    if (!mimeType.startsWith("audio/")) {
+                        // Add the .wav extension if not present
+                        uri = addAudioExtension(uri)
+                    }
+                } else {
+                    uri = addAudioExtension(uri)
+                }
+
+                try {
+                    val outputStream = contentResolver.openOutputStream(uri!!)
+                    outputStream?.write(dataIn)
+                    outputStream?.close()
+                    Log.i(logTag, "Saved file to $uri")
+                    Toast.makeText(
+                        this,
+                        "Saved file to $uri",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } catch (e: Exception) {
+                    Log.e(logTag, "Failed to save file to $uri with error: $e")
+                    Toast.makeText(
+                        this,
+                        "Failed to save file to $uri",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+
+    private fun saveBufferToFile(data: ByteArray) {
+        dataIn = data
+        Log.i(logTag, "saveBufferToFile()")
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+        intent.addCategory(Intent.CATEGORY_OPENABLE)
+        intent.type = "application/octet-stream"
+        intent.putExtra(Intent.EXTRA_TITLE, "default_file_name")
+        directoryChooserLauncher.launch(intent)
+    }
+
+    private val filePickerLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+
+                val uri: Uri? = result.data?.data
+
+                try {
+                    MediaPlayer().apply {
+                        setDataSource(applicationContext, uri!!)
+                        prepare()
+                        start()
+                    }
+                } catch (e: Exception) {
+                    Log.e(logTag, "Failed to play file $uri with error: $e")
+                    Toast.makeText(
+                        this,
+                        "Failed to play file $uri",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+
+    private fun pickAndPlayFile() {
+        Log.i(logTag, "pickAndPlayFile()")
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "audio/*"
+        }
+        filePickerLauncher.launch(intent)
+    }
+
+
 }

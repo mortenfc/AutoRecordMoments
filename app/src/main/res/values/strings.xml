@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Recent Audio Buffer</string>
+    <string name="save_the_buffer_as_a_recording">Save the buffer as a recording</string>
+    <string name="play_a_recording">Play a recording</string>
+    <string name="stop_buffering_in_the_background">Stop buffering in the background</string>
+    <string name="start_buffering_in_the_background">Start buffering in the background</string>
 </resources>
