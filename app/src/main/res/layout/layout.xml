@@ -1,0 +1,46 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:background="#C3FFC3">
+
+    <Button
+        android:id="@+id/StartBuffering"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Start buffering in the background"
+        android:layout_marginBottom="20dp"
+        android:textStyle="bold"
+        android:outlineAmbientShadowColor="@color/black"
+        style="@style/Widget.AppCompat.Button.Colored"
+        android:stateListAnimator="@drawable/animate_button"
+        />
+
+    <Button
+        android:id="@+id/StopBuffering"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Stop buffering in the background"
+        android:textStyle="bold"
+        android:backgroundTint="#FFAAAA"
+        android:layout_marginBottom="20dp"
+        android:outlineAmbientShadowColor="@color/black"
+        style="@style/Widget.AppCompat.Button.Colored"
+        android:stateListAnimator="@drawable/animate_button"
+        />
+
+    <Button
+        android:id="@+id/SaveBuffer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Save the buffer as a recording"
+        android:textStyle="bold"
+        android:backgroundTint="#AAFFAA"
+        android:outlineAmbientShadowColor="@color/black"
+        style="@style/Widget.AppCompat.Button.Colored"
+        android:stateListAnimator="@drawable/animate_button"
+        />
+
+</LinearLayout>
