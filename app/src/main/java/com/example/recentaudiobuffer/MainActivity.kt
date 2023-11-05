@@ -1,5 +1,6 @@
 package com.example.recentaudiobuffer
 
+import MediaPlayerControllerImpl
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
@@ -8,6 +9,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
@@ -16,6 +19,8 @@ import android.provider.Settings
 import android.util.Log
 import android.webkit.MimeTypeMap
 import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.MediaController
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
@@ -229,34 +234,43 @@ class MainActivity : ComponentActivity() {
     }
 
     private lateinit var dataIn: ByteArray
-
-    private fun addAudioExtension(uri: Uri?): Uri {
-        val oldPath: String = uri?.path!!
-        val newPath = "$oldPath.wav"
-        return Uri.parse(newPath)
-    }
-
     private val directoryChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
-                var uri: Uri? = result.data?.data
+                val uri: Uri? = result.data?.data
 
                 // Check if the user provided a file extension
                 val extension = MimeTypeMap.getFileExtensionFromUrl(uri?.toString())
                 val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
                 if (mimeType != null) {
                     if (!mimeType.startsWith("audio/")) {
-                        // Add the .wav extension if not present
-                        uri = addAudioExtension(uri)
+                        // Inform the user that they need to provide an audio extension
+                        Toast.makeText(
+                            this,
+                            "Please enter a file name with an audio extension (e.g., .wav). File did not save, try again. ",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@registerForActivityResult
                     }
                 } else {
-                    uri = addAudioExtension(uri)
+                    // Inform the user that they need to provide an audio extension
+                    Toast.makeText(
+                        this,
+                        "Please enter a file name with an audio extension (e.g., .wav). File did not save, try again. ",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@registerForActivityResult
                 }
 
                 try {
                     val outputStream = contentResolver.openOutputStream(uri!!)
-                    outputStream?.write(dataIn)
-                    outputStream?.close()
+                    // Write the WAV header
+                    foregroundServiceAudioBufferConnection.service.writeWavHeader(
+                        outputStream!!, dataIn.size.toLong()
+                    )
+                    // Write the audio data
+                    outputStream.write(dataIn)
+                    outputStream.close()
                     Log.i(logTag, "Saved file to $uri")
                     Toast.makeText(
                         this,
@@ -274,28 +288,72 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+
     private fun saveBufferToFile(data: ByteArray) {
         dataIn = data
         Log.i(logTag, "saveBufferToFile()")
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
         intent.addCategory(Intent.CATEGORY_OPENABLE)
         intent.type = "application/octet-stream"
-        intent.putExtra(Intent.EXTRA_TITLE, "default_file_name")
+        intent.putExtra(Intent.EXTRA_TITLE, "your_file_name.wav")
         directoryChooserLauncher.launch(intent)
     }
+
+
+    class MyMediaController(context: Context) : MediaController(context) {
+        override fun hide() {
+            // Don't hide
+        }
+    }
+
+    private fun createAudioPlayerUI() {// Create a FrameLayout that fills the screen
+        val frameLayout = FrameLayout(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        addContentView(frameLayout, frameLayout.layoutParams)
+        val mediaController = MyMediaController(this)
+        mediaController.setMediaPlayer(mediaPlayerControl)
+        mediaController.setAnchorView(frameLayout)
+        mediaController.show()
+    }
+
+    private var mediaPlayer: MediaPlayer? = null
+    private var mediaPlayerControl: MediaPlayerControllerImpl? = null
 
     private val filePickerLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
-
                 val uri: Uri? = result.data?.data
+                Log.i(logTag, "Picked file $uri")
 
                 try {
-                    MediaPlayer().apply {
-                        setDataSource(applicationContext, uri!!)
-                        prepare()
-                        start()
+                    val parcelFileDescriptor = contentResolver.openFileDescriptor(uri!!, "r")
+                    val fileDescriptor = parcelFileDescriptor?.fileDescriptor
+                    val audioAttributes = AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                    mediaPlayer?.release() // Release any existing player
+                    mediaPlayer = MediaPlayer().apply {
+                        setAudioAttributes(audioAttributes)
+                        setDataSource(fileDescriptor)
+                        setOnPreparedListener {
+                            createAudioPlayerUI()
+                            start()
+                        }
+                        setOnCompletionListener {
+                            release()
+                            mediaPlayer = null
+                        }
+                        setOnErrorListener { _, what, extra ->
+                            Log.e("MediaPlayer", "Error occurred: $what, $extra")
+                            true
+                        }
+                        prepareAsync()
                     }
+                    mediaPlayerControl = MediaPlayerControllerImpl(mediaPlayer!!)
                 } catch (e: Exception) {
                     Log.e(logTag, "Failed to play file $uri with error: $e")
                     Toast.makeText(
@@ -306,6 +364,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
 
     private fun pickAndPlayFile() {
         Log.i(logTag, "pickAndPlayFile()")
