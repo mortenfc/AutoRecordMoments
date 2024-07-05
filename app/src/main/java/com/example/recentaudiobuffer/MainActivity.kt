@@ -10,7 +10,6 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
-import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
@@ -25,18 +24,17 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
-import java.io.File
-import java.io.FileOutputStream
 import java.lang.Exception
+import android.os.Build
 
 class MainActivity : ComponentActivity() {
     private val logTag = "MainActivity"
-    private val requiredPermissions = arrayOf(
+
+    private val requiredPermissions = mutableListOf(
         Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.FOREGROUND_SERVICE,
-        Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
+        Manifest.permission.FOREGROUND_SERVICE
     )
+
     private lateinit var foregroundServiceAudioBuffer: Intent
     private val foregroundServiceAudioBufferConnection = object : ServiceConnection {
         lateinit var service: MainActivityInterface
@@ -79,6 +77,10 @@ class MainActivity : ComponentActivity() {
 //            }
 //        }
         setContentView(R.layout.layout)
+
+        if (Build.VERSION.SDK_INT >= 34) {
+            requiredPermissions.add(Manifest.permission.FOREGROUND_SERVICE_MICROPHONE)
+        }
 
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
 
@@ -167,7 +169,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun haveAllPermissions(permissions: Array<String>): Boolean {
+    private fun haveAllPermissions(permissions: MutableList<String>): Boolean {
         for (permission in permissions) {
             if (PackageManager.PERMISSION_GRANTED != checkSelfPermission(permission)) {
                 Log.i(logTag, "FALSE haveAllPermissions()")
