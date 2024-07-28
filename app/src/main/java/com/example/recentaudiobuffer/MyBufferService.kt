@@ -20,14 +20,14 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import java.io.FileOutputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.locks.ReentrantLock
 
 interface MainActivityInterface {
     fun getBuffer(): ByteArray
-    fun isRunning(): Boolean
+    fun isRecording(): Boolean
     fun writeWavHeader(out: OutputStream, audioDataLen: Long)
 }
 
@@ -46,7 +46,10 @@ class MyBufferService : Service(), MainActivityInterface {
     private val logTag = "MyBufferService"
     private var recorder: AudioRecord? = null
     private var buffer: ByteArray = ByteArray(BUFFER_SIZE)
-    private var isRecorderRunning = false
+    private var isRecording = false
+    private var writeIndex = 0
+    private var readIndex = 0
+    private val lock = ReentrantLock()
 
     override fun onCreate() {
         Log.i(logTag, "onCreate()")
@@ -119,18 +122,17 @@ class MyBufferService : Service(), MainActivityInterface {
     }
 
     private fun startBuffering() {
-        var bufferIndex = 0
         val audioFormat = AudioFormat.Builder()
             .setEncoding(BIT_DEPTH.encodingEnum)
             .setSampleRate(SAMPLE_RATE_HZ)
             .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
             .build()
 
-        val minBufferSize = AudioRecord.getMinBufferSize(
-            audioFormat.sampleRate,
-            audioFormat.channelMask,
-            audioFormat.encoding
-        )
+//        val minBufferSize = AudioRecord.getMinBufferSize(
+//            audioFormat.sampleRate,
+//            audioFormat.channelMask,
+//            audioFormat.encoding
+//        )
 
         val permission = Manifest.permission.RECORD_AUDIO
         val granted = PackageManager.PERMISSION_GRANTED
@@ -149,37 +151,51 @@ class MyBufferService : Service(), MainActivityInterface {
             recorder = AudioRecord.Builder()
                 .setAudioSource(MediaRecorder.AudioSource.MIC)
                 .setAudioFormat(audioFormat)
-                .setBufferSizeInBytes(minBufferSize)
+                .setBufferSizeInBytes(BUFFER_SIZE)
                 .build()
         }
 
         try {
+            isRecording = true
             Thread {
-                while (true) {
-                    synchronized(buffer)
-                    {
-                        val result = recorder!!.read(buffer, bufferIndex, buffer.size)
-                        if (result > 0) {
-                            bufferIndex += result
-                            if (bufferIndex >= buffer.size) {
-                                bufferIndex = 0
-                            }
-                        }
+                recorder?.startRecording() // Start recording
+                while (isRecording) {
+                    if (recorder?.state == AudioRecord.RECORDSTATE_STOPPED) {
+                        isRecording = false
+                        break
                     }
+                    lock.lock()
+                    try {
+                        val readResult = recorder?.read(buffer, writeIndex, buffer.size - writeIndex) ?: -1
+                        if (readResult > 0) {
+                            writeIndex = (writeIndex + readResult) % buffer.size
+                        } else if (readResult == AudioRecord.ERROR_INVALID_OPERATION) {
+                            Log.e(logTag, "AudioRecord invalid operation")
+                        } else if (readResult == AudioRecord.ERROR_BAD_VALUE) {
+                            Log.e(logTag, "AudioRecord bad value")
+                        } else {
+                            Log.e(logTag, "AudioRecord other error state: ${recorder?.state}, result: $readResult")
+                        }
+                    } finally {
+                        lock.unlock()
+                    }
+                    Thread.sleep(10) // Add a small delay
                 }
+                recorder?.stop()
+                recorder?.release()
+                recorder = null
             }.start()
-            isRecorderRunning = true
-        } catch (e: Exception) {
-            Log.e(logTag, "startBuffering() failed in thread", e)
+        } catch (e: IllegalArgumentException) {
+            Log.e(logTag, "startBuffering() failed: illegal argument", e)
+            stopSelf()
+        } catch (e: IllegalStateException) {
+            Log.e(logTag, "startBuffering() failed: illegal state", e)
             stopSelf()
         }
     }
 
     private fun stopBuffering() {
-        recorder!!.stop()
-        recorder!!.release()
-        recorder = null
-        isRecorderRunning = false
+        isRecording = false
     }
 
     override fun writeWavHeader(out: OutputStream, audioDataLen: Long) {
@@ -222,16 +238,40 @@ class MyBufferService : Service(), MainActivityInterface {
         return byteArrayOf((data.toInt() and 0xff).toByte(), ((data.toInt() shr 8) and 0xff).toByte())
     }
 
-
     override fun getBuffer(): ByteArray {
-        synchronized(buffer)
-        {
-            return buffer.copyOf()
+        val data = ByteArray(BUFFER_SIZE)
+        val bytesRead = readFromBuffer(data, 0, BUFFER_SIZE)
+        return data.copyOf(bytesRead) // Copy only the recorded portion
+    }
+
+    private fun readFromBuffer(dest: ByteArray, offset: Int, bytesToRead: Int): Int {
+        lock.lock()
+        try {
+            val bytesAvailable = if (writeIndex >= readIndex) {
+                writeIndex - readIndex
+            } else {
+                buffer.size - readIndex + writeIndex
+            }
+
+            val bytesToCopy = minOf(bytesToRead, bytesAvailable)
+
+            if (readIndex + bytesToCopy <= buffer.size) {
+                System.arraycopy(buffer, readIndex, dest, offset, bytesToCopy)
+            } else {
+                val bytesToEnd = buffer.size - readIndex
+                System.arraycopy(buffer, readIndex, dest, offset, bytesToEnd)
+                System.arraycopy(buffer, 0, dest, offset + bytesToEnd, bytesToCopy - bytesToEnd)
+            }
+
+            readIndex = (readIndex + bytesToCopy) % buffer.size
+            return bytesToCopy
+        } finally {
+            lock.unlock()
         }
     }
 
-    override fun isRunning(): Boolean {
-        return isRecorderRunning
+    override fun isRecording(): Boolean {
+        return isRecording
     }
 
     inner class MyBinder : Binder() {

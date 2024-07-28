@@ -26,6 +26,8 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import java.lang.Exception
 import android.os.Build
+import com.google.android.material.snackbar.Snackbar
+import java.io.IOException
 
 class MainActivity : ComponentActivity() {
     private val logTag = "MainActivity"
@@ -34,6 +36,10 @@ class MainActivity : ComponentActivity() {
         Manifest.permission.RECORD_AUDIO,
         Manifest.permission.FOREGROUND_SERVICE
     )
+
+    private var mediaController: MyMediaController? = null
+    private var mediaPlayer: MediaPlayer? = null
+    private var mediaPlayerControl: MediaPlayerControllerImpl? = null
 
     private lateinit var foregroundServiceAudioBuffer: Intent
     private val foregroundServiceAudioBufferConnection = object : ServiceConnection {
@@ -78,6 +84,7 @@ class MainActivity : ComponentActivity() {
 //        }
         setContentView(R.layout.layout)
 
+        Log.i(logTag, "onCreate(): Build.VERSION.SDK_INT: ${Build.VERSION.SDK_INT}")
         if (Build.VERSION.SDK_INT >= 34) {
             requiredPermissions.add(Manifest.permission.FOREGROUND_SERVICE_MICROPHONE)
         }
@@ -102,7 +109,7 @@ class MainActivity : ComponentActivity() {
                         "Started buffering in the background",
                         Toast.LENGTH_SHORT
                     ).show()
-                } else if (foregroundServiceAudioBufferConnection.service.isRunning()) {
+                } else if (foregroundServiceAudioBufferConnection.service.isRecording()) {
                     Toast.makeText(
                         this,
                         "Buffer is already running!",
@@ -167,6 +174,18 @@ class MainActivity : ComponentActivity() {
         pickAndPlay.setOnClickListener {
             pickAndPlayFile()
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        mediaPlayerControl?.let {
+            mediaController?.setMediaPlayer(null) // Detach MediaController
+            mediaController?.hide()
+            mediaController = null
+        }
+        mediaPlayer?.release()
+        mediaPlayer = null
+        mediaPlayerControl = null
     }
 
     private fun haveAllPermissions(permissions: MutableList<String>): Boolean {
@@ -237,70 +256,64 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var dataIn: ByteArray
     private val directoryChooserLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                val uri: Uri? = result.data?.data
-
-                // Check if the user provided a file extension
-                val extension = MimeTypeMap.getFileExtensionFromUrl(uri?.toString())
-                val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-                if (mimeType != null) {
-                    if (!mimeType.startsWith("audio/")) {
-                        // Inform the user that they need to provide an audio extension
-                        Toast.makeText(
-                            this,
-                            "Please enter a file name with an audio extension (e.g., .wav). File did not save, try again. ",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        return@registerForActivityResult
-                    }
-                } else {
-                    // Inform the user that they need to provide an audio extension
-                    Toast.makeText(
-                        this,
-                        "Please enter a file name with an audio extension (e.g., .wav). File did not save, try again. ",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    return@registerForActivityResult
-                }
-
+    registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val uri = result.data?.data
+            uri?.let {
                 try {
-                    val outputStream = contentResolver.openOutputStream(uri!!)
-                    // Write the WAV header
-                    foregroundServiceAudioBufferConnection.service.writeWavHeader(
-                        outputStream!!, dataIn.size.toLong()
-                    )
-                    // Write the audio data
-                    outputStream.write(dataIn)
-                    outputStream.close()
-                    Log.i(logTag, "Saved file to $uri")
-                    Toast.makeText(
-                        this,
-                        "Saved file to $uri",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } catch (e: Exception) {
-                    Log.e(logTag, "Failed to save file to $uri with error: $e")
-                    Toast.makeText(
-                        this,
-                        "Failed to save file to $uri",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    val outputStream = contentResolver.openOutputStream(it)
+                    outputStream?.let { stream ->
+                        // Check MIME type (optional, consider more robust methods)
+                        if (contentResolver.getType(it)?.startsWith("audio/") == true) {
+                            foregroundServiceAudioBufferConnection.service.writeWavHeader(
+                                stream, dataIn.size.toLong()
+                            )
+                            stream.write(dataIn)
+                            // Show success feedback (e.g., Snackbar)
+                            Snackbar.make(
+                                findViewById(R.id.RootView),
+                                "File saved successfully",
+                                Snackbar.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            // Show error feedback (e.g., Snackbar)
+                            Snackbar.make(
+                                findViewById(R.id.RootView),
+                                "Invalid file type. Please choose an audio file.",
+                                Snackbar.LENGTH_SHORT
+                            ).show()
+                        }
+                        stream.close()
+                    } ?: run {
+                        // Handle case where output stream is null
+                        Log.e(logTag, "Failed to open output stream for $uri")
+                        // Show error feedback
+                    }
+                } catch (e: IOException) {
+                    Log.e(logTag, "Failed to save file to $uri", e)
+                    // Show error feedback
+                } catch (e: SecurityException) {
+                    Log.e(logTag, "Permission denied to access $uri", e)
+                    // Show error feedback and request permission if needed
                 }
+            } ?: run {
+                // Handle case where uri is null
+                Log.e(logTag, "No URI received from directory chooser")
+                // Show error feedback
             }
         }
-
+    }
 
     private fun saveBufferToFile(data: ByteArray) {
         dataIn = data
         Log.i(logTag, "saveBufferToFile()")
-        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
-        intent.addCategory(Intent.CATEGORY_OPENABLE)
-        intent.type = "application/octet-stream"
-        intent.putExtra(Intent.EXTRA_TITLE, "your_file_name.wav")
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "audio/wav" // Use the correct MIME type for WAV files
+            putExtra(Intent.EXTRA_TITLE, "recording.wav") // Set a default file name
+        }
         directoryChooserLauncher.launch(intent)
     }
-
 
     class MyMediaController(context: Context) : MediaController(context) {
         override fun hide() {
@@ -316,14 +329,12 @@ class MainActivity : ComponentActivity() {
             )
         }
         addContentView(frameLayout, frameLayout.layoutParams)
-        val mediaController = MyMediaController(this)
-        mediaController.setMediaPlayer(mediaPlayerControl)
-        mediaController.setAnchorView(frameLayout)
-        mediaController.show()
+        val controller = MyMediaController(this) // Local variable
+        controller.setMediaPlayer(mediaPlayerControl)
+        controller.setAnchorView(frameLayout)
+        controller.show()
+        mediaController = controller // Assign to mediaController
     }
-
-    private var mediaPlayer: MediaPlayer? = null
-    private var mediaPlayerControl: MediaPlayerControllerImpl? = null
 
     private val filePickerLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -351,11 +362,17 @@ class MainActivity : ComponentActivity() {
                         }
                         setOnErrorListener { _, what, extra ->
                             Log.e("MediaPlayer", "Error occurred: $what, $extra")
+                            // Handle specific error cases here based on 'what' and 'extra'
                             true
                         }
                         prepareAsync()
                     }
-                    mediaPlayerControl = MediaPlayerControllerImpl(mediaPlayer!!)
+                    mediaPlayer?.let {
+                        mediaPlayerControl = MediaPlayerControllerImpl(it)
+                    } ?: run {
+                        Toast.makeText(this, "Failed to play audio file", Toast.LENGTH_SHORT).show()
+                        // Disable playback controls if necessary
+                    }
                 } catch (e: Exception) {
                     Log.e(logTag, "Failed to play file $uri with error: $e")
                     Toast.makeText(
