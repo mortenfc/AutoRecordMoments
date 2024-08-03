@@ -38,14 +38,20 @@ private val bitDepths = mapOf(
     "16" to BitDepth(16, AudioFormat.ENCODING_PCM_16BIT)
 )
 private val BIT_DEPTH = bitDepths["8"] ?: error("Invalid bit depth")
-private const val SAMPLE_RATE_HZ = 44100
-private const val BUFFER_TIME_LENGTH_S = 120
-private val BUFFER_SIZE = SAMPLE_RATE_HZ * (BIT_DEPTH.bytes / 8) * BUFFER_TIME_LENGTH_S
+
+// Config options, to be configurable later
+data class Config(val SAMPLE_RATE_HZ: Int, val BUFFER_TIME_LENGTH_S: Int)
+
+private val CONFIG = Config(SAMPLE_RATE_HZ = 44100, BUFFER_TIME_LENGTH_S = 120)
+
+// Calculate the maximum total buffer size
+private val TOTAL_RING_BUFFER_SIZE =
+    CONFIG.SAMPLE_RATE_HZ * (BIT_DEPTH.bytes / 8) * CONFIG.BUFFER_TIME_LENGTH_S
 
 class MyBufferService : Service(), MainActivityInterface {
     private val logTag = "MyBufferService"
     private var recorder: AudioRecord? = null
-    private var buffer: ByteArray = ByteArray(BUFFER_SIZE)
+    private var buffer: ByteArray = ByteArray(TOTAL_RING_BUFFER_SIZE)
     private var isRecording = false
     private var writeIndex = 0
     private var readIndex = 0
@@ -76,7 +82,8 @@ class MyBufferService : Service(), MainActivityInterface {
     private fun prepareAndStartRecording(): Int {
         Log.i(logTag, "prepareAndStartRecording")
         val name = "NotifyMicForeground" // The name of the channel
-        val descriptionText = "Notifications for the mic foreground" // The description of the channel
+        val descriptionText =
+            "Notifications for the mic foreground" // The description of the channel
         val importance = NotificationManager.IMPORTANCE_DEFAULT
         val channel = NotificationChannel("NotifyMicForeground", name, importance).apply {
             description = descriptionText
@@ -124,15 +131,35 @@ class MyBufferService : Service(), MainActivityInterface {
     private fun startBuffering() {
         val audioFormat = AudioFormat.Builder()
             .setEncoding(BIT_DEPTH.encodingEnum)
-            .setSampleRate(SAMPLE_RATE_HZ)
+            .setSampleRate(CONFIG.SAMPLE_RATE_HZ)
             .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
             .build()
 
-//        val minBufferSize = AudioRecord.getMinBufferSize(
-//            audioFormat.sampleRate,
-//            audioFormat.channelMask,
-//            audioFormat.encoding
-//        )
+        val minBufferSize = AudioRecord.getMinBufferSize(
+            audioFormat.sampleRate,
+            audioFormat.channelMask,
+            audioFormat.encoding
+        )
+
+        if (minBufferSize <= 0) {
+            Log.e(logTag, "Minimum buffer size <= 0 somehow")
+            Toast.makeText(
+                this,
+                "ERROR: Minimum buffer size <= 0 somehow",
+                Toast.LENGTH_LONG
+            ).show()
+            stopSelf()
+            return
+        }
+
+        // Ensure TOTAL_RING_BUFFER_SIZE is at least twice minBufferSize
+        val ringBufferSize = if (TOTAL_RING_BUFFER_SIZE < minBufferSize * 2) {
+            minBufferSize * 2
+        } else {
+            TOTAL_RING_BUFFER_SIZE
+        }
+
+        buffer = ByteArray(ringBufferSize)
 
         val permission = Manifest.permission.RECORD_AUDIO
         val granted = PackageManager.PERMISSION_GRANTED
@@ -142,44 +169,58 @@ class MyBufferService : Service(), MainActivityInterface {
             Toast.makeText(
                 this,
                 "ERROR: Audio record permission not granted before this was started, exiting the foreground service",
-                Toast.LENGTH_SHORT
+                Toast.LENGTH_LONG
             ).show()
             stopSelf()
             return
-        } else {
-            // Permission has been granted
-            recorder = AudioRecord.Builder()
-                .setAudioSource(MediaRecorder.AudioSource.MIC)
-                .setAudioFormat(audioFormat)
-                .setBufferSizeInBytes(BUFFER_SIZE)
-                .build()
         }
+
+        // Permission has been granted
+        recorder = AudioRecord.Builder()
+            .setAudioSource(MediaRecorder.AudioSource.MIC)
+            .setAudioFormat(audioFormat)
+            .setBufferSizeInBytes(minBufferSize)
+            .build()
 
         try {
             isRecording = true
             Thread {
                 recorder?.startRecording() // Start recording
+                Log.d(logTag, "Recording thread started")
                 while (isRecording) {
-                    if (recorder?.state == AudioRecord.RECORDSTATE_STOPPED) {
-                        isRecording = false
-                        break
-                    }
                     lock.lock()
                     try {
-                        val readResult = recorder?.read(buffer, writeIndex, buffer.size - writeIndex) ?: -1
+                        // Read in chunks of minBufferSize
+                        val readResult = recorder?.read(buffer, writeIndex, minBufferSize)
+                            ?: -1
+                        Log.d(
+                            logTag,
+                            "readResult: $readResult, writeIndex before update: $writeIndex"
+                        ) // Log before update
                         if (readResult > 0) {
                             writeIndex = (writeIndex + readResult) % buffer.size
                         } else if (readResult == AudioRecord.ERROR_INVALID_OPERATION) {
                             Log.e(logTag, "AudioRecord invalid operation")
                         } else if (readResult == AudioRecord.ERROR_BAD_VALUE) {
                             Log.e(logTag, "AudioRecord bad value")
+                        } else if (recorder?.state == AudioRecord.RECORDSTATE_STOPPED) {
+                            Log.e(logTag, "AudioRecord stopped unexpectedly")
+                            isRecording = false
                         } else {
-                            Log.e(logTag, "AudioRecord other error state: ${recorder?.state}, result: $readResult")
+                            Log.e(
+                                logTag,
+                                "AudioRecord other error state: ${recorder?.state}, result: $readResult"
+                            )
                         }
+                    } catch (e: Exception) {
+                        Log.e(
+                            logTag,
+                            "recorder read error: $e in state: ${recorder?.state}"
+                        )
                     } finally {
                         lock.unlock()
                     }
-                    Thread.sleep(10) // Add a small delay
+                    Thread.sleep(10) // Add a small delay where lock is not used
                 }
                 recorder?.stop()
                 recorder?.release()
@@ -200,7 +241,7 @@ class MyBufferService : Service(), MainActivityInterface {
 
     override fun writeWavHeader(out: OutputStream, audioDataLen: Long) {
         val channels = 1.toShort()
-        val sampleRate = SAMPLE_RATE_HZ
+        val sampleRate = CONFIG.SAMPLE_RATE_HZ
         val bitsPerSample = BIT_DEPTH.bytes.toShort()
 
         // WAV constants
@@ -212,10 +253,31 @@ class MyBufferService : Service(), MainActivityInterface {
         val byteRate = sampleRate * channels * sampleSize
 
         // Write the header
-        out.write(byteArrayOf('R'.toByte(), 'I'.toByte(), 'F'.toByte(), 'F'.toByte()))
+        out.write(
+            byteArrayOf(
+                'R'.code.toByte(),
+                'I'.code.toByte(),
+                'F'.code.toByte(),
+                'F'.code.toByte()
+            )
+        )
         out.write(intToBytes(totalDataLen.toInt()), 0, 4)
-        out.write(byteArrayOf('W'.toByte(), 'A'.toByte(), 'V'.toByte(), 'E'.toByte()))
-        out.write(byteArrayOf('f'.toByte(), 'm'.toByte(), 't'.toByte(), ' '.toByte()))
+        out.write(
+            byteArrayOf(
+                'W'.code.toByte(),
+                'A'.code.toByte(),
+                'V'.code.toByte(),
+                'E'.code.toByte()
+            )
+        )
+        out.write(
+            byteArrayOf(
+                'f'.code.toByte(),
+                'm'.code.toByte(),
+                't'.code.toByte(),
+                ' '.code.toByte()
+            )
+        )
         out.write(intToBytes(16), 0, 4)  // Sub-chunk size, 16 for PCM
         out.write(shortToBytes(1.toShort()), 0, 2)  // AudioFormat, 1 for PCM
         out.write(shortToBytes(channels), 0, 2)
@@ -223,7 +285,14 @@ class MyBufferService : Service(), MainActivityInterface {
         out.write(intToBytes(byteRate.toInt()), 0, 4)
         out.write(shortToBytes((channels * sampleSize).toShort()), 0, 2)  // Block align
         out.write(shortToBytes(bitsPerSample), 0, 2)
-        out.write(byteArrayOf('d'.toByte(), 'a'.toByte(), 't'.toByte(), 'a'.toByte()))
+        out.write(
+            byteArrayOf(
+                'd'.code.toByte(),
+                'a'.code.toByte(),
+                't'.code.toByte(),
+                'a'.code.toByte()
+            )
+        )
         out.write(intToBytes(audioDataLen.toInt()), 0, 4)
     }
 
@@ -235,13 +304,23 @@ class MyBufferService : Service(), MainActivityInterface {
     }
 
     private fun shortToBytes(data: Short): ByteArray {
-        return byteArrayOf((data.toInt() and 0xff).toByte(), ((data.toInt() shr 8) and 0xff).toByte())
+        return byteArrayOf(
+            (data.toInt() and 0xff).toByte(),
+            ((data.toInt() shr 8) and 0xff).toByte()
+        )
     }
 
     override fun getBuffer(): ByteArray {
-        val data = ByteArray(BUFFER_SIZE)
-        val bytesRead = readFromBuffer(data, 0, BUFFER_SIZE)
-        return data.copyOf(bytesRead) // Copy only the recorded portion
+        val data = ByteArray(TOTAL_RING_BUFFER_SIZE)
+        val bytesRead = readFromBuffer(data, 0, TOTAL_RING_BUFFER_SIZE)
+        Log.i(
+            logTag,
+            "getBuffer() read $bytesRead bytes of ${data.size} total available buffer bytes"
+        )
+        if (bytesRead == 0) {
+            Log.w(logTag, "getBuffer(): Buffer is empty!")
+        }
+        return data.copyOf(bytesRead)
     }
 
     private fun readFromBuffer(dest: ByteArray, offset: Int, bytesToRead: Int): Int {
@@ -252,18 +331,27 @@ class MyBufferService : Service(), MainActivityInterface {
             } else {
                 buffer.size - readIndex + writeIndex
             }
+            Log.d(
+                logTag,
+                "readFromBuffer(): bytesAvailable = $bytesAvailable, writeIndex = $writeIndex, readIndex = $readIndex"
+            )
 
             val bytesToCopy = minOf(bytesToRead, bytesAvailable)
+            Log.d(logTag, "readFromBuffer(): bytesToCopy = $bytesToCopy")
+            Log.d(logTag, "readFromBuffer(): buffer.size = ${buffer.size}")
 
             if (readIndex + bytesToCopy <= buffer.size) {
                 System.arraycopy(buffer, readIndex, dest, offset, bytesToCopy)
             } else {
                 val bytesToEnd = buffer.size - readIndex
+                Log.d(logTag, "readFromBuffer(): bytesToEnd = $bytesToEnd")
                 System.arraycopy(buffer, readIndex, dest, offset, bytesToEnd)
                 System.arraycopy(buffer, 0, dest, offset + bytesToEnd, bytesToCopy - bytesToEnd)
             }
 
             readIndex = (readIndex + bytesToCopy) % buffer.size
+            Log.d(logTag, "readFromBuffer(): readIndex updated to $readIndex")
+
             return bytesToCopy
         } finally {
             lock.unlock()
