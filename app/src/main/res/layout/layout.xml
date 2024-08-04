@@ -1,56 +1,79 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:app="http://schemas.android.com/apk/res-auto"
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#C3FFC3">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <androidx.appcompat.widget.Toolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorPrimary" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <LinearLayout
+        android:id="@+id/RootView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
         android:gravity="center"
         android:orientation="vertical"
-        android:background="#C3FFC3"
-        android:id="@+id/RootView">
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/appBarLayout">
 
-    <Button
-            android:id="@+id/StartBuffering"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/start_buffering_in_the_background"
-            android:textStyle="bold"
-            android:outlineAmbientShadowColor="@color/black"
-            style="@style/Widget.AppCompat.Button.Colored"
-            android:stateListAnimator="@drawable/animate_button"
-            android:layout_marginBottom="20dp" />
+        <Button
+                android:id="@+id/StartBuffering"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/start_buffering_in_the_background"
+                android:textStyle="bold"
+                android:outlineAmbientShadowColor="@color/black"
+                style="@style/Widget.AppCompat.Button.Colored"
+                android:stateListAnimator="@drawable/animate_button"
+                android:layout_marginBottom="20dp" />
 
-    <Button
-            android:id="@+id/StopBuffering"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/stop_buffering_in_the_background"
-            android:textStyle="bold"
-            android:backgroundTint="#FFAAAA"
-            android:outlineAmbientShadowColor="@color/black"
-            style="@style/Widget.AppCompat.Button.Colored"
-            android:stateListAnimator="@drawable/animate_button"
-            android:layout_marginBottom="20dp" />
+        <Button
+                android:id="@+id/StopBuffering"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stop_buffering_in_the_background"
+                android:textStyle="bold"
+                android:backgroundTint="#FFAAAA"
+                android:outlineAmbientShadowColor="@color/black"
+                style="@style/Widget.AppCompat.Button.Colored"
+                android:stateListAnimator="@drawable/animate_button"
+                android:layout_marginBottom="20dp" />
 
-    <Button
-            android:id="@+id/SaveBuffer"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/save_the_buffer_as_a_recording"
-            android:textStyle="bold"
-            android:backgroundTint="#AAFFAA"
-            android:outlineAmbientShadowColor="@color/black"
-            style="@style/Widget.AppCompat.Button.Colored"
-            android:stateListAnimator="@drawable/animate_button"
-            android:layout_marginBottom="20dp" />
+        <Button
+                android:id="@+id/SaveBuffer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/save_the_buffer_as_a_recording"
+                android:textStyle="bold"
+                android:backgroundTint="#AAFFAA"
+                android:outlineAmbientShadowColor="@color/black"
+                style="@style/Widget.AppCompat.Button.Colored"
+                android:stateListAnimator="@drawable/animate_button"
+                android:layout_marginBottom="20dp" />
 
-    <Button
-            android:id="@+id/PickAndPlayFile"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/play_a_recording"
-            android:textStyle="bold"
-            android:backgroundTint="#AAAAFF"
-            android:outlineAmbientShadowColor="@color/black"
-            style="@style/Widget.AppCompat.Button.Colored"
-            android:stateListAnimator="@drawable/animate_button" />
+        <Button
+                android:id="@+id/PickAndPlayFile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/play_a_recording"
+                android:textStyle="bold"
+                android:backgroundTint="#AAAAFF"
+                android:outlineAmbientShadowColor="@color/black"
+                style="@style/Widget.AppCompat.Button.Colored"
+                android:stateListAnimator="@drawable/animate_button" />
 
-</LinearLayout>
+    </LinearLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>

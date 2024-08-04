@@ -20,33 +20,53 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.preference.PreferenceManager
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.locks.ReentrantLock
 
 interface MainActivityInterface {
     fun getBuffer(): ByteArray
     fun isRecording(): Boolean
     fun writeWavHeader(out: OutputStream, audioDataLen: Long)
+    fun stopRecording()
+    fun startRecording()
 }
 
-data class BitDepth(val bytes: Int, val encodingEnum: Int)
+public data class BitDepth(val bytes: Int, val encodingEnum: Int)
 
-private val bitDepths = mapOf(
+public val bitDepths = mapOf(
     "8" to BitDepth(8, AudioFormat.ENCODING_PCM_8BIT),
-    "16" to BitDepth(16, AudioFormat.ENCODING_PCM_16BIT)
+    "16" to BitDepth(16, AudioFormat.ENCODING_PCM_16BIT),
+    "24" to BitDepth(24, AudioFormat.ENCODING_PCM_FLOAT), // Use FLOAT for 24-bit
+    "32" to BitDepth(32, AudioFormat.ENCODING_PCM_FLOAT)  // Use FLOAT for 32-bit
 )
-private val BIT_DEPTH = bitDepths["8"] ?: error("Invalid bit depth")
 
-// Config options, to be configurable later
-data class Config(val SAMPLE_RATE_HZ: Int, val BUFFER_TIME_LENGTH_S: Int)
+public val sampleRates = mapOf(
+    "8000" to 8000,
+    "11025" to 11025,
+    "16000" to 16000,
+    "22050" to 22050,
+    "44100" to 44100,
+    "48000" to 48000,
+    "88200" to 88200,
+    "96000" to 96000,
+    "192000" to 192000
+)
 
-private val CONFIG = Config(SAMPLE_RATE_HZ = 44100, BUFFER_TIME_LENGTH_S = 120)
+data class Config(var SAMPLE_RATE_HZ: Int, var BUFFER_TIME_LENGTH_S: Int, var BIT_DEPTH: BitDepth)
+
+private val CONFIG = Config(
+    SAMPLE_RATE_HZ = sampleRates["22050"] ?: error("Invalid sample rate"),
+    BUFFER_TIME_LENGTH_S = 120,
+    BIT_DEPTH = bitDepths["8"] ?: error("Invalid bit depth")
+)
 
 // Calculate the maximum total buffer size
 private val TOTAL_RING_BUFFER_SIZE =
-    CONFIG.SAMPLE_RATE_HZ * (BIT_DEPTH.bytes / 8) * CONFIG.BUFFER_TIME_LENGTH_S
+    CONFIG.SAMPLE_RATE_HZ * (CONFIG.BIT_DEPTH.bytes / 8) * CONFIG.BUFFER_TIME_LENGTH_S
 
 class MyBufferService : Service(), MainActivityInterface {
     private val logTag = "MyBufferService"
@@ -56,6 +76,7 @@ class MyBufferService : Service(), MainActivityInterface {
     private var writeIndex = 0
     private var readIndex = 0
     private val lock = ReentrantLock()
+    private val recordingStartedLatch = CountDownLatch(1)
 
     override fun onCreate() {
         Log.i(logTag, "onCreate()")
@@ -64,17 +85,17 @@ class MyBufferService : Service(), MainActivityInterface {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(logTag, "onStartCommand()")
 
-        return if (intent != null) {
+        return if (intent != null && !isRecording) {
             prepareAndStartRecording()
         } else {
-            Log.i(logTag, "START_REDELIVER_INTENT")
+            Log.i(logTag, "START_REDELIVER_INTENT or already recording")
             START_REDELIVER_INTENT
         }
     }
 
     override fun onDestroy() {
         Log.i(logTag, "onDestroy()")
-        stopBuffering()
+        stopRecording()
         stopForeground(STOP_FOREGROUND_DETACH)
         super.onDestroy()
     }
@@ -129,8 +150,10 @@ class MyBufferService : Service(), MainActivityInterface {
     }
 
     private fun startBuffering() {
+        syncPreferences()
+
         val audioFormat = AudioFormat.Builder()
-            .setEncoding(BIT_DEPTH.encodingEnum)
+            .setEncoding(CONFIG.BIT_DEPTH.encodingEnum)
             .setSampleRate(CONFIG.SAMPLE_RATE_HZ)
             .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
             .build()
@@ -186,6 +209,7 @@ class MyBufferService : Service(), MainActivityInterface {
             isRecording = true
             Thread {
                 recorder?.startRecording() // Start recording
+                recordingStartedLatch.countDown()
                 Log.d(logTag, "Recording thread started")
                 while (isRecording) {
                     lock.lock()
@@ -235,14 +259,14 @@ class MyBufferService : Service(), MainActivityInterface {
         }
     }
 
-    private fun stopBuffering() {
+    override fun stopRecording() {
         isRecording = false
     }
 
     override fun writeWavHeader(out: OutputStream, audioDataLen: Long) {
         val channels = 1.toShort()
         val sampleRate = CONFIG.SAMPLE_RATE_HZ
-        val bitsPerSample = BIT_DEPTH.bytes.toShort()
+        val bitsPerSample = CONFIG.BIT_DEPTH.bytes.toShort()
 
         // WAV constants
         val sampleSize = bitsPerSample / 8
@@ -358,8 +382,29 @@ class MyBufferService : Service(), MainActivityInterface {
         }
     }
 
+    private fun syncPreferences() {
+        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+        CONFIG.SAMPLE_RATE_HZ =
+            sampleRates[sharedPreferences.getString("sample_rate", "22050")] ?: error("Invalid sample rate")
+        CONFIG.BUFFER_TIME_LENGTH_S =
+            sharedPreferences.getString("buffer_time", "120")?.toInt() ?: 120
+        CONFIG.BIT_DEPTH =
+            bitDepths[sharedPreferences.getString("bit_depth", "8")] ?: error("Invalid bit depth")
+    }
+
     override fun isRecording(): Boolean {
+        try {
+            recordingStartedLatch.await() // Wait for recording to start
+        } catch (e: InterruptedException) { // Handle interruption
+            e.printStackTrace()
+        }
         return isRecording
+    }
+
+    override fun startRecording() {
+        if (!isRecording) {
+            prepareAndStartRecording()
+        }
     }
 
     inner class MyBinder : Binder() {
@@ -370,5 +415,10 @@ class MyBufferService : Service(), MainActivityInterface {
 
     override fun onBind(intent: Intent): IBinder {
         return binder
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        stopRecording()
+        return super.onUnbind(intent)
     }
 }

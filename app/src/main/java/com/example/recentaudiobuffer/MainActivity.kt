@@ -2,7 +2,6 @@ package com.example.recentaudiobuffer
 
 import MediaPlayerControllerImpl
 import android.Manifest
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Context
@@ -16,20 +15,22 @@ import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
-import android.webkit.MimeTypeMap
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.MediaController
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import java.lang.Exception
 import android.os.Build
+import android.view.Menu
+import android.view.MenuItem
+import androidx.appcompat.widget.Toolbar
 import com.google.android.material.snackbar.Snackbar
 import java.io.IOException
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private val logTag = "MainActivity"
 
     private val requiredPermissions = mutableListOf(
@@ -71,18 +72,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-//        setContent {
-//            RecentAudioBufferTheme {
-//                // A surface container using the 'background' color from the theme
-//                Surface(
-//                    modifier = Modifier.fillMaxSize(),
-//                    color = MaterialTheme.colorScheme.background
-//                ) {
-//                    Greeting("Android")
-//                }
-//            }
-//        }
         setContentView(R.layout.layout)
+
+        val toolbar = findViewById<Toolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
 
         Log.i(logTag, "onCreate(): Build.VERSION.SDK_INT: ${Build.VERSION.SDK_INT}")
         if (Build.VERSION.SDK_INT >= 34) {
@@ -104,11 +97,6 @@ class MainActivity : ComponentActivity() {
                         Context.BIND_AUTO_CREATE
                     )
                     Log.i(logTag, "Buffer service started and bound")
-                    Toast.makeText(
-                        this,
-                        "Started buffering in the background",
-                        Toast.LENGTH_SHORT
-                    ).show()
                 } else if (foregroundServiceAudioBufferConnection.service.isRecording()) {
                     Toast.makeText(
                         this,
@@ -116,11 +104,11 @@ class MainActivity : ComponentActivity() {
                         Toast.LENGTH_SHORT
                     ).show()
                 } else {
-                    Log.e(logTag, "Buffer service bound but not running")
+                    foregroundServiceAudioBufferConnection.service.startRecording()
                     Toast.makeText(
                         this,
-                        "ERROR: Buffer service bound but not running",
-                        Toast.LENGTH_SHORT
+                        "Restarted buffering in the background",
+                        Toast.LENGTH_LONG
                     ).show()
                 }
             } else {
@@ -137,18 +125,26 @@ class MainActivity : ComponentActivity() {
         stop.setOnClickListener {
             if (haveAllPermissions(requiredPermissions)) {
                 if (foregroundServiceAudioBufferConnection.isBound) {
-                    Log.i(logTag, "Stopping bound MyBufferService by unbinding it")
-                    foregroundServiceAudioBufferConnection.unBind()
-                    Toast.makeText(
-                        this,
-                        "Stopped buffering in the background",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    if (foregroundServiceAudioBufferConnection.service.isRecording()) {
+                        Log.i(logTag, "Stopping recording in MyBufferService")
+                        foregroundServiceAudioBufferConnection.service.stopRecording()
+                        Toast.makeText(
+                            this,
+                            "Stopped buffering in the background",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            this,
+                            "Buffer is not running",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 } else {
                     Log.e(logTag, "Buffer service is not running")
                     Toast.makeText(
                         this,
-                        "Buffer is not running",
+                        "Buffer service is not running",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -164,8 +160,8 @@ class MainActivity : ComponentActivity() {
             } else {
                 Toast.makeText(
                     this,
-                    "Buffer is not running. It has to be running to save it!",
-                    Toast.LENGTH_SHORT
+                    "ERROR: Buffer service is not running. There is no recording data.",
+                    Toast.LENGTH_LONG
                 ).show()
             }
         }
@@ -176,21 +172,33 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_settings -> {
+                Intent(this, SettingsActivity::class.java).also {
+                    it.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    startActivity(it)
+                }
+                true
+            }
+
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
     override fun onStop() {
         super.onStop()
-        mediaPlayerControl?.let {
-            mediaController?.setMediaPlayer(null) // Detach MediaController
-            mediaController?.hide()
-            mediaController = null
-        }
         mediaPlayer?.release()
         mediaPlayer = null
+        // Removed: mediaController?.setMediaPlayer(null)
+        mediaController?.hide()
+        mediaController = null
         mediaPlayerControl = null
-
-        if (foregroundServiceAudioBufferConnection.isBound) {
-            unbindService(foregroundServiceAudioBufferConnection)
-            foregroundServiceAudioBufferConnection.isBound = false // Update the flag
-        }
     }
 
     private fun haveAllPermissions(permissions: MutableList<String>): Boolean {
@@ -261,67 +269,75 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var dataIn: ByteArray
     private val saveFileInDirectoryLauncher =
-    registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val uri = result.data?.data
-            uri?.let {
-                try {
-                    val outputStream = contentResolver.openOutputStream(it)
-                    outputStream?.let { stream ->
-                        // Check MIME type (optional, consider more robust methods)
-                        val mimeType = contentResolver.getType(it)
-                        if (mimeType == "audio/wav" || it.path?.endsWith(".wav") == true) {
-                            try {
-                                foregroundServiceAudioBufferConnection.service.writeWavHeader(
-                                    stream, dataIn.size.toLong()
-                                )
-                                stream.write(dataIn)
-                                stream.flush()
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                val uri = result.data?.data
+                uri?.let {
+                    try {
+                        val outputStream = contentResolver.openOutputStream(it)
+                        outputStream?.let { stream ->
+                            // Check MIME type (optional, consider more robust methods)
+                            val mimeType = contentResolver.getType(it)
+                            if (mimeType == "audio/wav" || it.path?.endsWith(".wav") == true) {
+                                try {
+                                    foregroundServiceAudioBufferConnection.service.writeWavHeader(
+                                        stream, dataIn.size.toLong()
+                                    )
+                                    stream.write(dataIn)
+                                    stream.flush()
+                                    Snackbar.make(
+                                        findViewById(R.id.RootView),
+                                        "File saved successfully",
+                                        Snackbar.LENGTH_SHORT
+                                    ).show()
+                                } catch (e: IOException) {
+                                    Log.e(logTag, "Error writing data to stream", e)
+                                    Snackbar.make(
+                                        findViewById(R.id.RootView),
+                                        "ERROR: File failed to save fully",
+                                        Snackbar.LENGTH_LONG
+                                    ).show()
+                                }
+                            } else {
                                 Snackbar.make(
                                     findViewById(R.id.RootView),
-                                    "File saved successfully",
+                                    "Invalid file type. Please save as .wav",
                                     Snackbar.LENGTH_SHORT
                                 ).show()
                             }
-                            catch (e: IOException) {
-                                Log.e(logTag, "Error writing data to stream", e)
-                                Snackbar.make(
-                                    findViewById(R.id.RootView),
-                                    "ERROR: File failed to save fully",
-                                    Snackbar.LENGTH_LONG
-                                ).show()
-                            }
-                        } else {
+                            stream.close()
+                        } ?: run {
+                            // Handle case where output stream is null
+                            Log.e(logTag, "Failed to open output stream for $uri")
                             Snackbar.make(
                                 findViewById(R.id.RootView),
-                                "Invalid file type. Please save as .wav",
-                                Snackbar.LENGTH_SHORT
+                                "ERROR: Failed to open output stream",
+                                Snackbar.LENGTH_LONG
                             ).show()
                         }
-                        stream.close()
-                    } ?: run {
-                        // Handle case where output stream is null
-                        Log.e(logTag, "Failed to open output stream for $uri")
+                    } catch (e: IOException) {
+                        Log.e(logTag, "Failed to save file to $uri", e)
                         Snackbar.make(
-                             findViewById(R.id.RootView),
-                            "ERROR: Failed to open output stream",
-                            Snackbar.LENGTH_LONG
+                            findViewById(R.id.RootView),
+                            "Failed to save file",
+                            Snackbar.LENGTH_SHORT
                         ).show()
+                    } catch (e: SecurityException) {
+                        Log.e(logTag, "Permission denied to access $uri", e)
+                        Snackbar.make(
+                            findViewById(R.id.RootView),
+                            "Permission denied",
+                            Snackbar.LENGTH_SHORT
+                        ).show()
+                        // Request permission if needed
                     }
-                } catch (e: IOException) {
-                    Log.e(logTag, "Failed to save file to $uri", e)
-                    Snackbar.make(findViewById(R.id.RootView), "Failed to save file", Snackbar.LENGTH_SHORT).show()
-                } catch (e: SecurityException) {Log.e(logTag, "Permission denied to access $uri", e)
-                    Snackbar.make(findViewById(R.id.RootView), "Permission denied", Snackbar.LENGTH_SHORT).show()
-                    // Request permission if needed
+                } ?: run {
+                    // Handle case where uri is null
+                    Log.e(logTag, "No URI received from directory chooser")
+                    // Show error feedback
                 }
-            } ?: run {
-                // Handle case where uri is null
-                Log.e(logTag, "No URI received from directory chooser")
-                // Show error feedback
             }
         }
-    }
 
     private fun saveBufferToFile(data: ByteArray) {
         dataIn = data
@@ -363,7 +379,7 @@ class MainActivity : ComponentActivity() {
                     val parcelFileDescriptor = contentResolver.openFileDescriptor(uri!!, "r")
                     val fileDescriptor = parcelFileDescriptor?.fileDescriptor
                     val audioAttributes = AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                     mediaPlayer?.release() // Release any existing player
                     mediaPlayer = MediaPlayer().apply {
@@ -376,8 +392,10 @@ class MainActivity : ComponentActivity() {
                             mediaController?.show()
                         }
                         setOnCompletionListener {
-                            release()
-                            mediaPlayer = null
+                             mediaController?.setMediaPlayer(null)
+                             mediaController?.hide()
+                             mediaController = null
+                             mediaPlayerControl = null
                         }
                         setOnErrorListener { _, what, extra ->
                             Log.e("MediaPlayer", "Error occurred: $what, $extra")
@@ -409,7 +427,7 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "audio/*"
-            val mimeTypes = arrayOf("audio/wav","audio/x-wav")
+            val mimeTypes = arrayOf("audio/wav", "audio/x-wav")
             putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
         }
         filePickerLauncher.launch(intent)
