@@ -1,7 +1,10 @@
+import android.content.Context
 import android.media.MediaPlayer
+import android.util.Log
 import android.widget.MediaController
 
-class MediaPlayerControllerImpl(private val mediaPlayer: MediaPlayer) : MediaController.MediaPlayerControl {
+class MyMediaPlayerController(private val mediaPlayer: MediaPlayer) :
+    MediaController.MediaPlayerControl {
 
     override fun start() {
         mediaPlayer.start()
@@ -51,4 +54,20 @@ class MediaPlayerControllerImpl(private val mediaPlayer: MediaPlayer) : MediaCon
         return mediaPlayer.audioSessionId
     }
 
+}
+
+class MyMediaController(context: Context) : MediaController(context) {
+    private var allowHiding = false
+
+    override fun hide() {
+        if (allowHiding) {
+            super.hide()
+            Log.i("MyMediaController", "Hid MyMediaController")
+        }
+        Log.i("MyMediaController", "Tried to hide MyMediaController but it was not allowed")
+    }
+
+    fun setAllowHiding(allow: Boolean) {
+        allowHiding = allow
+    }
 }

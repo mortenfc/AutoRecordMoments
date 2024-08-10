@@ -1,6 +1,7 @@
 package com.example.recentaudiobuffer
 
-import MediaPlayerControllerImpl
+import MyMediaPlayerController
+import MyMediaController
 import android.Manifest
 import android.app.AlertDialog
 import android.content.ComponentName
@@ -9,7 +10,6 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
-import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
@@ -17,7 +17,6 @@ import android.provider.Settings
 import android.util.Log
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.MediaController
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.ActivityResultLauncher
@@ -27,6 +26,7 @@ import android.os.Build
 import android.view.Menu
 import android.view.MenuItem
 import androidx.appcompat.widget.Toolbar
+import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.snackbar.Snackbar
 import java.io.IOException
 
@@ -34,13 +34,14 @@ class MainActivity : AppCompatActivity() {
     private val logTag = "MainActivity"
 
     private val requiredPermissions = mutableListOf(
-        Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.FOREGROUND_SERVICE
+        Manifest.permission.RECORD_AUDIO, Manifest.permission.FOREGROUND_SERVICE
     )
 
+    private lateinit var mediaPlayerViewModel: MediaPlayerViewModel
+    private var mediaPlayerController: MyMediaPlayerController? = null
     private var mediaController: MyMediaController? = null
-    private var mediaPlayer: MediaPlayer? = null
-    private var mediaPlayerControl: MediaPlayerControllerImpl? = null
+
+    private var frameLayout: FrameLayout? = null
 
     private lateinit var foregroundServiceAudioBuffer: Intent
     private val foregroundServiceAudioBufferConnection = object : ServiceConnection {
@@ -64,10 +65,10 @@ class MainActivity : AppCompatActivity() {
             super.onBindingDied(name)
         }
 
-        fun unBind() {
-            unbindService(this)
-            isBound = false
-        }
+//        fun unBind() {
+//            unbindService(this)
+//            isBound = false
+//        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -99,24 +100,18 @@ class MainActivity : AppCompatActivity() {
                     Log.i(logTag, "Buffer service started and bound")
                 } else if (foregroundServiceAudioBufferConnection.service.isRecording()) {
                     Toast.makeText(
-                        this,
-                        "Buffer is already running!",
-                        Toast.LENGTH_SHORT
+                        this, "Buffer is already running!", Toast.LENGTH_SHORT
                     ).show()
                 } else {
                     foregroundServiceAudioBufferConnection.service.startRecording()
                     Toast.makeText(
-                        this,
-                        "Restarted buffering in the background",
-                        Toast.LENGTH_LONG
+                        this, "Restarted buffering in the background", Toast.LENGTH_LONG
                     ).show()
                 }
             } else {
                 getPermissions()
                 Toast.makeText(
-                    this,
-                    "Accept the permissions and then start again",
-                    Toast.LENGTH_LONG
+                    this, "Accept the permissions and then start again", Toast.LENGTH_LONG
                 ).show()
             }
         }
@@ -129,23 +124,17 @@ class MainActivity : AppCompatActivity() {
                         Log.i(logTag, "Stopping recording in MyBufferService")
                         foregroundServiceAudioBufferConnection.service.stopRecording()
                         Toast.makeText(
-                            this,
-                            "Stopped buffering in the background",
-                            Toast.LENGTH_SHORT
+                            this, "Stopped buffering in the background", Toast.LENGTH_SHORT
                         ).show()
                     } else {
                         Toast.makeText(
-                            this,
-                            "Buffer is not running",
-                            Toast.LENGTH_SHORT
+                            this, "Buffer is not running", Toast.LENGTH_SHORT
                         ).show()
                     }
                 } else {
                     Log.e(logTag, "Buffer service is not running")
                     Toast.makeText(
-                        this,
-                        "Buffer service is not running",
-                        Toast.LENGTH_SHORT
+                        this, "Buffer service is not running", Toast.LENGTH_SHORT
                     ).show()
                 }
             } else {
@@ -170,6 +159,17 @@ class MainActivity : AppCompatActivity() {
         pickAndPlay.setOnClickListener {
             pickAndPlayFile()
         }
+
+        frameLayout = FrameLayout(this).apply { // Initialize frameLayout here
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        frameLayout?.let {
+            addContentView(it, it.layoutParams)
+        }
+
+        mediaController = MyMediaController(this)
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -193,12 +193,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        mediaPlayer?.release()
-        mediaPlayer = null
-        // Removed: mediaController?.setMediaPlayer(null)
+        mediaPlayerController?.let{
+            if (it.isPlaying) {
+                it.pause()
+            }
+        }
+        mediaController?.setAllowHiding(true)
         mediaController?.hide()
-        mediaController = null
-        mediaPlayerControl = null
+        mediaController?.setAllowHiding(false)
+        mediaPlayerController = null
+        Log.i(logTag, "onStop() finished")
     }
 
     private fun haveAllPermissions(permissions: MutableList<String>): Boolean {
@@ -215,8 +219,7 @@ class MainActivity : AppCompatActivity() {
 
     private val settingsLauncher: ActivityResultLauncher<Intent> = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) {
-    }
+    ) {}
 
     private fun goToSettings() {
         Log.i(logTag, "goToSettings()")
@@ -238,18 +241,14 @@ class MainActivity : AppCompatActivity() {
     ) { isGranted: Boolean ->
         if (isGranted) {
             Toast.makeText(
-                this,
-                "$permissionIn permission granted!",
-                Toast.LENGTH_SHORT
+                this, "$permissionIn permission granted!", Toast.LENGTH_SHORT
             ).show()
         } else {
-            AlertDialog.Builder(this)
-                .setTitle("$permissionIn permission required")
+            AlertDialog.Builder(this).setTitle("$permissionIn permission required")
                 .setMessage("This permission is needed for this app to work")
                 .setPositiveButton("Open settings") { _, _ ->
                     goToSettings()
-                }
-                .create().show()
+                }.create().show()
         }
     }
 
@@ -325,9 +324,7 @@ class MainActivity : AppCompatActivity() {
                     } catch (e: SecurityException) {
                         Log.e(logTag, "Permission denied to access $uri", e)
                         Snackbar.make(
-                            findViewById(R.id.RootView),
-                            "Permission denied",
-                            Snackbar.LENGTH_SHORT
+                            findViewById(R.id.RootView), "Permission denied", Snackbar.LENGTH_SHORT
                         ).show()
                         // Request permission if needed
                     }
@@ -350,25 +347,6 @@ class MainActivity : AppCompatActivity() {
         saveFileInDirectoryLauncher.launch(intent)
     }
 
-    class MyMediaController(context: Context) : MediaController(context) {
-        override fun hide() {
-            // Don't hide
-        }
-    }
-
-    private fun createAudioPlayerUI() {// Create a FrameLayout that fills the screen
-        val frameLayout = FrameLayout(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-        addContentView(frameLayout, frameLayout.layoutParams)
-        val controller = MyMediaController(this)
-        controller.setAnchorView(frameLayout)
-        mediaController = controller
-    }
-
     private val filePickerLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) {
@@ -376,46 +354,24 @@ class MainActivity : AppCompatActivity() {
                 Log.i(logTag, "Picked file $uri")
 
                 try {
-                    val parcelFileDescriptor = contentResolver.openFileDescriptor(uri!!, "r")
-                    val fileDescriptor = parcelFileDescriptor?.fileDescriptor
+                    mediaPlayerViewModel = ViewModelProvider(this)[MediaPlayerViewModel::class.java]
                     val audioAttributes = AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                    mediaPlayer?.release() // Release any existing player
-                    mediaPlayer = MediaPlayer().apply {
-                        setAudioAttributes(audioAttributes)
-                        setDataSource(fileDescriptor)
-                        setOnPreparedListener { player ->
-                            createAudioPlayerUI()
-                            player.start()
-                            mediaController?.setMediaPlayer(mediaPlayerControl) // Set after start()
-                            mediaController?.show()
-                        }
-                        setOnCompletionListener {
-                             mediaController?.setMediaPlayer(null)
-                             mediaController?.hide()
-                             mediaController = null
-                             mediaPlayerControl = null
-                        }
-                        setOnErrorListener { _, what, extra ->
-                            Log.e("MediaPlayer", "Error occurred: $what, $extra")
-                            // Handle specific error cases here based on 'what' and 'extra'
-                            true
-                        }
-                        prepareAsync()
-                    }
-                    mediaPlayer?.let {
-                        mediaPlayerControl = MediaPlayerControllerImpl(it)
-                    } ?: run {
-                        Toast.makeText(this, "Failed to play audio file", Toast.LENGTH_SHORT).show()
-                        // Disable playback controls if necessary
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+                    mediaPlayerViewModel.createMediaPlayer(this, uri!!, audioAttributes) {
+                        mediaPlayerController = MyMediaPlayerController(
+                            mediaPlayerViewModel.mediaPlayer!!
+                        )
+                        mediaController?.setMediaPlayer(
+                            mediaPlayerController
+                        )
+                        mediaController?.setAnchorView(frameLayout)
+                        mediaController?.isEnabled = true
+                        mediaController?.show()
                     }
                 } catch (e: Exception) {
                     Log.e(logTag, "Failed to play file $uri with error: $e")
                     Toast.makeText(
-                        this,
-                        "Failed to play file $uri",
-                        Toast.LENGTH_LONG
+                        this, "Failed to play file $uri", Toast.LENGTH_LONG
                     ).show()
                 }
             }
