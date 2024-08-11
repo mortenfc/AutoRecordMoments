@@ -1,4 +1,4 @@
-package com.example.recentaudiobuffer
+package com.mfc.recentaudiobuffer
 
 import MyMediaPlayerController
 import MyMediaController
@@ -27,6 +27,7 @@ import android.view.Menu
 import android.view.MenuItem
 import androidx.appcompat.widget.Toolbar
 import androidx.lifecycle.ViewModelProvider
+import com.mfc.recentaudiobuffer.R
 import com.google.android.material.snackbar.Snackbar
 import java.io.IOException
 
@@ -193,7 +194,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        mediaPlayerController?.let{
+        mediaPlayerController?.let {
             if (it.isPlaying) {
                 it.pause()
             }

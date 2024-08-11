@@ -1,4 +1,4 @@
-package com.example.recentaudiobuffer.ui.theme
+package com.mfc.recentaudiobuffer.ui.theme
 
 import android.app.Activity
 import android.os.Build

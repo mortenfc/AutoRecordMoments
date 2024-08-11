@@ -1,12 +1,10 @@
-package com.example.recentaudiobuffer
+package com.mfc.recentaudiobuffer
 
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
 import android.util.Log
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import java.io.IOException
 
