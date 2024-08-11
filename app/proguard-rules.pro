@@ -19,3 +19,25 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep necessary application classes and components
+-keep class com.mfc.recentaudiobuffer.MainActivity
+-keep class com.mfc.recentaudiobuffer.SettingsActivity
+-keep class com.mfc.recentaudiobuffer.MyBufferService
+
+# General Proguard rules for optimization and obfuscation
+# (You can add more rules here based on your project's requirements)
+
+# Conditional logging based on build types
+-assumenosideeffects class android.util.Log {
+    # Verbose logging for 'devVerbose' build type
+    public static *** v(...);
+
+    # Debug logging for 'dev' build type
+    public static *** d(...);
+
+    # No logging for 'release' build type (except errors)
+    public static *** i(...);
+    public static *** w(...);
+    public static *** wtf(...);
+}

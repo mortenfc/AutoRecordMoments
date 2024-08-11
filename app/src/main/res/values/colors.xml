@@ -1,20 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
+    <color name="teal_900">#004D40</color>
+    <color name="teal_700">#00695C</color>
+    <color name="teal_500">#00897B</color>
+    <color name="teal_350">#4DB6AC</color>
+    <color name="teal_200">#B2DFDB</color>
+    <color name="teal_100">#B2DFDB</color>
+
+    <color name="purple_accent">#5317C8</color>
+
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 
-    <color name="colorPrimary">#6200EE</color>
-    <color name="colorPrimaryDark">#3700B3</color>
-    <color name="colorAccent">#03DAC5</color>
+    <color name="colorPrimary">@color/teal_500</color>
+    <color name="colorPrimaryDark">@color/teal_700</color>
+    <color name="colorAccent">@color/purple_accent</color>
 
-    <color name="startButtonColor">#4CAF50</color>
-    <color name="stopButtonColor">#F44336</color>
-    <color name="saveButtonColor">#2196F3</color>
-    <color name="playButtonColor">#FFC107</color>
+    <color name="startButtonColor">@color/teal_200</color>
+    <color name="stopButtonColor">@color/teal_200</color>
+    <color name="saveButtonColor">@color/teal_200</color>
+    <color name="playButtonColor">@color/teal_200</color>
 
 </resources>

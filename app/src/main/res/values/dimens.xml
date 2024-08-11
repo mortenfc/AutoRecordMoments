@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+<dimen name="button_outline_width">2dp</dimen>
+<dimen name="toolbar_outline_width_bottom">3dp</dimen>
+<dimen name="toolbar_outline_width_top">1dp</dimen>
+
+</resources>

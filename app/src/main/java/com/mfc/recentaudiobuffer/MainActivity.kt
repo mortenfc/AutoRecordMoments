@@ -9,6 +9,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
+import android.graphics.PorterDuff
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Bundle
@@ -23,10 +25,18 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import java.lang.Exception
 import android.os.Build
+import android.util.TypedValue
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.appcompat.widget.Toolbar
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
+import com.google.android.material.shape.CornerFamily
+import com.google.android.material.shape.MaterialShapeDrawable
+import com.google.android.material.shape.ShapeAppearanceModel
 import com.mfc.recentaudiobuffer.R
 import com.google.android.material.snackbar.Snackbar
 import java.io.IOException
@@ -65,11 +75,6 @@ class MainActivity : AppCompatActivity() {
             isBound = false
             super.onBindingDied(name)
         }
-
-//        fun unBind() {
-//            unbindService(this)
-//            isBound = false
-//        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,6 +94,7 @@ class MainActivity : AppCompatActivity() {
         getPermissions()
 
         val start: Button = findViewById(R.id.StartBuffering)
+        start.background = createOutlinedButtonBackground()
         start.setOnClickListener {
             if (haveAllPermissions(requiredPermissions)) {
                 if (!foregroundServiceAudioBufferConnection.isBound) {
@@ -118,6 +124,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val stop: Button = findViewById(R.id.StopBuffering)
+        stop.background = createOutlinedButtonBackground()
         stop.setOnClickListener {
             if (haveAllPermissions(requiredPermissions)) {
                 if (foregroundServiceAudioBufferConnection.isBound) {
@@ -144,6 +151,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val save: Button = findViewById(R.id.SaveBuffer)
+        save.background = createOutlinedButtonBackground()
         save.setOnClickListener {
             if (foregroundServiceAudioBufferConnection.isBound) {
                 saveBufferToFile(foregroundServiceAudioBufferConnection.service.getBuffer())
@@ -157,6 +165,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val pickAndPlay: Button = findViewById(R.id.PickAndPlayFile)
+        pickAndPlay.background = createOutlinedButtonBackground()
         pickAndPlay.setOnClickListener {
             pickAndPlayFile()
         }
@@ -173,22 +182,55 @@ class MainActivity : AppCompatActivity() {
         mediaController = MyMediaController(this)
     }
 
+    private fun createOutlinedButtonBackground(): MaterialShapeDrawable {
+        val shapeAppearanceModel = ShapeAppearanceModel().toBuilder()
+            .setAllCorners(
+                CornerFamily.ROUNDED,
+                1000.dpToPx(this)
+            ) // Adjust corner radius as needed
+            .build()
+
+        val materialShapeDrawable = MaterialShapeDrawable(shapeAppearanceModel)
+        materialShapeDrawable.fillColor =
+            ColorStateList.valueOf(ContextCompat.getColor(this, R.color.teal_350))
+        materialShapeDrawable.setStroke(
+            2.dpToPx(this),
+            ContextCompat.getColor(this, R.color.purple_accent)
+        )
+
+        return materialShapeDrawable
+    }
+
+    // Helper function to convert dp to pixels
+    private fun Int.dpToPx(context: Context): Float {
+        return TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), context.resources.displayMetrics
+        )
+    }
+
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
+
+        val settingsItem = menu.findItem(R.id.action_settings)
+        val actionView = settingsItem.actionView as LinearLayout
+        val iconView = actionView.findViewById<ImageView>(R.id.menu_icon)
+
+        iconView.setImageResource(R.drawable.baseline_settings_24)
+        iconView.setColorFilter(ContextCompat.getColor(this, R.color.white), PorterDuff.Mode.SRC_IN)
+
+        actionView.setOnClickListener {
+            Intent(this, SettingsActivity::class.java).also {
+                it.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                startActivity(it)
+            }
+        }
+
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
-            R.id.action_settings -> {
-                Intent(this, SettingsActivity::class.java).also {
-                    it.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                    startActivity(it)
-                }
-                true
-            }
-
-            else -> super.onOptionsItemSelected(item)
+            else -> super.onOptionsItemSelected(item) // Handle other menu items or let the superclass handle it
         }
     }
 

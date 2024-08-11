@@ -2,13 +2,16 @@ package com.mfc.recentaudiobuffer
 
 import android.content.Context
 import android.media.AudioFormat
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
 data class BitDepth(val bytes: Int, val encodingEnum: Int) {
@@ -16,12 +19,19 @@ data class BitDepth(val bytes: Int, val encodingEnum: Int) {
         return "$bytes,$encodingEnum"
     }
 
-//    companion object {
-//        fun fromString(value: String): BitDepth {
-//            val (bytes, encoding) = value.split(",").map { it.toInt() }
-//            return BitDepth(bytes, encoding)
-//        }
-//    }
+    companion object {
+        fun fromString(value: String): BitDepth? {
+            return try {
+                val (bytes, encoding) = value.split(",").map { it.toInt() }
+                BitDepth(bytes, encoding)
+            } catch (e: Exception) {
+                // Log the error for debugging
+                Log.e("BitDepth", "Error parsing BitDepth from string: $value", e)
+                // Return null to indicate parsing failure
+                null
+            }
+        }
+    }
 }
 
 public val bitDepths = mapOf(
@@ -43,7 +53,9 @@ public val sampleRates = mapOf(
     "192000" to 192000
 )
 
-public data class AudioConfig(var SAMPLE_RATE_HZ: Int, var BUFFER_TIME_LENGTH_S: Int, var BIT_DEPTH: BitDepth)
+public data class AudioConfig(
+    var SAMPLE_RATE_HZ: Int, var BUFFER_TIME_LENGTH_S: Int, var BIT_DEPTH: BitDepth
+)
 
 data class Settings(val sampleRate: Int, val bitDepth: BitDepth, val bufferTimeLengthS: Int)
 
@@ -57,13 +69,29 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         val BUFFER_TIME_LENGTH_S = intPreferencesKey("buffer_time_length")
     }
 
-    private val settings: Flow<Settings> = dataStore.data.map { preferences ->
-        Settings(
-            sampleRate = preferences[SAMPLE_RATE] ?: 22050,
-            bitDepth = bitDepths[preferences[BIT_DEPTH] ?: "8"] ?: error("Invalid bit depth"),
-            bufferTimeLengthS = preferences[BUFFER_TIME_LENGTH_S] ?: 120
-        )
-    }
+    private val settings: Flow<Settings> =
+        dataStore.data.catch { exception ->  // Catch exceptions in the flow
+                // Log the error for debugging
+                Log.e("SettingsRepository", "Error reading settings", exception)
+                // Emit default settings to avoid crashes
+                emit(emptyPreferences())
+            }.map { preferences ->
+                val bitDepthString =
+                    preferences[BIT_DEPTH] ?: "8" // Default to 16-bit if missing or invalid
+                var bitDepth = BitDepth.fromString(bitDepthString)
+                bitDepth = if (bitDepth == null) {
+                    Log.e("SettingsRepository", "Invalid bit depth: $bitDepthString")
+                    // Handle invalid bit depth (e.g., reset to default, show a message)
+                    bitDepths["8"]!! // Use a valid default BitDepth here
+                } else {
+                    bitDepth
+                }
+                Settings(
+                    sampleRate = preferences[SAMPLE_RATE] ?: 22050,
+                    bitDepth = bitDepth,
+                    bufferTimeLengthS = preferences[BUFFER_TIME_LENGTH_S] ?: 120
+                )
+            }
 
     val config: Flow<AudioConfig> = settings.map { settings ->
         AudioConfig(
@@ -74,18 +102,21 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     }
 
     suspend fun updateSampleRate(sampleRate: Int) {
+        Log.i("SettingsRepository", "updateSampleRate to $sampleRate")
         dataStore.edit { preferences ->
             preferences[SAMPLE_RATE] = sampleRate
         }
     }
 
     suspend fun updateBitDepth(bitDepth: BitDepth) {
+        Log.i("SettingsRepository", "updateBitDepth to $bitDepth")
         dataStore.edit { preferences ->
             preferences[BIT_DEPTH] = bitDepth.toString()
         }
     }
 
     suspend fun updateBufferTimeLength(bufferTimeLength: Int) {
+        Log.i("SettingsRepository", "updateBufferTimeLength to $bufferTimeLength")
         dataStore.edit { preferences ->
             preferences[BUFFER_TIME_LENGTH_S] = bufferTimeLength
         }

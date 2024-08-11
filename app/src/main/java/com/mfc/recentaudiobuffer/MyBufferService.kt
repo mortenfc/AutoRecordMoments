@@ -2,19 +2,23 @@ package com.mfc.recentaudiobuffer
 
 import android.Manifest
 import android.R.drawable.ic_media_play
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.widget.Toast
@@ -52,9 +56,16 @@ class MyBufferService : Service(), MainActivityInterface {
     private val lock = ReentrantLock()
     private val recordingStartedLatch = CountDownLatch(1)
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate() {
         Log.i(logTag, "onCreate()")
-        syncPreferences()
+
+        val intentFilter = IntentFilter("com.mfc.recentaudiobuffer.SETTINGS_UPDATED")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13 or higher
+            registerReceiver(settingsUpdateReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(settingsUpdateReceiver, intentFilter)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -347,6 +358,19 @@ class MyBufferService : Service(), MainActivityInterface {
 
         config = AudioConfig(sampleRate, bufferTimeLengthS, bitDepth)
         updateTotalBufferSize(config)
+
+        Log.i(
+            logTag,
+            "syncPreferences(): sampleRate = $sampleRate, bufferTimeLengthS = $bufferTimeLengthS, bitDepth = $bitDepth"
+        )
+    }
+
+    private val settingsUpdateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == "com.mfc.recentaudiobuffer.SETTINGS_UPDATED") {
+                syncPreferences()
+            }
+        }
     }
 
     override fun isRecording(): Boolean {

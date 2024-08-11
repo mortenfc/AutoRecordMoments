@@ -1,68 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="#C3FFC3">
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:app="http://schemas.android.com/apk/res-auto"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/teal_100">
 
     <com.google.android.material.appbar.AppBarLayout
-        android:id="@+id/appBarLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        app:layout_constraintTop_toTopOf="parent">
+            android:id="@+id/appBarLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:layout_constraintTop_toTopOf="parent">
 
         <androidx.appcompat.widget.Toolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:background="?attr/colorPrimary" />
+                android:id="@+id/toolbar"
+                android:layout_width="match_parent"
+                android:layout_height="?attr/actionBarSize"
+
+                style="@style/MyToolbarStyle"
+                android:background="@drawable/toolbar_outline" />
+
 
     </com.google.android.material.appbar.AppBarLayout>
 
     <LinearLayout
-        android:id="@+id/RootView"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:gravity="center"
-        android:orientation="vertical"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/appBarLayout">
+            android:id="@+id/RootView"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:gravity="center"
+            android:orientation="vertical"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/appBarLayout">
 
         <Button
-            android:id="@+id/StartBuffering"
-            style="@style/Widget.Material3.Button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/start_buffering_in_the_background"
-            android:backgroundTint="@color/startButtonColor"
-            android:layout_marginBottom="20dp" />
+                android:id="@+id/StartBuffering"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/start_buffering_in_the_background"
+                app:icon="@drawable/baseline_mic_24"
+                app:iconGravity="start"
+                app:iconTint="@color/white"
+                android:textColor="@color/teal_900"
+                android:layout_marginBottom="20dp" />
 
         <Button
-            android:id="@+id/StopBuffering"
-            style="@style/Widget.Material3.Button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/stop_buffering_in_the_background"
-            android:backgroundTint="@color/stopButtonColor"
-            android:layout_marginBottom="20dp" />
+                android:id="@+id/StopBuffering"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stop_buffering_in_the_background"
+                app:icon="@drawable/baseline_mic_off_24"
+                app:iconGravity="start"
+                app:iconTint="@color/white"
+                android:textColor="@color/teal_900"
+                android:layout_marginBottom="20dp" />
 
         <Button
-            android:id="@+id/SaveBuffer"
-            style="@style/Widget.Material3.Button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/save_the_buffer_as_a_recording"
-            android:backgroundTint="@color/saveButtonColor"
-            android:layout_marginBottom="20dp" />
+                android:id="@+id/SaveBuffer"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/save_the_buffer_as_a_recording"
+                app:icon="@drawable/baseline_save_alt_24"
+                app:iconGravity="start"
+                app:iconTint="@color/white"
+                android:textColor="@color/teal_900"
+                android:layout_marginBottom="20dp" />
 
         <Button
-            android:id="@+id/PickAndPlayFile"
-            style="@style/Widget.Material3.Button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/play_a_recording"
-            android:backgroundTint="@color/playButtonColor" />
+                android:id="@+id/PickAndPlayFile"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/play_a_recording"
+                app:icon="@drawable/baseline_play_circle_outline_24"
+                app:iconGravity="start"
+                app:iconTint="@color/white"
+                android:textColor="@color/teal_900" />
+
 
     </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>
