@@ -121,7 +121,7 @@ fun SettingsScreen(
                 onDismissRequest = { showSampleRateMenu = false },
             ) {
                 sampleRates.forEach { (label, value) ->
-                    StyledDropdownMenuItem(text = label, onClick = {
+                    StyledDropdownMenuItem(text = "$label Hz", onClick = {
                         Log.i("SettingsScreen", "Clicked SampleRate $label with value: $value")
                         settingsViewModel.updateSampleRate(value)
                         showSampleRateMenu = false
@@ -167,7 +167,7 @@ fun SettingsScreen(
                 expanded = showBitDepthMenu,
                 onDismissRequest = { showBitDepthMenu = false }) {
                 bitDepths.forEach { (label, value) ->
-                    StyledDropdownMenuItem(text = label, onClick = {
+                    StyledDropdownMenuItem(text = "$label bit", onClick = {
                         Log.i("SettingsScreen", "Clicked BitDepth $label with value: $value")
                         settingsViewModel.updateBitDepth(value)
                         showBitDepthMenu = false
@@ -314,7 +314,6 @@ fun StyledDropdownMenuItem(
                     context, R.color.purple_accent
                 )
             ),
-            leadingIconColor = Color.White,
         ),
     )
 }
