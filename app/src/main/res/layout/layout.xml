@@ -48,8 +48,20 @@
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/stop_buffering_in_the_background"
+                android:text="@string/pause_buffering_in_the_background"
                 app:icon="@drawable/baseline_mic_off_24"
+                app:iconGravity="start"
+                app:iconTint="@color/white"
+                android:textColor="@color/teal_900"
+                android:layout_marginBottom="20dp" />
+
+        <Button
+                android:id="@+id/ResetBuffer"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/clear_the_buffer"
+                app:icon="@drawable/baseline_delete_outline_24"
                 app:iconGravity="start"
                 app:iconTint="@color/white"
                 android:textColor="@color/teal_900"

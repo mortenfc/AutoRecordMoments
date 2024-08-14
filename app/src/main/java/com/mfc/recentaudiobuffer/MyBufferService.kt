@@ -28,6 +28,7 @@ import androidx.preference.PreferenceManager
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Arrays
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.properties.Delegates
@@ -38,6 +39,7 @@ interface MainActivityInterface {
     fun writeWavHeader(out: OutputStream, audioDataLen: Long)
     fun stopRecording()
     fun startRecording()
+    fun resetBuffer()
 }
 
 
@@ -381,6 +383,27 @@ class MyBufferService : Service(), MainActivityInterface {
         }
         return isRecording
     }
+
+    override fun resetBuffer() {
+        lock.lock()
+        try {
+            writeIndex = 0
+            readIndex = 0
+            Arrays.fill(buffer, 0.toByte()) // Clear the buffer
+            Log.i(logTag, "Buffer reset")
+            Toast.makeText(
+                this, "Buffer cleared!", Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            Log.e(logTag, "ERROR: Failed to clear buffer $e")
+            Toast.makeText(
+                this, "ERROR: Failed to clear buffer $e", Toast.LENGTH_LONG
+            ).show()
+        } finally {
+            lock.unlock()
+        }
+    }
+
 
     override fun startRecording() {
         if (!isRecording) {

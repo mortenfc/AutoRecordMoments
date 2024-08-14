@@ -150,6 +150,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val reset: Button = findViewById(R.id.ResetBuffer)
+        reset.background = createOutlinedButtonBackground()
+        reset.setOnClickListener {
+            if (foregroundServiceAudioBufferConnection.isBound) {
+                foregroundServiceAudioBufferConnection.service.resetBuffer()
+            } else {
+                Toast.makeText(this, "ERROR: Buffer service is not running. ", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         val save: Button = findViewById(R.id.SaveBuffer)
         save.background = createOutlinedButtonBackground()
         save.setOnClickListener {
@@ -158,7 +168,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 Toast.makeText(
                     this,
-                    "ERROR: Buffer service is not running. There is no recording data.",
+                    "ERROR: Buffer service is not running. There is no recorded data.",
                     Toast.LENGTH_LONG
                 ).show()
             }

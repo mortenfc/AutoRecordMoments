@@ -21,4 +21,6 @@
     </string>
     <string name="attachment_summary_off">Only download attachments when manually requested</string>
     <string name="settings">Settings</string>
+    <string name="pause_buffering_in_the_background">Pause buffering in the background</string>
+    <string name="clear_the_buffer">Clear the buffer</string>
 </resources>
