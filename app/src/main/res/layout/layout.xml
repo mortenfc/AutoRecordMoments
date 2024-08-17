@@ -31,65 +31,122 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintTop_toBottomOf="@id/appBarLayout">
 
-        <Button
+        <com.google.android.material.button.MaterialButton
                 android:id="@+id/StartBuffering"
                 style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
+                android:clickable="true"
+                android:layout_width="190dp"
                 android:layout_height="wrap_content"
                 android:text="@string/start_buffering_in_the_background"
                 app:icon="@drawable/baseline_mic_24"
                 app:iconGravity="start"
+                app:iconSize="22dp"
+                android:elevation="10dp"
+                android:shadowColor="@color/teal_900"
+                android:shadowRadius="60"
+                android:outlineAmbientShadowColor="@color/black"
+                android:outlineSpotShadowColor="@color/black"
+                app:rippleColor="@color/button_ripple"
+                app:backgroundTint="@color/teal_350"
+                app:strokeColor="@color/purple_accent"
+                app:strokeWidth="2dp"
                 app:iconTint="@color/white"
                 android:textColor="@color/teal_900"
-                android:layout_marginBottom="20dp" />
+                android:layout_marginBottom="30dp" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
                 android:id="@+id/StopBuffering"
                 style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
+                android:clickable="true"
+                android:layout_width="190dp"
                 android:layout_height="wrap_content"
                 android:text="@string/pause_buffering_in_the_background"
                 app:icon="@drawable/baseline_mic_off_24"
                 app:iconGravity="start"
+                app:iconSize="22dp"
+                android:elevation="10dp"
+                android:shadowColor="@color/teal_900"
+                android:shadowRadius="60"
+                android:outlineAmbientShadowColor="@color/black"
+                android:outlineSpotShadowColor="@color/black"
+                app:rippleColor="@color/button_ripple"
+                app:backgroundTint="@color/teal_350"
+                app:strokeColor="@color/purple_accent"
+                app:strokeWidth="2dp"
                 app:iconTint="@color/white"
                 android:textColor="@color/teal_900"
-                android:layout_marginBottom="20dp" />
+                android:layout_marginBottom="30dp" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
                 android:id="@+id/ResetBuffer"
                 style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
+                app:background="@drawable/gradient_button_background"
+                android:clickable="true"
+                android:layout_width="190dp"
                 android:layout_height="wrap_content"
                 android:text="@string/clear_the_buffer"
                 app:icon="@drawable/baseline_delete_outline_24"
                 app:iconGravity="start"
+                app:iconSize="22dp"
+                android:elevation="10dp"
+                android:shadowColor="@color/teal_900"
+                android:shadowRadius="60"
+                android:outlineAmbientShadowColor="@color/black"
+                android:outlineSpotShadowColor="@color/black"
+                app:rippleColor="@color/button_ripple"
+                app:backgroundTint="@color/teal_350"
+                app:strokeColor="@color/purple_accent"
+                app:strokeWidth="2dp"
                 app:iconTint="@color/white"
                 android:textColor="@color/teal_900"
-                android:layout_marginBottom="20dp" />
+                android:layout_marginBottom="30dp" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
                 android:id="@+id/SaveBuffer"
                 style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
+                app:background="@drawable/gradient_button_background"
+                android:clickable="true"
+                android:layout_width="190dp"
                 android:layout_height="wrap_content"
                 android:text="@string/save_the_buffer_as_a_recording"
                 app:icon="@drawable/baseline_save_alt_24"
                 app:iconGravity="start"
+                app:iconSize="22dp"
+                android:elevation="10dp"
+                android:shadowColor="@color/teal_900"
+                android:shadowRadius="60"
+                android:outlineAmbientShadowColor="@color/black"
+                android:outlineSpotShadowColor="@color/black"
+                app:rippleColor="@color/button_ripple"
+                app:backgroundTint="@color/teal_350"
+                app:strokeColor="@color/purple_accent"
+                app:strokeWidth="2dp"
                 app:iconTint="@color/white"
                 android:textColor="@color/teal_900"
-                android:layout_marginBottom="20dp" />
+                android:layout_marginBottom="30dp" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
                 android:id="@+id/PickAndPlayFile"
                 style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
+                app:background="@drawable/gradient_button_background"
+                android:clickable="true"
+                android:layout_width="190dp"
                 android:layout_height="wrap_content"
                 android:text="@string/play_a_recording"
                 app:icon="@drawable/baseline_play_circle_outline_24"
                 app:iconGravity="start"
+                app:iconSize="22dp"
+                android:elevation="10dp"
+                android:shadowColor="@color/teal_900"
+                android:shadowRadius="60"
+                android:outlineAmbientShadowColor="@color/black"
+                android:outlineSpotShadowColor="@color/black"
+                app:rippleColor="@color/button_ripple"
+                app:backgroundTint="@color/teal_350"
+                app:strokeColor="@color/purple_accent"
+                app:strokeWidth="2dp"
                 app:iconTint="@color/white"
                 android:textColor="@color/teal_900" />
-
 
     </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>

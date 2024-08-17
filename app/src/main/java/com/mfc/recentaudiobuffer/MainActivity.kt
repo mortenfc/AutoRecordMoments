@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
 import android.graphics.PorterDuff
 import android.media.AudioAttributes
 import android.net.Uri
@@ -25,7 +24,8 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import java.lang.Exception
 import android.os.Build
-import android.util.TypedValue
+import android.os.Handler
+import android.os.Looper
 import android.view.Menu
 import android.view.MenuItem
 import android.widget.ImageView
@@ -34,12 +34,10 @@ import android.widget.TextView
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
-import com.google.android.material.shape.CornerFamily
-import com.google.android.material.shape.MaterialShapeDrawable
-import com.google.android.material.shape.ShapeAppearanceModel
 import com.mfc.recentaudiobuffer.R
 import com.google.android.material.snackbar.Snackbar
 import java.io.IOException
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
     private val logTag = "MainActivity"
@@ -94,7 +92,6 @@ class MainActivity : AppCompatActivity() {
         getPermissions()
 
         val start: Button = findViewById(R.id.StartBuffering)
-        start.background = createOutlinedButtonBackground()
         start.setOnClickListener {
             if (haveAllPermissions(requiredPermissions)) {
                 if (!foregroundServiceAudioBufferConnection.isBound) {
@@ -124,7 +121,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         val stop: Button = findViewById(R.id.StopBuffering)
-        stop.background = createOutlinedButtonBackground()
         stop.setOnClickListener {
             if (haveAllPermissions(requiredPermissions)) {
                 if (foregroundServiceAudioBufferConnection.isBound) {
@@ -151,17 +147,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         val reset: Button = findViewById(R.id.ResetBuffer)
-        reset.background = createOutlinedButtonBackground()
         reset.setOnClickListener {
             if (foregroundServiceAudioBufferConnection.isBound) {
                 foregroundServiceAudioBufferConnection.service.resetBuffer()
             } else {
-                Toast.makeText(this, "ERROR: Buffer service is not running. ", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "ERROR: Buffer service is not running. ", Toast.LENGTH_SHORT)
+                    .show()
             }
         }
 
         val save: Button = findViewById(R.id.SaveBuffer)
-        save.background = createOutlinedButtonBackground()
         save.setOnClickListener {
             if (foregroundServiceAudioBufferConnection.isBound) {
                 saveBufferToFile(foregroundServiceAudioBufferConnection.service.getBuffer())
@@ -175,7 +170,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         val pickAndPlay: Button = findViewById(R.id.PickAndPlayFile)
-        pickAndPlay.background = createOutlinedButtonBackground()
         pickAndPlay.setOnClickListener {
             pickAndPlayFile()
         }
@@ -190,32 +184,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         mediaController = MyMediaController(this)
-    }
-
-    private fun createOutlinedButtonBackground(): MaterialShapeDrawable {
-        val shapeAppearanceModel = ShapeAppearanceModel().toBuilder()
-            .setAllCorners(
-                CornerFamily.ROUNDED,
-                1000.dpToPx(this)
-            ) // Adjust corner radius as needed
-            .build()
-
-        val materialShapeDrawable = MaterialShapeDrawable(shapeAppearanceModel)
-        materialShapeDrawable.fillColor =
-            ColorStateList.valueOf(ContextCompat.getColor(this, R.color.teal_350))
-        materialShapeDrawable.setStroke(
-            2.dpToPx(this),
-            ContextCompat.getColor(this, R.color.purple_accent)
-        )
-
-        return materialShapeDrawable
-    }
-
-    // Helper function to convert dp to pixels
-    private fun Int.dpToPx(context: Context): Float {
-        return TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), context.resources.displayMetrics
-        )
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -411,15 +379,34 @@ class MainActivity : AppCompatActivity() {
                     val audioAttributes = AudioAttributes.Builder()
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
                     mediaPlayerViewModel.createMediaPlayer(this, uri!!, audioAttributes) {
-                        mediaPlayerController = MyMediaPlayerController(
-                            mediaPlayerViewModel.mediaPlayer!!
-                        )
-                        mediaController?.setMediaPlayer(
-                            mediaPlayerController
-                        )
+                        mediaPlayerController =
+                            MyMediaPlayerController(mediaPlayerViewModel.mediaPlayer!!)
+                        mediaController?.setMediaPlayer(mediaPlayerController)
                         mediaController?.setAnchorView(frameLayout)
                         mediaController?.isEnabled = true
-                        mediaController?.show()
+                        mediaController?.show(0) // Show indefinitely
+
+                        // Update the duration display initially
+                        val duration = mediaPlayerController?.duration ?: 0
+                        mediaController?.getUpdateTime(0, duration) // Update initially
+
+                        // Update the duration display periodically
+                        val handler = Handler(Looper.getMainLooper())
+                        val updateRunnable = object : Runnable {
+                            override fun run() {
+                                val currentPosition = mediaPlayerController?.currentPosition ?: 0
+                                val playedDuration = mediaPlayerController?.duration ?: 0
+                                mediaController?.getUpdateTime(currentPosition, playedDuration)
+
+                                handler.postDelayed(this, 100) // Update every 0.1 second
+                            }
+                        }
+
+                        handler.post(updateRunnable)
+
+                        mediaPlayerViewModel.mediaPlayer?.setOnCompletionListener {
+                            handler.removeCallbacks(updateRunnable)
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(logTag, "Failed to play file $uri with error: $e")

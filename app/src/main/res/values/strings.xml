@@ -1,9 +1,11 @@
 <resources>
     <string name="app_name">Recent Audio Buffer</string>
-    <string name="save_the_buffer_as_a_recording">Save the buffer as a recording</string>
-    <string name="play_a_recording">Play a recording</string>
-    <string name="stop_buffering_in_the_background">Stop buffering in the background</string>
-    <string name="start_buffering_in_the_background">Start buffering in the background</string>
+
+    <string name="start_buffering_in_the_background">Start recording</string>
+    <string name="pause_buffering_in_the_background">Pause recording</string>
+    <string name="clear_the_buffer">Clear recording</string>
+    <string name="save_the_buffer_as_a_recording">Save recording</string>
+    <string name="play_a_recording">Play file</string>
     <string name="title_activity_settings">SettingsActivity</string>
 
     <!-- Preference Titles -->
@@ -21,6 +23,8 @@
     </string>
     <string name="attachment_summary_off">Only download attachments when manually requested</string>
     <string name="settings">Settings</string>
-    <string name="pause_buffering_in_the_background">Pause buffering in the background</string>
-    <string name="clear_the_buffer">Clear the buffer</string>
+
+    <!-- Media -->
+    <string name="time_display">%1$s / %2$s</string>
+    <string name="initial_duration">%1$02d:%2$02d:%3$03d</string>
 </resources>

@@ -6,30 +6,15 @@
     <color name="teal_350">#4DB6AC</color>
     <color name="teal_200">#8ADCD8</color>
     <color name="teal_100">#B2DFDB</color>
+    <color name="button_ripple">#AAB2DFDB</color>
 
     <color name="purple_accent">#5317C8</color>
 
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 
-<!--    <color name="colorPrimary">@color/teal_500</color>-->
-<!--    <color name="colorPrimaryDark">@color/teal_700</color>-->
-<!--    <color name="colorAccent">@color/purple_accent</color>-->
-
-<!--    <color name="startButtonColor">@color/teal_200</color>-->
-<!--    <color name="stopButtonColor">@color/teal_200</color>-->
-<!--    <color name="saveButtonColor">@color/teal_200</color>-->
-<!--    <color name="playButtonColor">@color/teal_200</color>-->
-
-    <color name="colorPrimary">#008577</color>
-    <color name="colorPrimaryDark">#00574B</color>
-    <color name="colorPrimaryLight">#82B1FF</color>
-    <color name="colorAccent">#D81B60</color>
-
-    <color name="startButtonColor">#4CAF50</color>
-    <color name="stopButtonColor">#F44336</color>
-    <color name="saveButtonColor">#2196F3</color>
-    <color name="playButtonColor">#FFC107</color>
-    <color name="resetButtonColor">#9C27B0</color>
-
+    <color name="colorPrimary">@color/teal_500</color>
+    <color name="colorPrimaryDark">@color/teal_700</color>
+    <color name="colorPrimaryLight">@color/teal_200</color>
+    <color name="colorAccent">@color/purple_accent</color>
 </resources>

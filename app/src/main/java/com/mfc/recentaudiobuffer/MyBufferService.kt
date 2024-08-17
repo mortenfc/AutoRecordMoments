@@ -24,13 +24,21 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.preference.PreferenceManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Arrays
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.locks.ReentrantLock
+import kotlin.math.max
 import kotlin.properties.Delegates
 
 interface MainActivityInterface {
@@ -91,7 +99,6 @@ class MyBufferService : Service(), MainActivityInterface {
     private fun updateTotalBufferSize(config: AudioConfig) {
         TOTAL_RING_BUFFER_SIZE =
             config.SAMPLE_RATE_HZ * (config.BIT_DEPTH.bytes / 8) * config.BUFFER_TIME_LENGTH_S
-        buffer = ByteArray(TOTAL_RING_BUFFER_SIZE)
     }
 
     private fun prepareAndStartRecording(): Int {
@@ -157,14 +164,7 @@ class MyBufferService : Service(), MainActivityInterface {
             return
         }
 
-        // Ensure TOTAL_RING_BUFFER_SIZE is at least twice minBufferSize
-        val ringBufferSize = if (TOTAL_RING_BUFFER_SIZE < minBufferSize * 2) {
-            minBufferSize * 2
-        } else {
-            TOTAL_RING_BUFFER_SIZE
-        }
-
-        buffer = ByteArray(ringBufferSize)
+        buffer = ByteArray(max(TOTAL_RING_BUFFER_SIZE, minBufferSize * 2))
 
         val permission = Manifest.permission.RECORD_AUDIO
         val granted = PackageManager.PERMISSION_GRANTED
@@ -351,14 +351,31 @@ class MyBufferService : Service(), MainActivityInterface {
     }
 
     private fun syncPreferences() {
-        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-        val sampleRate = sampleRates[sharedPreferences.getString("sample_rate", "22050")]
-            ?: error("Invalid sample rate")
-        val bufferTimeLengthS = sharedPreferences.getString("buffer_time", "120")?.toInt() ?: 120
-        val bitDepth =
-            bitDepths[sharedPreferences.getString("bit_depth", "8")] ?: error("Invalid bit depth")
+        // Access DataStore using application context
+        val dataStore = applicationContext.dataStore
 
-        config = AudioConfig(sampleRate, bufferTimeLengthS, bitDepth)
+        // Read from DataStore synchronously (blocking call)
+        val preferences = runBlocking {
+            dataStore.data.catch { exception ->
+                // Log the error for debugging
+                Log.e("syncPreferences", "Error reading settings", exception)
+                // Emit empty preferences to avoid crashes
+                emit(emptyPreferences())
+            }.first() // Get the first (and only) value emitted by the flow
+        }
+
+        val sampleRate = preferences[SettingsRepository.SAMPLE_RATE] ?: 22050
+        val bufferTimeLengthS = preferences[SettingsRepository.BUFFER_TIME_LENGTH_S] ?: 120
+
+        val bitDepthString = preferences[SettingsRepository.BIT_DEPTH] ?: "8"
+        val bitDepth = BitDepth.fromString(bitDepthString) ?: bitDepths["8"]!!
+
+        // Initialize config directly
+        config = AudioConfig(
+            SAMPLE_RATE_HZ = sampleRate,
+            BUFFER_TIME_LENGTH_S = bufferTimeLengthS,
+            BIT_DEPTH = bitDepth
+        )
         updateTotalBufferSize(config)
 
         Log.i(
