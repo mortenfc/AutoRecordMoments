@@ -81,7 +81,7 @@ class MyMediaController : WidgetMediaController {
         val formattedDuration = formatDuration(duration)
         val formattedCurrentTime = formatDuration(currentTime)
         val timeText = context.getString(R.string.time_display, formattedCurrentTime, formattedDuration)
-        Log.d("MyMediaController", "Setting duration text: $timeText")
+//        Log.d("MyMediaController", "Setting duration text: $timeText")
         durationTextView?.text = timeText
         durationTextView?.invalidate()
     }

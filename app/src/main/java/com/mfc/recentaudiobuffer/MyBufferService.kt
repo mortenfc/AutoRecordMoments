@@ -59,10 +59,10 @@ class MyBufferService : Service(), MainActivityInterface {
     private var TOTAL_RING_BUFFER_SIZE by Delegates.notNull<Int>()
     private lateinit var buffer: ByteArray
 
+    private var hasOverflowed = false
     private var recorder: AudioRecord? = null
     private var isRecording = false
-    private var writeIndex = 0
-    private var readIndex = 0
+    private var recorderIndex = 0
     private val lock = ReentrantLock()
     private val recordingStartedLatch = CountDownLatch(1)
 
@@ -99,6 +99,7 @@ class MyBufferService : Service(), MainActivityInterface {
     private fun updateTotalBufferSize(config: AudioConfig) {
         TOTAL_RING_BUFFER_SIZE =
             config.SAMPLE_RATE_HZ * (config.BIT_DEPTH.bytes / 8) * config.BUFFER_TIME_LENGTH_S
+        buffer = ByteArray(TOTAL_RING_BUFFER_SIZE)
     }
 
     private fun prepareAndStartRecording(): Int {
@@ -151,11 +152,11 @@ class MyBufferService : Service(), MainActivityInterface {
             .setSampleRate(config.SAMPLE_RATE_HZ).setChannelMask(AudioFormat.CHANNEL_IN_MONO)
             .build()
 
-        val minBufferSize = AudioRecord.getMinBufferSize(
+        val minReadChunkSize = AudioRecord.getMinBufferSize(
             audioFormat.sampleRate, audioFormat.channelMask, audioFormat.encoding
         )
 
-        if (minBufferSize <= 0) {
+        if (minReadChunkSize <= 0) {
             Log.e(logTag, "Minimum buffer size <= 0 somehow")
             Toast.makeText(
                 this, "ERROR: Minimum buffer size <= 0 somehow", Toast.LENGTH_LONG
@@ -163,8 +164,6 @@ class MyBufferService : Service(), MainActivityInterface {
             stopSelf()
             return
         }
-
-        buffer = ByteArray(max(TOTAL_RING_BUFFER_SIZE, minBufferSize * 2))
 
         val permission = Manifest.permission.RECORD_AUDIO
         val granted = PackageManager.PERMISSION_GRANTED
@@ -181,8 +180,12 @@ class MyBufferService : Service(), MainActivityInterface {
         }
 
         // Permission has been granted
-        recorder = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.MIC)
-            .setAudioFormat(audioFormat).setBufferSizeInBytes(minBufferSize).build()
+        recorder = AudioRecord
+            .Builder()
+            .setAudioSource(MediaRecorder.AudioSource.MIC)
+            .setAudioFormat(audioFormat)
+            .setBufferSizeInBytes(TOTAL_RING_BUFFER_SIZE)
+            .build()
 
         try {
             isRecording = true
@@ -193,13 +196,21 @@ class MyBufferService : Service(), MainActivityInterface {
                 while (isRecording) {
                     lock.lock()
                     try {
-                        // Read in chunks of minBufferSize
-                        val readResult = recorder?.read(buffer, writeIndex, minBufferSize) ?: -1
+                        // Read in chunks of minReadChunkSize.
+                        // If next chunk will cause overflow, continue recording from beginning and overriding
+                        if (recorderIndex + minReadChunkSize >= TOTAL_RING_BUFFER_SIZE)
+                        {
+                            recorderIndex = 0
+                            hasOverflowed = true
+                            Log.d(logTag, "Buffer overflowed. recorderIndex reset to 0")
+                        }
+
+                        val readResult = recorder?.read(buffer, recorderIndex, minReadChunkSize) ?: -1
                         Log.d(
-                            logTag, "readResult: $readResult, writeIndex before update: $writeIndex"
+                            logTag, "readResult: $readResult, recorderIndex before update: $recorderIndex"
                         ) // Log before update
                         if (readResult > 0) {
-                            writeIndex = (writeIndex + readResult) % buffer.size
+                            recorderIndex = (recorderIndex + readResult) % TOTAL_RING_BUFFER_SIZE
                         } else if (readResult == AudioRecord.ERROR_INVALID_OPERATION) {
                             Log.e(logTag, "AudioRecord invalid operation")
                         } else if (readResult == AudioRecord.ERROR_BAD_VALUE) {
@@ -298,56 +309,25 @@ class MyBufferService : Service(), MainActivityInterface {
     }
 
     override fun getBuffer(): ByteArray {
-        val data = ByteArray(TOTAL_RING_BUFFER_SIZE)
-        val bytesRead =
-            readFromBuffer(dest = data, offset = 0, bytesToRead = TOTAL_RING_BUFFER_SIZE)
-        Log.i(
-            logTag, "getBuffer() read $bytesRead bytes of ${data.size} total available buffer bytes"
-        )
-        if (bytesRead == 0) {
-            Log.w(logTag, "getBuffer(): Buffer is empty!")
-        }
-        return data.copyOf(bytesRead)
-    }
-
-    private fun readFromBuffer(
-        dest: ByteArray, offset: Int, bytesToRead: Int
-    ): Int {
+        var shiftedBuffer: ByteArray? = null
         lock.lock()
         try {
-            val bytesAvailable = if (writeIndex >= readIndex) {
-                writeIndex - readIndex
+            if (hasOverflowed) {
+                // Return the entire buffer, shifted at recorderIndex
+                shiftedBuffer = ByteArray(TOTAL_RING_BUFFER_SIZE)
+                val bytesToEnd = TOTAL_RING_BUFFER_SIZE - recorderIndex
+                System.arraycopy(buffer, recorderIndex, shiftedBuffer, 0, bytesToEnd)
+                System.arraycopy(buffer, 0, shiftedBuffer, bytesToEnd, recorderIndex)
+                return shiftedBuffer
             } else {
-                buffer.size - readIndex + writeIndex
+                // Return only the relevant portion up to recorderIndex
+                shiftedBuffer = buffer.copyOf(recorderIndex)
             }
-            Log.d(
-                logTag,
-                "readFromBuffer(): bytesAvailable = $bytesAvailable, writeIndex = $writeIndex, readIndex = $readIndex"
-            )
-
-            val bytesToCopy = minOf(bytesToRead, bytesAvailable)
-            Log.d(logTag, "readFromBuffer(): bytesToCopy = $bytesToCopy")
-            Log.d(logTag, "readFromBuffer(): buffer.size = ${buffer.size}")
-
-            if (readIndex + bytesToCopy <= buffer.size) {
-                System.arraycopy(buffer, readIndex, dest, offset, bytesToCopy)
-            } else {
-                val bytesToEnd = buffer.size - readIndex
-                Log.d(logTag, "readFromBuffer(): bytesToEnd = $bytesToEnd")
-                System.arraycopy(buffer, readIndex, dest, offset, bytesToEnd)
-                System.arraycopy(buffer, 0, dest, offset + bytesToEnd, bytesToCopy - bytesToEnd)
-            }
-
-            // OR Simplified copy logic using a single `arraycopy`
-            // System.arraycopy(buffer, readIndex, dest, offset, bytesToCopy)
-
-            readIndex = (readIndex + bytesToCopy) % buffer.size
-            Log.d(logTag, "readFromBuffer(): readIndex updated to $readIndex")
-
-            return bytesToCopy
         } finally {
             lock.unlock()
         }
+
+        return shiftedBuffer!!
     }
 
     private fun syncPreferences() {
@@ -404,8 +384,8 @@ class MyBufferService : Service(), MainActivityInterface {
     override fun resetBuffer() {
         lock.lock()
         try {
-            writeIndex = 0
-            readIndex = 0
+            recorderIndex = 0
+            hasOverflowed = false
             Arrays.fill(buffer, 0.toByte()) // Clear the buffer
             Log.i(logTag, "Buffer reset")
             Toast.makeText(
