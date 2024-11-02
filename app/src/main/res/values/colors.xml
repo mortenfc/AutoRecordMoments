@@ -17,4 +17,6 @@
     <color name="colorPrimaryDark">@color/teal_700</color>
     <color name="colorPrimaryLight">@color/teal_200</color>
     <color name="colorAccent">@color/purple_accent</color>
+
+    <color name="colorBackground">#fafafa</color>
 </resources>
