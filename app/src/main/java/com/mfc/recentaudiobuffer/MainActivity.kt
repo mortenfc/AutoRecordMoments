@@ -16,6 +16,7 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.graphics.PorterDuff
+import android.graphics.Rect
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Binder
@@ -39,6 +40,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.Menu
 import android.view.MenuItem
+import android.view.MotionEvent
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -62,7 +64,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.regex.Pattern
 
 class MainActivity : AppCompatActivity() {
@@ -215,9 +221,7 @@ class MainActivity : AppCompatActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
             )
         }
-        frameLayout?.let {
-            addContentView(it, it.layoutParams)
-        }
+        addContentView(frameLayout, frameLayout?.layoutParams)
 
         mediaController = MyMediaController(this)
     }
@@ -250,6 +254,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        closeMediaPlayer()
+        Log.i(logTag, "onStop() finished")
+    }
+
+    private fun closeMediaPlayer() {
         mediaPlayerController?.let {
             if (it.isPlaying) {
                 it.pause()
@@ -257,9 +266,8 @@ class MainActivity : AppCompatActivity() {
         }
         mediaController?.setAllowHiding(true)
         mediaController?.hide()
-        mediaController?.setAllowHiding(false)
+//        mediaController?.setAllowHiding(false) // Would prevent back button from hiding it
         mediaPlayerController = null
-        Log.i(logTag, "onStop() finished")
     }
 
     private fun haveAllPermissions(permissions: MutableList<String>): Boolean {
@@ -323,40 +331,6 @@ class MainActivity : AppCompatActivity() {
         Log.i(logTag, "done getPermissions()")
     }
 
-//    private lateinit var readBufferForFile: ByteArray
-
-    //    private val openDocumentTreeLauncher =
-//        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { directoryUri: Uri? ->
-//            directoryUri?.let {
-//                grantedDirectoryUri = it // Save the permission to save files on this uri
-//
-//                // Create an intent for creating a new document
-//                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-//                    addCategory(Intent.CATEGORY_OPENABLE)
-//                    type = "audio/wav"
-//                    putExtra(Intent.EXTRA_TITLE, "a_nice_name.wav")
-//
-//                    // Set the parent directory URI (if supported by the system)
-//                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-//                        putExtra(DocumentsContract.EXTRA_INITIAL_URI, directoryUri)
-//                    }
-//                }
-//
-//                // Launch the intent using an activity result launcher
-//                createDocumentLauncher.launch(intent)
-//            }
-//        }
-//
-//    // Activity result launcher for ACTION_CREATE_DOCUMENT
-//    private val createDocumentLauncher =
-//        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-//            if (result.resultCode == Activity.RESULT_OK) {
-//                result.data?.data?.let { uri ->
-//                    saveFile(readBufferForFile, uri) // Save the data to the created file URI
-//                }
-//            }
-//        }
-//
     private fun saveFile(data: ByteArray, uri: Uri?) {
         uri?.let {
             try {
@@ -394,9 +368,7 @@ class MainActivity : AppCompatActivity() {
             } catch (e: IOException) {
                 Log.e(logTag, "Failed to save file to $uri", e)
                 Snackbar.make(
-                    findViewById(R.id.RootView),
-                    "Failed to save file",
-                    Snackbar.LENGTH_SHORT
+                    findViewById(R.id.RootView), "Failed to save file", Snackbar.LENGTH_SHORT
                 ).show()
             } catch (e: SecurityException) {
                 Log.e(logTag, "Permission denied to access $uri", e)
@@ -418,6 +390,18 @@ class MainActivity : AppCompatActivity() {
         val sharedPrefs = context.getSharedPreferences("MyPrefs", Context.MODE_PRIVATE)
         val uriString = sharedPrefs.getString("grantedUri", null)
         return if (uriString != null) Uri.parse(uriString) else null
+    }
+
+    private fun fileExists(fileUri: Uri): Boolean {
+        return try {
+            contentResolver.openInputStream(fileUri)?.use { true } ?: false
+        } catch (e: FileNotFoundException) {
+            false
+        } catch (e: Exception) {
+            // Handle other exceptions, e.g., SecurityException
+            Log.e("fileExists", "Error checking file existence: ${e.message}", e)
+            false
+        }
     }
 
     private val grantedUriMutex = Mutex()
@@ -461,15 +445,21 @@ class MainActivity : AppCompatActivity() {
             builder.setPositiveButton("OK") { _, _ ->
                 val inputFilename = input.text.toString()
 
-                val filename = if (inputFilename.endsWith(".wav", ignoreCase = true)) {
+                var filename = if (inputFilename.endsWith(".wav", ignoreCase = true)) {
                     inputFilename // Already ends with .wav, no change needed
                 } else {
-                    "$inputFilename.wav" // Append .wav if it's not present
+                    val baseName = inputFilename.substringBeforeLast(".") // Extract base name
+                    "$baseName.wav" // Append .wav to the base name
                 }
 
-                val fileUri = grantedUri.buildUpon()
-                    .appendPath(filename)
-                    .build()
+                val timestamp =
+                    SimpleDateFormat("yy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
+                filename = "${filename.substringBeforeLast(".")}_${timestamp}.wav"
+
+                val fileUri = grantedUri.buildUpon().appendPath(filename).build()
+                if (fileExists(fileUri)) {
+                    // Do nothing for now, just overwrite
+                }
 
                 fileUri?.let {
                     saveFile(data, it)
@@ -477,9 +467,7 @@ class MainActivity : AppCompatActivity() {
                     // Handle file creation failure
                     runOnUiThread {
                         Toast.makeText(
-                            this@MainActivity,
-                            "Error creating file",
-                            Toast.LENGTH_SHORT
+                            this@MainActivity, "Error creating file", Toast.LENGTH_SHORT
                         ).show()
                         Log.e(logTag, "Failed to create file: $filename")
                     }
@@ -493,9 +481,7 @@ class MainActivity : AppCompatActivity() {
             // Handle case where directory access is not granted
             runOnUiThread {
                 Toast.makeText(
-                    this@MainActivity,
-                    "Directory access not granted",
-                    Toast.LENGTH_SHORT
+                    this@MainActivity, "Directory access not granted", Toast.LENGTH_SHORT
                 ).show()
                 // You might want to request permission again or guide the user to settings
             }
@@ -504,17 +490,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun setUpMediaPlayer(selectedMediaToPlayUri: Uri) {
         mediaPlayerViewModel = ViewModelProvider(this)[MediaPlayerViewModel::class.java]
-        val audioAttributes = AudioAttributes.Builder()
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
+        val audioAttributes =
+            AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
 
         mediaPlayerViewModel.createMediaPlayer(
-            this,
-            selectedMediaToPlayUri,
-            audioAttributes
+            this, selectedMediaToPlayUri, audioAttributes
         ) {
-            mediaPlayerController =
-                MyMediaPlayerController(mediaPlayerViewModel.mediaPlayer!!)
+            mediaPlayerController = MyMediaPlayerController(mediaPlayerViewModel.mediaPlayer!!)
             mediaController?.setMediaPlayer(mediaPlayerController)
             mediaController?.setAnchorView(frameLayout)
             mediaController?.isEnabled = true
