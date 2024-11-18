@@ -3,23 +3,22 @@ package com.mfc.recentaudiobuffer
 import MyMediaPlayerController
 import MyMediaController
 import android.Manifest
-import android.app.Activity
+import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.ComponentName
-import android.content.ContentResolver
-import android.content.ContentUris
-import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.database.Cursor
 import android.graphics.PorterDuff
-import android.graphics.Rect
 import android.media.AudioAttributes
 import android.net.Uri
-import android.os.Binder
 import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
@@ -36,49 +35,70 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
-import android.provider.MediaStore
-import android.provider.OpenableColumns
 import android.view.Menu
 import android.view.MenuItem
-import android.view.MotionEvent
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.activity.result.IntentSenderRequest
+import androidx.activity.viewModels
 import androidx.appcompat.widget.Toolbar
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.core.net.toUri
-import androidx.documentfile.provider.DocumentFile
-import androidx.documentfile.provider.DocumentFile.fromTreeUri
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import arte.programar.materialfile.MaterialFilePicker
-import arte.programar.materialfile.ui.FilePickerActivity
-import com.mfc.recentaudiobuffer.R
 import com.google.android.material.snackbar.Snackbar
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.regex.Pattern
+import java.util.concurrent.atomic.AtomicBoolean
+
+class SharedViewModel : ViewModel(), RecordingStateListener {
+    var myBufferService: MyBufferServiceInterface? = null
+    private val _isRecording = MutableLiveData(false)
+    val isRecording: LiveData<Boolean> = _isRecording
+
+    override fun onRecordingStateChanged(isRecording: Boolean) {
+        updateRecordingState(isRecording)
+    }
+
+    private fun updateRecordingState(isRecording: Boolean) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            _isRecording.value = isRecording // Update directly on main thread
+        } else {
+            _isRecording.postValue(isRecording) // Update safely from background thread
+        }
+    }
+}
 
 class MainActivity : AppCompatActivity() {
     private val logTag = "MainActivity"
+    private val sharedViewModel: SharedViewModel by viewModels()
+    private lateinit var myBufferService: MyBufferServiceInterface
 
-    private val requiredPermissions = mutableListOf(
-        Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.FOREGROUND_SERVICE,
-        Manifest.permission.READ_MEDIA_AUDIO
-    )
+    private val requiredPermissions = if (Build.VERSION.SDK_INT >= 33) {
+        mutableListOf(
+            Manifest.permission.POST_NOTIFICATIONS,
+            Manifest.permission.READ_MEDIA_AUDIO,
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.FOREGROUND_SERVICE
+        )
+    } else {
+        mutableListOf(
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.FOREGROUND_SERVICE
+        )
+    }
 
     private lateinit var mediaPlayerViewModel: MediaPlayerViewModel
     private var mediaPlayerController: MyMediaPlayerController? = null
@@ -88,13 +108,19 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var foregroundServiceAudioBuffer: Intent
     private val foregroundServiceAudioBufferConnection = object : ServiceConnection {
-        lateinit var service: MainActivityInterface
         var isBound: Boolean = false
+        private lateinit var service: MyBufferServiceInterface
 
         override fun onServiceConnected(className: ComponentName, ibinder: IBinder) {
             val binder = ibinder as MyBufferService.MyBinder
             this.service = binder.getService()
-            isBound = true
+            myBufferService = this.service
+            sharedViewModel.myBufferService = this.service
+            this.isBound = true
+            sharedViewModel.isRecording.observe(this@MainActivity) {
+                createRecordingNotification()
+            }
+            sharedViewModel.myBufferService?.recordingStateListener = sharedViewModel
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
@@ -128,72 +154,23 @@ class MainActivity : AppCompatActivity() {
 
         getPermissions()
 
-        val start: Button = findViewById(R.id.StartBuffering)
-        start.setOnClickListener {
-            if (haveAllPermissions(requiredPermissions)) {
-                if (!foregroundServiceAudioBufferConnection.isBound) {
-                    this.startForegroundService(foregroundServiceAudioBuffer)
-                    bindService(
-                        Intent(this, MyBufferService::class.java),
-                        foregroundServiceAudioBufferConnection,
-                        BIND_AUTO_CREATE
-                    )
-                    Log.i(logTag, "Buffer service started and bound")
-                } else if (foregroundServiceAudioBufferConnection.service.isRecording()) {
-                    Toast.makeText(
-                        this, "Buffer is already running!", Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    foregroundServiceAudioBufferConnection.service.startRecording()
-                    Toast.makeText(
-                        this, "Restarted buffering in the background", Toast.LENGTH_LONG
-                    ).show()
-                }
-            } else {
-                getPermissions()
-                Toast.makeText(
-                    this, "Accept the permissions and then start again", Toast.LENGTH_LONG
-                ).show()
-            }
+        findViewById<Button>(R.id.StartBuffering).setOnClickListener {
+            onClickStartRecording()
         }
-
-        val stop: Button = findViewById(R.id.StopBuffering)
-        stop.setOnClickListener {
-            if (foregroundServiceAudioBufferConnection.isBound) {
-                if (foregroundServiceAudioBufferConnection.service.isRecording()) {
-                    Log.i(logTag, "Stopping recording in MyBufferService")
-                    foregroundServiceAudioBufferConnection.service.stopRecording()
-                    Toast.makeText(
-                        this, "Stopped buffering in the background", Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    Toast.makeText(
-                        this, "Buffer is not running", Toast.LENGTH_SHORT
-                    ).show()
-                }
-            } else {
-                Log.e(logTag, "Buffer service is not running")
-                Toast.makeText(
-                    this, "Buffer service is not running", Toast.LENGTH_SHORT
-                ).show()
-            }
+        findViewById<Button>(R.id.StopBuffering).setOnClickListener {
+            onClickStopRecording()
         }
-
-        val reset: Button = findViewById(R.id.ResetBuffer)
-        reset.setOnClickListener {
-            if (foregroundServiceAudioBufferConnection.isBound) {
-                foregroundServiceAudioBufferConnection.service.resetBuffer()
-            } else {
-                Toast.makeText(this, "ERROR: Buffer service is not running. ", Toast.LENGTH_SHORT)
-                    .show()
-            }
+        findViewById<Button>(R.id.ResetBuffer).setOnClickListener {
+            onClickResetBuffer()
         }
-
-        val save: Button = findViewById(R.id.SaveBuffer)
-        save.setOnClickListener {
+        findViewById<Button>(R.id.SaveBuffer).setOnClickListener {
             if (foregroundServiceAudioBufferConnection.isBound) {
                 lifecycleScope.launch {
-                    saveBufferToFile(foregroundServiceAudioBufferConnection.service.getBuffer())
+                    onClickStopRecording()
+                    if (saveBufferToFile(myBufferService.getBuffer())) {
+                        Log.d(logTag, "Saved buffer, reset it")
+                        onClickResetBuffer()
+                    }
                 }
             } else {
                 Toast.makeText(
@@ -203,9 +180,7 @@ class MainActivity : AppCompatActivity() {
                 ).show()
             }
         }
-
-        val pickAndPlay: Button = findViewById(R.id.PickAndPlayFile)
-        pickAndPlay.setOnClickListener {
+        findViewById<Button>(R.id.PickAndPlayFile).setOnClickListener {
             if (haveAllPermissions(requiredPermissions)) {
                 pickAndPlayFile()
             } else {
@@ -224,6 +199,19 @@ class MainActivity : AppCompatActivity() {
         addContentView(frameLayout, frameLayout?.layoutParams)
 
         mediaController = MyMediaController(this)
+
+        ContextCompat.registerReceiver(
+            this,
+            NotificationActionReceiver(),
+            IntentFilter().apply {
+                addAction(NotificationActionReceiver.ACTION_STOP_RECORDING)
+                addAction(NotificationActionReceiver.ACTION_START_RECORDING)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
+        ViewModelHolder.setSharedViewModel(sharedViewModel)
+
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -256,6 +244,126 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
         closeMediaPlayer()
         Log.i(logTag, "onStop() finished")
+    }
+
+    private fun onClickStartRecording() {
+        if (haveAllPermissions(requiredPermissions)) {
+            if (!foregroundServiceAudioBufferConnection.isBound) {
+                this.startForegroundService(foregroundServiceAudioBuffer)
+                bindService(
+                    Intent(this, MyBufferService::class.java),
+                    foregroundServiceAudioBufferConnection,
+                    BIND_AUTO_CREATE
+                )
+                Log.i(logTag, "Buffer service started and bound")
+                Log.i(logTag, "Created chronic notification")
+            } else if (myBufferService.isRecording()) {
+                Toast.makeText(
+                    this, "Buffer is already running!", Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                myBufferService.startRecording()
+                sharedViewModel.isRecording.observe(this) {
+                    createRecordingNotification()
+                }
+                Toast.makeText(
+                    this, "Restarted buffering in the background", Toast.LENGTH_LONG
+                ).show()
+            }
+        } else {
+            getPermissions()
+            Toast.makeText(
+                this, "Accept the permissions and then start again", Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun onClickStopRecording() {
+        if (foregroundServiceAudioBufferConnection.isBound) {
+            if (myBufferService.isRecording()) {
+                Log.i(logTag, "Stopping recording in MyBufferService")
+                myBufferService.stopRecording()
+                Toast.makeText(
+                    this, "Stopped buffering in the background", Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                Toast.makeText(
+                    this, "Buffer is not running", Toast.LENGTH_SHORT
+                ).show()
+            }
+        } else {
+            Log.e(logTag, "Buffer service is not running")
+            Toast.makeText(
+                this, "Buffer service is not running", Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun onClickResetBuffer() {
+        if (foregroundServiceAudioBufferConnection.isBound) {
+            myBufferService.resetBuffer()
+        } else {
+            Toast.makeText(this, "ERROR: Buffer service is not running. ", Toast.LENGTH_SHORT)
+                .show()
+        }
+    }
+
+    companion object {
+        private const val NOTIFICATION_ID = 1
+        private const val CHANNEL_ID = "recording_channel"
+        private const val CHANNEL_NAME = "Recording Into Ringbuffer"
+        private const val CHANNEL_DESCRIPTION = "Buffering recorder in the background"
+        private const val REQUEST_CODE_STOP = 1
+        private const val REQUEST_CODE_START = 2
+    }
+
+    private fun createNotificationChannel() {
+        val channel = NotificationChannel(
+            CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = CHANNEL_DESCRIPTION
+        }
+        val notificationManager =
+            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannel(channel)
+    }
+
+    private fun createRecordingNotification() {
+        createNotificationChannel()
+
+        val stopIntent = PendingIntent.getBroadcast(
+            this, REQUEST_CODE_STOP, Intent(this, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_STOP_RECORDING
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val startIntent = PendingIntent.getBroadcast(
+            this, REQUEST_CODE_START, // Define this request code
+            Intent(this, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_START_RECORDING
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val recordingNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Recording Audio") // Set the title
+            .setContentText(if (myBufferService.isRecording()) "Running...\n" else "Stopped.\n") // Update
+            .addAction(
+                if (myBufferService.isRecording()) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24, // Update icon
+                if (myBufferService.isRecording()) "Stop" else "Start", // Update action text
+                if (myBufferService.isRecording()) stopIntent else startIntent // Update PendingIntent
+            ).setAutoCancel(false) // Keep notification after being tapped
+            .setSmallIcon(R.drawable.baseline_record_voice_over_24) // Set the small icon
+            .setOngoing(true) // Make it a chronic notification
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_STATUS).build()
+
+        with(NotificationManagerCompat.from(this)) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                notify(NOTIFICATION_ID, recordingNotification)
+            } else {
+                // Not possible as notification is created in start which requires all permissions
+            }
+        }
     }
 
     private fun closeMediaPlayer() {
@@ -331,13 +439,14 @@ class MainActivity : AppCompatActivity() {
         Log.i(logTag, "done getPermissions()")
     }
 
-    private fun saveFile(data: ByteArray, uri: Uri?) {
+    private fun saveFile(data: ByteArray, uri: Uri?): Boolean {
+        var success = false
         uri?.let {
             try {
                 val outputStream = contentResolver.openOutputStream(it)
                 outputStream?.let { stream ->
                     try {
-                        foregroundServiceAudioBufferConnection.service.writeWavHeader(
+                        myBufferService.writeWavHeader(
                             stream, data.size.toLong()
                         )
                         stream.write(data)
@@ -347,6 +456,8 @@ class MainActivity : AppCompatActivity() {
                             "File saved successfully",
                             Snackbar.LENGTH_SHORT
                         ).show()
+
+                        success = true
                     } catch (e: IOException) {
                         Log.e(logTag, "Error writing data to stream", e)
                         Snackbar.make(
@@ -379,6 +490,8 @@ class MainActivity : AppCompatActivity() {
         } ?: run {
             Log.e(logTag, "No URI received from directory chooser")
         }
+
+        return success
     }
 
     private fun cacheGrantedUri(context: Context, uri: Uri) {
@@ -404,6 +517,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var isGrantedUriSet = AtomicBoolean(false)
     private val grantedUriMutex = Mutex()
     private var grantedDirectoryUri: Uri? = null
 
@@ -413,22 +527,26 @@ class MainActivity : AppCompatActivity() {
                 lifecycleScope.launch { // Launch a new coroutine
                     grantedUriMutex.withLock { // Now allowed inside the coroutine
                         grantedDirectoryUri = it // Save the permission to save files on this uri
+                        isGrantedUriSet.set(true)
                     }
                 }
             }
         }
 
-    private suspend fun saveBufferToFile(data: ByteArray) {
+    @SuppressLint("SetTextI18n")
+    private suspend fun saveBufferToFile(data: ByteArray): Boolean {
+        var success = false
         if (grantedDirectoryUri == null) {
             grantedDirectoryUri =
                 Uri.fromFile(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS))
             saveStorageUriPermission.launch(grantedDirectoryUri)
             grantedUriMutex.withLock {
-                while (grantedDirectoryUri == null) {
+                while (!isGrantedUriSet.get()) {
                     delay(10)
                 }
             }
             cacheGrantedUri(this, grantedDirectoryUri!!)
+            isGrantedUriSet.set(false)
         } else {
             grantedDirectoryUri = getCachedGrantedUri(ContextWrapper(this))
         }
@@ -458,11 +576,21 @@ class MainActivity : AppCompatActivity() {
 
                 val fileUri = grantedUri.buildUpon().appendPath(filename).build()
                 if (fileExists(fileUri)) {
-                    // Do nothing for now, just overwrite
+                    runOnUiThread {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Somehow this filename and timestamp already existed, overwrote it: $filename",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        Log.e(
+                            logTag,
+                            "Somehow this filename and timestamp already existed, overwrote it: $filename"
+                        )
+                    }
                 }
 
                 fileUri?.let {
-                    saveFile(data, it)
+                    success = saveFile(data, it)
                 } ?: run {
                     // Handle file creation failure
                     runOnUiThread {
@@ -486,6 +614,8 @@ class MainActivity : AppCompatActivity() {
                 // You might want to request permission again or guide the user to settings
             }
         }
+
+        return success
     }
 
     private fun setUpMediaPlayer(selectedMediaToPlayUri: Uri) {

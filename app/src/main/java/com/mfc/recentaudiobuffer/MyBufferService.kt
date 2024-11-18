@@ -41,17 +41,21 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.math.max
 import kotlin.properties.Delegates
 
-interface MainActivityInterface {
+interface MyBufferServiceInterface {
     fun getBuffer(): ByteArray
     fun isRecording(): Boolean
     fun writeWavHeader(out: OutputStream, audioDataLen: Long)
     fun stopRecording()
     fun startRecording()
     fun resetBuffer()
+    var recordingStateListener: RecordingStateListener?
 }
 
+interface RecordingStateListener {
+    fun onRecordingStateChanged(isRecording: Boolean)
+}
 
-class MyBufferService : Service(), MainActivityInterface {
+class MyBufferService : Service(), MyBufferServiceInterface {
     private val logTag = "MyBufferService"
 
     // Calculate the maximum total buffer size
@@ -66,8 +70,12 @@ class MyBufferService : Service(), MainActivityInterface {
     private val lock = ReentrantLock()
     private val recordingStartedLatch = CountDownLatch(1)
 
+    override var recordingStateListener: RecordingStateListener? = null
+
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate() {
+        super.onCreate()
+        recordingStateListener = ViewModelHolder.getSharedViewModel() // Set the listener
         Log.i(logTag, "onCreate()")
 
         val intentFilter = IntentFilter("com.mfc.recentaudiobuffer.SETTINGS_UPDATED")
@@ -189,6 +197,7 @@ class MyBufferService : Service(), MainActivityInterface {
 
         try {
             isRecording = true
+            recordingStateListener?.onRecordingStateChanged(true)
             Thread {
                 recorder?.startRecording() // Start recording
                 recordingStartedLatch.countDown()
@@ -236,6 +245,7 @@ class MyBufferService : Service(), MainActivityInterface {
                 recorder?.stop()
                 recorder?.release()
                 recorder = null
+                recordingStateListener?.onRecordingStateChanged(false)
             }.start()
         } catch (e: IllegalArgumentException) {
             Log.e(logTag, "startBuffering() failed: illegal argument", e)
@@ -248,6 +258,7 @@ class MyBufferService : Service(), MainActivityInterface {
 
     override fun stopRecording() {
         isRecording = false
+        recordingStateListener?.onRecordingStateChanged(false)
     }
 
     override fun writeWavHeader(out: OutputStream, audioDataLen: Long) {
@@ -409,7 +420,7 @@ class MyBufferService : Service(), MainActivityInterface {
     }
 
     inner class MyBinder : Binder() {
-        fun getService(): MainActivityInterface = this@MyBufferService
+        fun getService(): MyBufferServiceInterface = this@MyBufferService
     }
 
     private val binder = MyBinder()
