@@ -28,4 +28,5 @@
     <string name="time_display">%1$s / %2$s</string>
     <string name="initial_duration">%1$02d:%2$02d:%3$03d</string>
     <string name="rename_file">Rename File</string>
+    <string name="DefaultRecordingName">recording.wav</string>
 </resources>

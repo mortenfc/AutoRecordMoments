@@ -4,6 +4,7 @@ import MyMediaPlayerController
 import MyMediaController
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.AlertDialog
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -84,6 +85,7 @@ class MainActivity : AppCompatActivity() {
     private val logTag = "MainActivity"
     private val sharedViewModel: SharedViewModel by viewModels()
     private lateinit var myBufferService: MyBufferServiceInterface
+    private lateinit var saveStorageUriPermission: ActivityResultLauncher<Uri?>
 
     private val requiredPermissions = if (Build.VERSION.SDK_INT >= 33) {
         mutableListOf(
@@ -98,6 +100,16 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.FOREGROUND_SERVICE
         )
+    }
+
+    companion object {
+        private const val NOTIFICATION_ID = 1
+        private const val CHANNEL_ID = "recording_channel"
+        private const val CHANNEL_NAME = "Recording Into Ringbuffer"
+        private const val CHANNEL_DESCRIPTION = "Buffering recorder in the background"
+        private const val REQUEST_CODE_STOP = 1
+        private const val REQUEST_CODE_START = 2
+        private const val REQUEST_CODE_SAVE = 3
     }
 
     private lateinit var mediaPlayerViewModel: MediaPlayerViewModel
@@ -154,6 +166,30 @@ class MainActivity : AppCompatActivity() {
 
         getPermissions()
 
+        saveStorageUriPermission =
+            registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { grantedDirectoryUri: Uri? ->
+                if (grantedDirectoryUri != null) {
+                    lifecycleScope.launch {
+                        FileSavingUtils.cacheGrantedUri(
+                            this@MainActivity,
+                            grantedDirectoryUri
+                        )
+                        if (FileSavingUtils.promptSaveFileName(
+                                this@MainActivity,
+                                grantedDirectoryUri,
+                                myBufferService.getBuffer()
+                            )
+                        ) {
+                            Log.d(logTag, "Saved buffer, reset it")
+                            onClickResetBuffer()
+                        }
+                    }
+                } else {
+                    // Handle case where grantedUri is null
+                    Toast.makeText(this, "Error getting granted URI", Toast.LENGTH_SHORT).show()
+                }
+            }
+
         findViewById<Button>(R.id.StartBuffering).setOnClickListener {
             onClickStartRecording()
         }
@@ -167,9 +203,17 @@ class MainActivity : AppCompatActivity() {
             if (foregroundServiceAudioBufferConnection.isBound) {
                 lifecycleScope.launch {
                     onClickStopRecording()
-                    if (saveBufferToFile(myBufferService.getBuffer())) {
-                        Log.d(logTag, "Saved buffer, reset it")
-                        onClickResetBuffer()
+                    val grantedUri = FileSavingUtils.getCachedGrantedUri(this@MainActivity)
+                    if (grantedUri != null) {
+                        // Use previously permitted cached uri
+                        FileSavingUtils.promptSaveFileName(
+                            this@MainActivity,
+                            grantedUri,
+                            myBufferService.getBuffer()
+                        )
+                    } else {
+                        // Otherwise get file saving location permission
+                        saveStorageUriPermission.launch(null)
                     }
                 }
             } else {
@@ -211,7 +255,6 @@ class MainActivity : AppCompatActivity() {
         )
 
         ViewModelHolder.setSharedViewModel(sharedViewModel)
-
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -308,15 +351,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    companion object {
-        private const val NOTIFICATION_ID = 1
-        private const val CHANNEL_ID = "recording_channel"
-        private const val CHANNEL_NAME = "Recording Into Ringbuffer"
-        private const val CHANNEL_DESCRIPTION = "Buffering recorder in the background"
-        private const val REQUEST_CODE_STOP = 1
-        private const val REQUEST_CODE_START = 2
-    }
-
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW
@@ -344,13 +378,27 @@ class MainActivity : AppCompatActivity() {
             }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val saveIntent = PendingIntent.getBroadcast(
+            this,
+            REQUEST_CODE_SAVE,
+            Intent(this, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_SAVE_RECORDING
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val recordingNotification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Recording Audio") // Set the title
             .setContentText(if (myBufferService.isRecording()) "Running...\n" else "Stopped.\n") // Update
             .addAction(
-                if (myBufferService.isRecording()) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24, // Update icon
-                if (myBufferService.isRecording()) "Stop" else "Start", // Update action text
+                if (myBufferService.isRecording()) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24,
+                if (myBufferService.isRecording()) "Stop" else "Restart", // Update action text
                 if (myBufferService.isRecording()) stopIntent else startIntent // Update PendingIntent
+            ).setAutoCancel(false)
+            .addAction(
+                if (myBufferService.isRecording()) R.drawable.baseline_save_alt_24 else 0,
+                if (myBufferService.isRecording()) "Save and clear" else null,
+                if (myBufferService.isRecording()) saveIntent else null
             ).setAutoCancel(false) // Keep notification after being tapped
             .setSmallIcon(R.drawable.baseline_record_voice_over_24) // Set the small icon
             .setOngoing(true) // Make it a chronic notification
@@ -437,185 +485,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         Log.i(logTag, "done getPermissions()")
-    }
-
-    private fun saveFile(data: ByteArray, uri: Uri?): Boolean {
-        var success = false
-        uri?.let {
-            try {
-                val outputStream = contentResolver.openOutputStream(it)
-                outputStream?.let { stream ->
-                    try {
-                        myBufferService.writeWavHeader(
-                            stream, data.size.toLong()
-                        )
-                        stream.write(data)
-                        stream.flush()
-                        Snackbar.make(
-                            findViewById(R.id.RootView),
-                            "File saved successfully",
-                            Snackbar.LENGTH_SHORT
-                        ).show()
-
-                        success = true
-                    } catch (e: IOException) {
-                        Log.e(logTag, "Error writing data to stream", e)
-                        Snackbar.make(
-                            findViewById(R.id.RootView),
-                            "ERROR: File failed to save fully",
-                            Snackbar.LENGTH_LONG
-                        ).show()
-                    } finally {
-                        stream.close()
-                    }
-                } ?: run {
-                    Log.e(logTag, "Failed to open output stream for $uri")
-                    Snackbar.make(
-                        findViewById(R.id.RootView),
-                        "ERROR: Failed to open output stream",
-                        Snackbar.LENGTH_LONG
-                    ).show()
-                }
-            } catch (e: IOException) {
-                Log.e(logTag, "Failed to save file to $uri", e)
-                Snackbar.make(
-                    findViewById(R.id.RootView), "Failed to save file", Snackbar.LENGTH_SHORT
-                ).show()
-            } catch (e: SecurityException) {
-                Log.e(logTag, "Permission denied to access $uri", e)
-                Snackbar.make(
-                    findViewById(R.id.RootView), "Permission denied", Snackbar.LENGTH_SHORT
-                ).show()
-            }
-        } ?: run {
-            Log.e(logTag, "No URI received from directory chooser")
-        }
-
-        return success
-    }
-
-    private fun cacheGrantedUri(context: Context, uri: Uri) {
-        val sharedPrefs = context.getSharedPreferences("MyPrefs", Context.MODE_PRIVATE)
-        sharedPrefs.edit().putString("grantedUri", uri.toString()).apply()
-    }
-
-    private fun getCachedGrantedUri(context: Context): Uri? {
-        val sharedPrefs = context.getSharedPreferences("MyPrefs", Context.MODE_PRIVATE)
-        val uriString = sharedPrefs.getString("grantedUri", null)
-        return if (uriString != null) Uri.parse(uriString) else null
-    }
-
-    private fun fileExists(fileUri: Uri): Boolean {
-        return try {
-            contentResolver.openInputStream(fileUri)?.use { true } ?: false
-        } catch (e: FileNotFoundException) {
-            false
-        } catch (e: Exception) {
-            // Handle other exceptions, e.g., SecurityException
-            Log.e("fileExists", "Error checking file existence: ${e.message}", e)
-            false
-        }
-    }
-
-    private var isGrantedUriSet = AtomicBoolean(false)
-    private val grantedUriMutex = Mutex()
-    private var grantedDirectoryUri: Uri? = null
-
-    private val saveStorageUriPermission =
-        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { directoryUri: Uri? ->
-            directoryUri?.let {
-                lifecycleScope.launch { // Launch a new coroutine
-                    grantedUriMutex.withLock { // Now allowed inside the coroutine
-                        grantedDirectoryUri = it // Save the permission to save files on this uri
-                        isGrantedUriSet.set(true)
-                    }
-                }
-            }
-        }
-
-    @SuppressLint("SetTextI18n")
-    private suspend fun saveBufferToFile(data: ByteArray): Boolean {
-        var success = false
-        if (grantedDirectoryUri == null) {
-            grantedDirectoryUri =
-                Uri.fromFile(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS))
-            saveStorageUriPermission.launch(grantedDirectoryUri)
-            grantedUriMutex.withLock {
-                while (!isGrantedUriSet.get()) {
-                    delay(10)
-                }
-            }
-            cacheGrantedUri(this, grantedDirectoryUri!!)
-            isGrantedUriSet.set(false)
-        } else {
-            grantedDirectoryUri = getCachedGrantedUri(ContextWrapper(this))
-        }
-
-        Log.i(logTag, "saveBufferToFile()")
-
-        grantedDirectoryUri?.let { grantedUri ->
-            // 1. Prompt for filename here
-            val builder = AlertDialog.Builder(this)
-            builder.setTitle("Enter Filename")
-            val input = EditText(this)
-            input.setText("recording.wav") // Default filename
-            builder.setView(input)
-            builder.setPositiveButton("OK") { _, _ ->
-                val inputFilename = input.text.toString()
-
-                var filename = if (inputFilename.endsWith(".wav", ignoreCase = true)) {
-                    inputFilename // Already ends with .wav, no change needed
-                } else {
-                    val baseName = inputFilename.substringBeforeLast(".") // Extract base name
-                    "$baseName.wav" // Append .wav to the base name
-                }
-
-                val timestamp =
-                    SimpleDateFormat("yy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
-                filename = "${filename.substringBeforeLast(".")}_${timestamp}.wav"
-
-                val fileUri = grantedUri.buildUpon().appendPath(filename).build()
-                if (fileExists(fileUri)) {
-                    runOnUiThread {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Somehow this filename and timestamp already existed, overwrote it: $filename",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        Log.e(
-                            logTag,
-                            "Somehow this filename and timestamp already existed, overwrote it: $filename"
-                        )
-                    }
-                }
-
-                fileUri?.let {
-                    success = saveFile(data, it)
-                } ?: run {
-                    // Handle file creation failure
-                    runOnUiThread {
-                        Toast.makeText(
-                            this@MainActivity, "Error creating file", Toast.LENGTH_SHORT
-                        ).show()
-                        Log.e(logTag, "Failed to create file: $filename")
-                    }
-                }
-//                }
-            }
-            builder.setNegativeButton("Cancel") { dialog, _ -> dialog.cancel() }
-            builder.show()
-
-        } ?: run {
-            // Handle case where directory access is not granted
-            runOnUiThread {
-                Toast.makeText(
-                    this@MainActivity, "Directory access not granted", Toast.LENGTH_SHORT
-                ).show()
-                // You might want to request permission again or guide the user to settings
-            }
-        }
-
-        return success
     }
 
     private fun setUpMediaPlayer(selectedMediaToPlayUri: Uri) {
