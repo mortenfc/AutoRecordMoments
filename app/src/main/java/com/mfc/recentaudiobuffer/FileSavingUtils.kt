@@ -2,16 +2,16 @@ package com.mfc.recentaudiobuffer
 
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
 import android.widget.EditText
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationCompat
 import androidx.test.internal.runner.junit4.statement.UiThreadStatement.runOnUiThread
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -25,7 +25,23 @@ class FileSavingService : Service() {
         val audioData = intent?.getByteArrayExtra("audioData")
 
         if (grantedUri != null && audioData != null) {
-            FileSavingUtils.fixBaseNameToSave(this, grantedUri, audioData, "quick_save")
+            val notificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (FileSavingUtils.fixBaseNameToSave(this, grantedUri, audioData, "quick_save")) {
+                val notification = NotificationCompat.Builder(this, "save_notification_success_id")
+                    .setContentTitle("Audio Saved and Cleared")
+                    .setContentText("The recent audio buffer has been saved and cleared.")
+                    .setSmallIcon(R.drawable.file_save_success)
+                    .build()
+                notificationManager.notify(1, notification)
+            } else {
+                val notification = NotificationCompat.Builder(this, "save_notification_failure_id")
+                    .setContentTitle("ERROR: Audio failed to save")
+                    .setContentText("Use the app view instead")
+                    .setSmallIcon(R.drawable.file_save_failure_notification_icon)
+                    .build()
+                notificationManager.notify(0, notification)
+            }
         } else {
             Log.e("FileSavingService", "Failed to save file to $grantedUri, of data: $audioData")
         }

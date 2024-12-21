@@ -31,19 +31,13 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
             ACTION_SAVE_RECORDING -> {
                 val grantedUri = FileSavingUtils.getCachedGrantedUri(context)
-                if (grantedUri != null) {
-                    // Use previously permitted cached uri
-                    val saveIntent = Intent(context, FileSavingService::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        .putExtra("grantedUri", grantedUri)
-                        .putExtra("audioData", myBufferService?.getBuffer())
-                    context.startService(saveIntent)
-                } else {
-                    // Otherwise get file saving location permission
-                    // You might need to launch an activity to request permission here
-                    // or handle this case differently based on your app's flow
-                    // ...
-                }
+                // Null of grantedUri is handled in the file saving service
+                val saveIntent = Intent(context, FileSavingService::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .putExtra("grantedUri", grantedUri)
+                    .putExtra("audioData", myBufferService?.getBuffer())
+                context.startService(saveIntent)
+                myBufferService?.resetBuffer()
             }
         }
     }

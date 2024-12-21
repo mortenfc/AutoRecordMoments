@@ -3,16 +3,12 @@ package com.mfc.recentaudiobuffer
 import MyMediaPlayerController
 import MyMediaController
 import android.Manifest
-import android.annotation.SuppressLint
-import android.app.Activity
 import android.app.AlertDialog
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
 import android.content.ComponentName
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
@@ -30,7 +26,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import java.lang.Exception
 import android.os.Build
 import android.os.Environment
 import android.os.Handler
@@ -38,7 +33,6 @@ import android.os.Looper
 import android.provider.DocumentsContract
 import android.view.Menu
 import android.view.MenuItem
-import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.activity.viewModels
@@ -51,25 +45,29 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.snackbar.Snackbar
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import java.io.FileNotFoundException
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.concurrent.atomic.AtomicBoolean
 
 class SharedViewModel : ViewModel(), RecordingStateListener {
     var myBufferService: MyBufferServiceInterface? = null
     private val _isRecording = MutableLiveData(false)
     val isRecording: LiveData<Boolean> = _isRecording
+    private val _recordingDuration = MutableLiveData<String>("00:00:00")
+    val recordingDuration: LiveData<String> = _recordingDuration
 
     override fun onRecordingStateChanged(isRecording: Boolean) {
         updateRecordingState(isRecording)
+    }
+
+    override fun onRecordingDurationChange(duration: String) {
+        updateRecordingDurationChange(duration)
+    }
+
+    private fun  updateRecordingDurationChange(duration: String) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            _recordingDuration.value = duration // Update directly on main thread
+        } else {
+            _recordingDuration.postValue(duration) // Update safely from background thread
+        }
     }
 
     private fun updateRecordingState(isRecording: Boolean) {
@@ -103,7 +101,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val NOTIFICATION_ID = 1
+        const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "recording_channel"
         private const val CHANNEL_NAME = "Recording Into Ringbuffer"
         private const val CHANNEL_DESCRIPTION = "Buffering recorder in the background"
@@ -388,8 +386,17 @@ class MainActivity : AppCompatActivity() {
         )
 
         val recordingNotification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Recording Audio") // Set the title
-            .setContentText(if (myBufferService.isRecording()) "Running...\n" else "Stopped.\n") // Update
+            .setContentTitle("Recording Recent Audio")
+            .setContentText(if (myBufferService.isRecording()) "Running...\n" else "Stopped.\n")
+            .setContentText(
+                "${if (hasOverflowed) "100%" else "${recorderIndex / totalRingbufferSize * 100}%"} - ${getLengthInTime()}"
+            ).setSmallIcon(R.drawable.baseline_record_voice_over_24)
+            .setProgress(  // Bar visualization
+                totalRingbufferSize, if (hasOverflowed) {
+                    totalRingbufferSize
+                } else {
+                    recorderIndex
+                }, false)
             .addAction(
                 if (myBufferService.isRecording()) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24,
                 if (myBufferService.isRecording()) "Stop" else "Restart", // Update action text
