@@ -5,6 +5,7 @@ import android.media.AudioFormat
 import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -54,10 +55,10 @@ public val sampleRates = mapOf(
 )
 
 public data class AudioConfig(
-    var SAMPLE_RATE_HZ: Int, var BUFFER_TIME_LENGTH_S: Int, var BIT_DEPTH: BitDepth
+    var SAMPLE_RATE_HZ: Int, var BUFFER_TIME_LENGTH_S: Int, var BIT_DEPTH: BitDepth, var SAVE_LOCATION_ON_SAVE_AUDIO: Boolean
 )
 
-data class Settings(val sampleRate: Int, val bitDepth: BitDepth, val bufferTimeLengthS: Int)
+data class Settings(val sampleRate: Int, val bitDepth: BitDepth, val bufferTimeLengthS: Int, val saveLocationOnSaveAudio: Boolean)
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
@@ -67,6 +68,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         val SAMPLE_RATE = intPreferencesKey("sample_rate")
         val BIT_DEPTH = stringPreferencesKey("bit_depth")
         val BUFFER_TIME_LENGTH_S = intPreferencesKey("buffer_time_length")
+        val SAVE_LOCATION_ON_SAVE_AUDIO = booleanPreferencesKey("save_location_on_save_audio")
     }
 
     private val settings: Flow<Settings> =
@@ -89,7 +91,8 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
                 Settings(
                     sampleRate = preferences[SAMPLE_RATE] ?: 22050,
                     bitDepth = bitDepth,
-                    bufferTimeLengthS = preferences[BUFFER_TIME_LENGTH_S] ?: 120
+                    bufferTimeLengthS = preferences[BUFFER_TIME_LENGTH_S] ?: 120,
+                    saveLocationOnSaveAudio = preferences[SAVE_LOCATION_ON_SAVE_AUDIO] ?: false
                 )
             }
 
@@ -97,7 +100,8 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         AudioConfig(
             SAMPLE_RATE_HZ = settings.sampleRate,
             BUFFER_TIME_LENGTH_S = settings.bufferTimeLengthS,
-            BIT_DEPTH = settings.bitDepth
+            BIT_DEPTH = settings.bitDepth,
+            SAVE_LOCATION_ON_SAVE_AUDIO = settings.saveLocationOnSaveAudio
         )
     }
 
@@ -120,5 +124,9 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { preferences ->
             preferences[BUFFER_TIME_LENGTH_S] = bufferTimeLength
         }
+    }
+    suspend fun updateSaveLocationOnSaveAudio(save_location_on_audio_save: Boolean){
+        Log.i("SettingsRepository", "Saving location when saving audio to $save_location_on_audio_save")
+        dataStore.edit { preferences -> preferences[SAVE_LOCATION_ON_SAVE_AUDIO] = save_location_on_audio_save }
     }
 }

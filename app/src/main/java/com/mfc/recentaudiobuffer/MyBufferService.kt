@@ -395,12 +395,14 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         val bitDepthString = preferences[SettingsRepository.BIT_DEPTH] ?: "8"
         val bitDepth = BitDepth.fromString(bitDepthString) ?: bitDepths["8"]!!
+        val saveLocationOnSaveAudio = preferences[SettingsRepository.SAVE_LOCATION_ON_SAVE_AUDIO] ?: false
 
         // Initialize config directly
         config = AudioConfig(
             SAMPLE_RATE_HZ = sampleRate,
             BUFFER_TIME_LENGTH_S = bufferTimeLengthS,
-            BIT_DEPTH = bitDepth
+            BIT_DEPTH = bitDepth,
+            SAVE_LOCATION_ON_SAVE_AUDIO = saveLocationOnSaveAudio
         )
         updateTotalBufferSize(config)
 

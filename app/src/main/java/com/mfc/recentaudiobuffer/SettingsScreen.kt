@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -58,6 +59,7 @@ fun SettingsScreen(
     var showBitDepthMenu by remember { mutableStateOf(false) }
 
     var bufferTimeLength by remember { mutableIntStateOf(config.BUFFER_TIME_LENGTH_S) }
+    var saveLocationOnSaveAudio by remember {mutableStateOf(false)}
 
 
     Scaffold(
@@ -230,6 +232,25 @@ fun SettingsScreen(
                     ),
                     fontWeight = W500
                 ),
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Save audio with location")
+            Switch(
+                checked = saveLocationOnSaveAudio,
+                onCheckedChange = {
+                    saveLocationOnSaveAudio = it
+                },
+                thumbContent = if (saveLocationOnSaveAudio) {
+                    {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(SwitchDefaults.IconSize),
+                        )
+                    }
+                } else {
+                    null
+                }
             )
 
             Spacer(modifier = Modifier.height(16.dp))

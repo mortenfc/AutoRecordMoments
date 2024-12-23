@@ -33,6 +33,7 @@ import android.os.Looper
 import android.provider.DocumentsContract
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.activity.viewModels
@@ -45,7 +46,20 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.io.FileNotFoundException
+import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.Priority
+
 
 class SharedViewModel : ViewModel(), RecordingStateListener {
     var myBufferService: MyBufferServiceInterface? = null
@@ -79,7 +93,13 @@ class SharedViewModel : ViewModel(), RecordingStateListener {
     }
 }
 
+
 class MainActivity : AppCompatActivity() {
+
+    public val DEFAULT_UPDATE_INTERVAL: Long = 30L
+    public val FAST_UPDATE_INTERVAL: Long = 5L
+
+
     private val logTag = "MainActivity"
     private val sharedViewModel: SharedViewModel by viewModels()
     private lateinit var myBufferService: MyBufferServiceInterface
@@ -90,7 +110,10 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.POST_NOTIFICATIONS,
             Manifest.permission.READ_MEDIA_AUDIO,
             Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.FOREGROUND_SERVICE
+            Manifest.permission.FOREGROUND_SERVICE,
+            // Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+            // Manifest.permission.ACCESS_FINE_LOCATION,
+            // Manifest.permission.ACCESS_COARSE_LOCATION
         )
     } else {
         mutableListOf(
@@ -148,6 +171,21 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.layout)
+
+        val locationRequest = LocationRequest.Builder(10000)
+            .setWaitForAccurateLocation(true)
+            .setPriority(Priority.PRIORITY_BALANCED_POWER_ACCURACY)
+            .setIntervalMillis(1000 * DEFAULT_UPDATE_INTERVAL)
+            .setMinUpdateIntervalMillis(5000)
+            .setMaxUpdateDelayMillis(15000)
+            .setMinUpdateDistanceMeters(10f)
+            .build()
+
+
+
+
+
+
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
@@ -231,6 +269,11 @@ class MainActivity : AppCompatActivity() {
                     this, "Accept the permissions and then try again", Toast.LENGTH_LONG
                 ).show()
             }
+        }
+        val showMap: Button = findViewById(R.id.show_map)
+        showMap.setOnClickListener {
+            val i = Intent(this, MapsActivity::class.java)
+            startActivity(i)
         }
 
         frameLayout = FrameLayout(this).apply { // Initialize frameLayout here

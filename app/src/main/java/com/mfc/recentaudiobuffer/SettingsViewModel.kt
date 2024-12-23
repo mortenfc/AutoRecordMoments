@@ -18,7 +18,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         initialValue = AudioConfig(
             SAMPLE_RATE_HZ = sampleRates["22050"] ?: error("Invalid sample rate"),
             BUFFER_TIME_LENGTH_S = 120,
-            BIT_DEPTH = bitDepths["8"] ?: error("Invalid bit depth")
+            BIT_DEPTH = bitDepths["8"] ?: error("Invalid bit depth"),
+            SAVE_LOCATION_ON_SAVE_AUDIO = false
         )
     )
 
@@ -38,5 +39,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             repository.updateBitDepth(bitDepth)
         }
+    }
+    fun updateSaveLocationOnAudioSave(saveLocationOnAudioSave: Boolean){
+     viewModelScope.launch { repository.updateSaveLocationOnSaveAudio(saveLocationOnAudioSave) }
     }
 }

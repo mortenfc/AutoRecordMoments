@@ -148,5 +148,11 @@
                 app:iconTint="@color/white"
                 android:textColor="@color/teal_900" />
 
+        <Button
+                android:text="Audio Map"
+                android:layout_width="184dp"
+                android:layout_height="wrap_content"
+                android:id="@+id/show_map" />
+
     </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>
