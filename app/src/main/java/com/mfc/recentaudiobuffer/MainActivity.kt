@@ -30,6 +30,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.DocumentsContract
 import android.view.Menu
 import android.view.MenuItem
@@ -40,50 +41,20 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
-class SharedViewModel : ViewModel(), RecordingStateListener {
+class SharedViewModel : ViewModel() {
     var myBufferService: MyBufferServiceInterface? = null
-    private val _isRecording = MutableLiveData(false)
-    val isRecording: LiveData<Boolean> = _isRecording
-    private val _recordingDuration = MutableLiveData<String>("00:00:00")
-    val recordingDuration: LiveData<String> = _recordingDuration
-
-    override fun onRecordingStateChanged(isRecording: Boolean) {
-        updateRecordingState(isRecording)
-    }
-
-    override fun onRecordingDurationChange(duration: String) {
-        updateRecordingDurationChange(duration)
-    }
-
-    private fun  updateRecordingDurationChange(duration: String) {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            _recordingDuration.value = duration // Update directly on main thread
-        } else {
-            _recordingDuration.postValue(duration) // Update safely from background thread
-        }
-    }
-
-    private fun updateRecordingState(isRecording: Boolean) {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            _isRecording.value = isRecording // Update directly on main thread
-        } else {
-            _isRecording.postValue(isRecording) // Update safely from background thread
-        }
-    }
 }
 
 class MainActivity : AppCompatActivity() {
     private val logTag = "MainActivity"
     private val sharedViewModel: SharedViewModel by viewModels()
     private lateinit var myBufferService: MyBufferServiceInterface
-    private lateinit var saveStorageUriPermission: ActivityResultLauncher<Uri?>
 
     private val requiredPermissions = if (Build.VERSION.SDK_INT >= 33) {
         mutableListOf(
@@ -101,10 +72,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        const val NOTIFICATION_ID = 1
-        private const val CHANNEL_ID = "recording_channel"
-        private const val CHANNEL_NAME = "Recording Into Ringbuffer"
-        private const val CHANNEL_DESCRIPTION = "Buffering recorder in the background"
+        const val CHRONIC_NOTIFICATION_ID = 1
+        private const val CHRONIC_NOTIFICATION_CHANNEL_ID = "recording_channel"
+        private const val CHRONIC_NOTIFICATION_CHANNEL_NAME = "Recording Into RingBuffer"
+        private const val CHRONIC_NOTIFICATION_CHANNEL_DESCRIPTION =
+            "Channel for the persistent recording notification banner"
         private const val REQUEST_CODE_STOP = 1
         private const val REQUEST_CODE_START = 2
         private const val REQUEST_CODE_SAVE = 3
@@ -125,12 +97,9 @@ class MainActivity : AppCompatActivity() {
             val binder = ibinder as MyBufferService.MyBinder
             this.service = binder.getService()
             myBufferService = this.service
-            sharedViewModel.myBufferService = this.service
             this.isBound = true
-            sharedViewModel.isRecording.observe(this@MainActivity) {
-                createRecordingNotification()
-            }
-            sharedViewModel.myBufferService?.recordingStateListener = sharedViewModel
+            sharedViewModel.myBufferService = this.service
+            observeLiveData()
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
@@ -164,30 +133,6 @@ class MainActivity : AppCompatActivity() {
 
         getPermissions()
 
-        saveStorageUriPermission =
-            registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { grantedDirectoryUri: Uri? ->
-                if (grantedDirectoryUri != null) {
-                    lifecycleScope.launch {
-                        FileSavingUtils.cacheGrantedUri(
-                            this@MainActivity,
-                            grantedDirectoryUri
-                        )
-                        if (FileSavingUtils.promptSaveFileName(
-                                this@MainActivity,
-                                grantedDirectoryUri,
-                                myBufferService.getBuffer()
-                            )
-                        ) {
-                            Log.d(logTag, "Saved buffer, reset it")
-                            onClickResetBuffer()
-                        }
-                    }
-                } else {
-                    // Handle case where grantedUri is null
-                    Toast.makeText(this, "Error getting granted URI", Toast.LENGTH_SHORT).show()
-                }
-            }
-
         findViewById<Button>(R.id.StartBuffering).setOnClickListener {
             onClickStartRecording()
         }
@@ -198,29 +143,7 @@ class MainActivity : AppCompatActivity() {
             onClickResetBuffer()
         }
         findViewById<Button>(R.id.SaveBuffer).setOnClickListener {
-            if (foregroundServiceAudioBufferConnection.isBound) {
-                lifecycleScope.launch {
-                    onClickStopRecording()
-                    val grantedUri = FileSavingUtils.getCachedGrantedUri(this@MainActivity)
-                    if (grantedUri != null) {
-                        // Use previously permitted cached uri
-                        FileSavingUtils.promptSaveFileName(
-                            this@MainActivity,
-                            grantedUri,
-                            myBufferService.getBuffer()
-                        )
-                    } else {
-                        // Otherwise get file saving location permission
-                        saveStorageUriPermission.launch(null)
-                    }
-                }
-            } else {
-                Toast.makeText(
-                    this,
-                    "ERROR: Buffer service is not running. There is no recorded data.",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
+            onClickSaveBuffer()
         }
         findViewById<Button>(R.id.PickAndPlayFile).setOnClickListener {
             if (haveAllPermissions(requiredPermissions)) {
@@ -297,16 +220,13 @@ class MainActivity : AppCompatActivity() {
                     BIND_AUTO_CREATE
                 )
                 Log.i(logTag, "Buffer service started and bound")
-                Log.i(logTag, "Created chronic notification")
-            } else if (myBufferService.isRecording()) {
+            } else if (myBufferService.isRecording.get()) {
                 Toast.makeText(
                     this, "Buffer is already running!", Toast.LENGTH_SHORT
                 ).show()
             } else {
                 myBufferService.startRecording()
-                sharedViewModel.isRecording.observe(this) {
-                    createRecordingNotification()
-                }
+                observeLiveData()
                 Toast.makeText(
                     this, "Restarted buffering in the background", Toast.LENGTH_LONG
                 ).show()
@@ -321,7 +241,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun onClickStopRecording() {
         if (foregroundServiceAudioBufferConnection.isBound) {
-            if (myBufferService.isRecording()) {
+            if (myBufferService.isRecording.get()) {
                 Log.i(logTag, "Stopping recording in MyBufferService")
                 myBufferService.stopRecording()
                 Toast.makeText(
@@ -349,19 +269,117 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW
+    private val saveStorageUriPermission =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { grantedDirectoryUri: Uri? ->
+            if (grantedDirectoryUri != null) {
+                contentResolver.takePersistableUriPermission(
+                    grantedDirectoryUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+                Log.d(
+                    logTag,
+                    "takePersistableUriPermission called for grantedDirectoryUri: $grantedDirectoryUri"
+                )
+                FileSavingUtils.cacheGrantedUri(
+                    this@MainActivity,
+                    grantedDirectoryUri
+                )
+                FileSavingUtils.promptSaveFileName(
+                    this@MainActivity,
+                    grantedDirectoryUri,
+                    myBufferService.getBuffer()
+                )
+            } else {
+                // Handle case where grantedUri is null
+                Toast.makeText(this, "Error getting granted URI", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+    private fun onClickSaveBuffer() {
+        if (foregroundServiceAudioBufferConnection.isBound) {
+            lifecycleScope.launch {
+                onClickStopRecording()
+                val grantedUri = FileSavingUtils.getCachedGrantedUri(this@MainActivity)
+                Log.d(logTag, "MainActivity: grantedUri = $grantedUri")
+                if (grantedUri != null) {
+                    // Use previously permitted cached uri
+                    FileSavingUtils.promptSaveFileName(
+                        this@MainActivity,
+                        grantedUri,
+                        myBufferService.getBuffer()
+                    )
+                } else {
+                    // Otherwise get file saving location permission
+                    saveStorageUriPermission.launch(null)
+                }
+            }
+        } else {
+            Toast.makeText(
+                this,
+                "ERROR: Buffer service is not running. There is no recorded data.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun createNotificationChannels() {
+        val chronicChannel = NotificationChannel(
+            CHRONIC_NOTIFICATION_CHANNEL_ID,
+            CHRONIC_NOTIFICATION_CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = CHANNEL_DESCRIPTION
+            description = CHRONIC_NOTIFICATION_CHANNEL_DESCRIPTION
+        }
+        val resultChannel = NotificationChannel(
+            FileSavingService.RESULT_NOTIFICATION_CHANNEL_ID,
+            FileSavingService.RESULT_NOTIFICATION_CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = FileSavingService.RESULT_NOTIFICATION_CHANNEL_DESCRIPTION
         }
         val notificationManager =
             getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(channel)
+
+        notificationManager.createNotificationChannels(listOf(chronicChannel, resultChannel))
     }
 
-    private fun createRecordingNotification() {
-        createNotificationChannel()
+    private fun observeLiveData() {
+        myBufferService.isRecording.observe(this@MainActivity, Observer { _ ->
+            updateRecordingNotification()
+        })
+
+        myBufferService.hasOverflowed.observe(this@MainActivity, Observer { _ ->
+            updateRecordingNotification()
+        })
+
+        myBufferService.recorderIndex.observe(this@MainActivity, Observer { _ ->
+            updateRecordingNotification()
+        })
+
+        myBufferService.totalRingBufferSize.observe(
+            this@MainActivity,
+            Observer { _ ->
+                updateRecordingNotification()
+            })
+
+        myBufferService.time.observe(this@MainActivity, Observer { _ ->
+            updateRecordingNotification()
+        })
+    }
+
+    private fun updateRecordingNotification() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val isScreenOn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+            powerManager.isInteractive
+        } else {
+            powerManager.isScreenOn
+        }
+
+        if (!isScreenOn) {
+            return
+        }
+
+        createNotificationChannels()
 
         val stopIntent = PendingIntent.getBroadcast(
             this, REQUEST_CODE_STOP, Intent(this, NotificationActionReceiver::class.java).apply {
@@ -385,36 +403,39 @@ class MainActivity : AppCompatActivity() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val recordingNotification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Recording Recent Audio")
-            .setContentText(if (myBufferService.isRecording()) "Running...\n" else "Stopped.\n")
-            .setContentText(
-                "${if (hasOverflowed) "100%" else "${recorderIndex / totalRingbufferSize * 100}%"} - ${getLengthInTime()}"
-            ).setSmallIcon(R.drawable.baseline_record_voice_over_24)
-            .setProgress(  // Bar visualization
-                totalRingbufferSize, if (hasOverflowed) {
-                    totalRingbufferSize
-                } else {
-                    recorderIndex
-                }, false)
-            .addAction(
-                if (myBufferService.isRecording()) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24,
-                if (myBufferService.isRecording()) "Stop" else "Restart", // Update action text
-                if (myBufferService.isRecording()) stopIntent else startIntent // Update PendingIntent
-            ).setAutoCancel(false)
-            .addAction(
-                if (myBufferService.isRecording()) R.drawable.baseline_save_alt_24 else 0,
-                if (myBufferService.isRecording()) "Save and clear" else null,
-                if (myBufferService.isRecording()) saveIntent else null
-            ).setAutoCancel(false) // Keep notification after being tapped
-            .setSmallIcon(R.drawable.baseline_record_voice_over_24) // Set the small icon
-            .setOngoing(true) // Make it a chronic notification
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setCategory(NotificationCompat.CATEGORY_STATUS).build()
+        val recordingNotification =
+            NotificationCompat.Builder(this, CHRONIC_NOTIFICATION_CHANNEL_ID)
+                .setContentTitle("Recording Recent Audio")
+                .setContentText(if (myBufferService.isRecording.get()) "Running...\n" else "Stopped.\n")
+                .setContentText(
+                    "${if (myBufferService.hasOverflowed.get()) "100%" else "${myBufferService.recorderIndex.get().toFloat() / myBufferService.totalRingBufferSize.get() * 100}%"} - ${myBufferService.time.get()}"
+                ).setSmallIcon(R.drawable.baseline_record_voice_over_24)
+                .setProgress(  // Bar visualization
+                    myBufferService.totalRingBufferSize.get(),
+                    if (myBufferService.hasOverflowed.get()) {
+                        myBufferService.totalRingBufferSize.get()
+                    } else {
+                        myBufferService.recorderIndex.get()
+                    }, false
+                )
+                .addAction(
+                    if (myBufferService.isRecording.get()) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24,
+                    if (myBufferService.isRecording.get()) "Stop" else "Restart", // Update action text
+                    if (myBufferService.isRecording.get()) stopIntent else startIntent // Update PendingIntent
+                ).setAutoCancel(false)
+                .addAction(
+                    if (myBufferService.isRecording.get()) R.drawable.baseline_save_alt_24 else 0,
+                    if (myBufferService.isRecording.get()) "Save and clear" else null,
+                    if (myBufferService.isRecording.get()) saveIntent else null
+                ).setAutoCancel(false) // Keep notification after being tapped
+                .setSmallIcon(R.drawable.baseline_record_voice_over_24) // Set the small icon
+                .setOngoing(true) // Make it a chronic notification
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setCategory(NotificationCompat.CATEGORY_STATUS).build()
 
         with(NotificationManagerCompat.from(this)) {
             if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                notify(NOTIFICATION_ID, recordingNotification)
+                notify(CHRONIC_NOTIFICATION_ID, recordingNotification)
             } else {
                 // Not possible as notification is created in start which requires all permissions
             }

@@ -1,19 +1,13 @@
 package com.mfc.recentaudiobuffer
 
 import android.Manifest
-import android.R.drawable.ic_media_play
 import android.annotation.SuppressLint
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -22,44 +16,31 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.widget.Toast
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.datastore.preferences.core.emptyPreferences
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
-import androidx.preference.PreferenceManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.text.SimpleDateFormat
 import java.util.Arrays
-import java.util.Date
 import java.util.Locale
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
-import kotlin.math.max
-import kotlin.properties.Delegates
 
 interface MyBufferServiceInterface {
     fun getBuffer(): ByteArray
-    fun isRecording(): Boolean
     fun writeWavHeader(out: OutputStream, audioDataLen: Long)
     fun stopRecording()
     fun startRecording()
     fun resetBuffer()
-    var recordingStateListener: RecordingStateListener?
-}
 
-interface RecordingStateListener {
-    fun onRecordingStateChanged(isRecording: Boolean)
-    fun onRecordingDurationChange(duration: String)
+    val isRecording: AtomicLiveDataThrottled<Boolean>
+    val hasOverflowed: AtomicLiveDataThrottled<Boolean>
+    val recorderIndex: AtomicLiveDataThrottled<Int>
+    val totalRingBufferSize: AtomicLiveDataThrottled<Int>
+    val time: AtomicLiveDataThrottled<String>
 }
 
 class MyBufferService : Service(), MyBufferServiceInterface {
@@ -67,22 +48,25 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     // Calculate the maximum total buffer size
     private lateinit var config: AudioConfig
-    private var totalRingbufferSize by Delegates.notNull<Int>()
     private lateinit var buffer: ByteArray
 
-    private var hasOverflowed = false
-    private var recorder: AudioRecord? = null
-    private var isRecording = false
-    private var recorderIndex = 0
-    private val lock = ReentrantLock()
-    private val recordingStartedLatch = CountDownLatch(1)
+    public override val isRecording: AtomicLiveDataThrottled<Boolean> = AtomicLiveDataThrottled(false)
 
-    override var recordingStateListener: RecordingStateListener? = null
+    public override val hasOverflowed: AtomicLiveDataThrottled<Boolean> = AtomicLiveDataThrottled(false)
+
+    public override val recorderIndex: AtomicLiveDataThrottled<Int> = AtomicLiveDataThrottled(0)
+
+    public override val totalRingBufferSize: AtomicLiveDataThrottled<Int> = AtomicLiveDataThrottled(100)
+
+    public override val time: AtomicLiveDataThrottled<String> = AtomicLiveDataThrottled("00:00:00")
+
+    private var recorder: AudioRecord? = null
+    private val lock = ReentrantLock()
+
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate() {
         super.onCreate()
-        recordingStateListener = ViewModelHolder.getSharedViewModel() // Set the listener
         Log.i(logTag, "onCreate()")
 
         val intentFilter = IntentFilter("com.mfc.recentaudiobuffer.SETTINGS_UPDATED")
@@ -96,7 +80,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(logTag, "onStartCommand()")
 
-        return if (intent != null && !isRecording) {
+        return if (intent != null && !isRecording.get()) {
             prepareAndStartRecording()
         } else {
             Log.i(logTag, "START_REDELIVER_INTENT or already recording")
@@ -112,41 +96,16 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     private fun updateTotalBufferSize(config: AudioConfig) {
-        totalRingbufferSize =
+        totalRingBufferSize.set(
             config.SAMPLE_RATE_HZ * (config.BIT_DEPTH.bytes / 8) * config.BUFFER_TIME_LENGTH_S
-        buffer = ByteArray(totalRingbufferSize)
-    }
-
-    private fun updateForegroundNotification() {
-        val notificationIntent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE
         )
-        val notification =
-            NotificationCompat.Builder(this, "running_notification_channel_id")
-                .setContentTitle("Recording Recent Audio").setContentText(
-                    "Buffering... ${if (hasOverflowed) "100%" else "${recorderIndex / totalRingbufferSize * 100}%"} - ${getLengthInTime()}"
-                ).setSmallIcon(R.drawable.baseline_record_voice_over_24)
-                .setProgress(  // Bar visualization
-                    totalRingbufferSize, if (hasOverflowed) {
-                        totalRingbufferSize
-                    } else {
-                        recorderIndex
-                    }, false
-                ).setContentIntent(pendingIntent).build()
-
-        // Update the existing notification:
-        val notificationManager: NotificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(MainActivity.NOTIFICATION_ID, notification)
+        buffer = ByteArray(totalRingBufferSize.get())
     }
 
     private fun prepareAndStartRecording(): Int {
         Log.i(logTag, "prepareAndStartRecording")
 
         this.syncPreferences()
-
-        this.updateForegroundNotification()
 
         val micPermission =
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
@@ -200,43 +159,41 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         // Permission has been granted
         recorder = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.MIC)
-            .setAudioFormat(audioFormat).setBufferSizeInBytes(totalRingbufferSize).build()
+            .setAudioFormat(audioFormat).setBufferSizeInBytes(totalRingBufferSize.get()).build()
 
         try {
-            isRecording = true
-            recordingStateListener?.onRecordingStateChanged(true)
+            isRecording.set(true)
             Thread {
 
                 recorder?.startRecording() // Start recording
-                recordingStartedLatch.countDown()
                 Log.d(logTag, "Recording thread started")
-                while (isRecording) {
+                while (isRecording.get()) {
                     lock.lock()
                     try {
                         // Read in chunks of minReadChunkSize.
                         // If next chunk will cause overflow, continue recording from beginning and overriding
-                        if (recorderIndex + minReadChunkSize >= totalRingbufferSize) {
-                            recorderIndex = 0
-                            hasOverflowed = true
+                        if (recorderIndex.get() + minReadChunkSize >= totalRingBufferSize.get()) {
+                            recorderIndex.set(0)
+                            hasOverflowed.set(true)
                             Log.d(logTag, "Buffer overflowed. recorderIndex reset to 0")
                         }
 
                         val readResult =
-                            recorder?.read(buffer, recorderIndex, minReadChunkSize) ?: -1
+                            recorder?.read(buffer, recorderIndex.get(), minReadChunkSize) ?: -1
                         Log.d(
                             logTag,
-                            "readResult: $readResult, recorderIndex before update: $recorderIndex"
-                        ) // Log before update
+                            "readResult: $readResult, recorderIndex before update: ${recorderIndex.get()}"
+                        )
                         if (readResult > 0) {
-                            recorderIndex = (recorderIndex + readResult) % totalRingbufferSize
-                            recordingStateListener?.onRecordingDurationChange(getLengthInTime())
+                            recorderIndex.set((recorderIndex.get() + readResult) % totalRingBufferSize.get())
+                            updateLengthInTime()
                         } else if (readResult == AudioRecord.ERROR_INVALID_OPERATION) {
                             Log.e(logTag, "AudioRecord invalid operation")
                         } else if (readResult == AudioRecord.ERROR_BAD_VALUE) {
                             Log.e(logTag, "AudioRecord bad value")
                         } else if (recorder?.state == AudioRecord.RECORDSTATE_STOPPED) {
                             Log.e(logTag, "AudioRecord stopped unexpectedly")
-                            isRecording = false
+                            isRecording.set(false)
                         } else {
                             Log.e(
                                 logTag,
@@ -255,7 +212,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 recorder?.stop()
                 recorder?.release()
                 recorder = null
-                recordingStateListener?.onRecordingStateChanged(false)
             }.start()
         } catch (e: IllegalArgumentException) {
             Log.e(logTag, "startBuffering() failed: illegal argument", e)
@@ -267,19 +223,18 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     override fun stopRecording() {
-        isRecording = false
-        recordingStateListener?.onRecordingStateChanged(false)
+        isRecording.set(false)
     }
 
-    private fun getLengthInTime(): String {
+    private fun updateLengthInTime() {
         val sampleRate = config.SAMPLE_RATE_HZ
         val bitDepth = config.BIT_DEPTH.bytes
         val channels = 1 // Recording is in mono
 
-        val lengthIndex: Int = if (hasOverflowed) {
-            totalRingbufferSize
+        val lengthIndex: Int = if (hasOverflowed.get()) {
+            totalRingBufferSize.get()
         } else {
-            recorderIndex
+            recorderIndex.get()
         }
 
         val durationInSeconds = (lengthIndex * 8).toDouble() / (sampleRate * bitDepth * channels)
@@ -293,7 +248,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             TimeUnit.SECONDS.toSeconds(durationInSeconds.toLong()) % TimeUnit.MINUTES.toSeconds(1)
         )
 
-        return durationFormatted
+        time.set(durationFormatted)
     }
 
     override fun writeWavHeader(out: OutputStream, audioDataLen: Long) {
@@ -358,16 +313,16 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         var shiftedBuffer: ByteArray? = null
         lock.lock()
         try {
-            if (hasOverflowed) {
+            if (hasOverflowed.get()) {
                 // Return the entire buffer, shifted at recorderIndex
-                shiftedBuffer = ByteArray(totalRingbufferSize)
-                val bytesToEnd = totalRingbufferSize - recorderIndex
-                System.arraycopy(buffer, recorderIndex, shiftedBuffer, 0, bytesToEnd)
-                System.arraycopy(buffer, 0, shiftedBuffer, bytesToEnd, recorderIndex)
+                shiftedBuffer = ByteArray(totalRingBufferSize.get())
+                val bytesToEnd = totalRingBufferSize.get() - recorderIndex.get()
+                System.arraycopy(buffer, recorderIndex.get(), shiftedBuffer, 0, bytesToEnd)
+                System.arraycopy(buffer, 0, shiftedBuffer, bytesToEnd, recorderIndex.get())
                 return shiftedBuffer
             } else {
                 // Return only the relevant portion up to recorderIndex
-                shiftedBuffer = buffer.copyOf(recorderIndex)
+                shiftedBuffer = buffer.copyOf(recorderIndex.get())
             }
         } finally {
             lock.unlock()
@@ -418,21 +373,11 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         }
     }
 
-    override fun isRecording(): Boolean {
-        try {
-            recordingStartedLatch.await() // Wait for recording to start
-        } catch (e: InterruptedException) { // Handle interruption
-            e.printStackTrace()
-        }
-        return isRecording
-    }
-
     override fun resetBuffer() {
         lock.lock()
         try {
-            recorderIndex = 0
-            recordingStateListener?.onRecordingDurationChange(getLengthInTime())
-            hasOverflowed = false
+            recorderIndex.set(0)
+            hasOverflowed.set(false)
             Arrays.fill(buffer, 0.toByte()) // Clear the buffer
             Log.i(logTag, "Buffer reset")
             Toast.makeText(
@@ -450,7 +395,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
 
     override fun startRecording() {
-        if (!isRecording) {
+        if (!isRecording.get()) {
             prepareAndStartRecording()
         }
     }

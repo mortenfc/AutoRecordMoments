@@ -22,8 +22,27 @@ data class BitDepth(val bytes: Int, val encodingEnum: Int) {
     companion object {
         fun fromString(value: String): BitDepth? {
             return try {
-                val (bytes, encoding) = value.split(",").map { it.toInt() }
-                BitDepth(bytes, encoding)
+                val parts = value.split(",")
+                if (parts.size == 2) {
+                    val bytes = parts[0].toInt()
+                    val encoding = parts[1].toInt()
+                    BitDepth(bytes, encoding)
+                } else if (parts.size == 1) {
+                    // Handle the case where there's no comma
+                    val bytes = parts[0].toInt()
+                    // You might need a default encoding here, or throw an exception
+                    // if you can't determine the encoding without a comma.
+                    // For now, let's assume 8-bit encoding if there's no comma.
+                    val encoding = when (bytes) {
+                        8 -> AudioFormat.ENCODING_PCM_8BIT
+                        16 -> AudioFormat.ENCODING_PCM_16BIT
+                        24, 32 -> AudioFormat.ENCODING_PCM_FLOAT
+                        else -> throw IllegalArgumentException("Invalid bit depth: $bytes")
+                    }
+                    BitDepth(bytes, encoding)
+                } else {
+                    throw IllegalArgumentException("Invalid BitDepth format: $value")
+                }
             } catch (e: Exception) {
                 // Log the error for debugging
                 Log.e("BitDepth", "Error parsing BitDepth from string: $value", e)

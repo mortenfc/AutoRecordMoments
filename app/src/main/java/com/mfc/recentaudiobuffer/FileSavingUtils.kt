@@ -12,38 +12,58 @@ import android.util.Log
 import android.widget.EditText
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import androidx.test.internal.runner.junit4.statement.UiThreadStatement.runOnUiThread
-import java.io.FileNotFoundException
+import androidx.documentfile.provider.DocumentFile
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 class FileSavingService : Service() {
+    companion object{
+        private const val RESULT_NOTIFICATION_ID = 2
+        public const val RESULT_NOTIFICATION_CHANNEL_ID = "result_channel"
+        public const val RESULT_NOTIFICATION_CHANNEL_NAME = "Result of an operation"
+        public const val RESULT_NOTIFICATION_CHANNEL_DESCRIPTION =
+            "A user message as a notification"
+    }
+
+    private val logTag = "FileSavingService"
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val grantedUri = intent?.getParcelableExtra<Uri>("grantedUri")
         val audioData = intent?.getByteArrayExtra("audioData")
+        Log.d(logTag, "FileSavingService: grantedUri = $grantedUri")
 
         if (grantedUri != null && audioData != null) {
             val notificationManager =
                 getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (FileSavingUtils.fixBaseNameToSave(this, grantedUri, audioData, "quick_save")) {
-                val notification = NotificationCompat.Builder(this, "save_notification_success_id")
-                    .setContentTitle("Audio Saved and Cleared")
-                    .setContentText("The recent audio buffer has been saved and cleared.")
-                    .setSmallIcon(R.drawable.file_save_success)
-                    .build()
-                notificationManager.notify(1, notification)
+            val (title, text, icon) = if (FileSavingUtils.fixBaseNameToSave(
+                    this,
+                    grantedUri,
+                    audioData,
+                    "quick_save"
+                )
+            ) {
+                Triple(
+                    "Audio Saved and Cleared",
+                    "The recent audio buffer has been saved and cleared.",
+                    R.drawable.file_save_success
+                )
             } else {
-                val notification = NotificationCompat.Builder(this, "save_notification_failure_id")
-                    .setContentTitle("ERROR: Audio failed to save")
-                    .setContentText("Use the app view instead")
-                    .setSmallIcon(R.drawable.file_save_failure_notification_icon)
-                    .build()
-                notificationManager.notify(0, notification)
+                Triple(
+                    "ERROR: Audio failed to save",
+                    "Use the app view instead",
+                    R.drawable.file_save_failure_notification_icon
+                )
             }
+
+            val notification = NotificationCompat.Builder(this, RESULT_NOTIFICATION_CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setSmallIcon(icon)
+                .build()
+            notificationManager.notify(RESULT_NOTIFICATION_ID, notification)
         } else {
-            Log.e("FileSavingService", "Failed to save file to $grantedUri, of data: $audioData")
+            Log.e(logTag, "Failed to save file to $grantedUri, of data: $audioData")
         }
 
         stopSelf() // Stop the service after saving
@@ -58,37 +78,33 @@ class FileSavingService : Service() {
 object FileSavingUtils {
     private const val logTag = "FileSavingUtils"
     private fun saveFile(
-        context: Context, myBufferService: MyBufferServiceInterface, data: ByteArray, uri: Uri?
+        context: Context, myBufferService: MyBufferServiceInterface, data: ByteArray, fileUri: Uri
     ): Boolean {
         var success = false
-        uri?.let {
-            try {
-                val outputStream = context.contentResolver.openOutputStream(it)
-                outputStream?.let { stream ->
-                    try {
-                        myBufferService.writeWavHeader(
-                            stream, data.size.toLong()
-                        )
-                        stream.write(data)
-                        stream.flush()
-                        Log.d(logTag, "File saved successfully")
+        try {
+            val outputStream = context.contentResolver.openOutputStream(fileUri)
+            outputStream?.let { stream ->
+                try {
+                    myBufferService.writeWavHeader(
+                        stream, data.size.toLong()
+                    )
+                    stream.write(data)
+                    stream.flush()
+                    Log.d(logTag, "File saved successfully")
 
-                        success = true
-                    } catch (e: IOException) {
-                        Log.e(logTag, "Error writing data to stream", e)
-                    } finally {
-                        stream.close()
-                    }
-                } ?: run {
-                    Log.e(logTag, "Failed to open output stream for $uri")
+                    success = true
+                } catch (e: IOException) {
+                    Log.e(logTag, "Error writing data to stream", e)
+                } finally {
+                    stream.close()
                 }
-            } catch (e: IOException) {
-                Log.e(logTag, "Failed to save file to $uri", e)
-            } catch (e: SecurityException) {
-                Log.e(logTag, "Permission denied to access $uri", e)
+            } ?: run {
+                Log.e(logTag, "Failed to open output stream for $fileUri")
             }
-        } ?: run {
-            Log.e(logTag, "No URI received from directory chooser")
+        } catch (e: IOException) {
+            Log.e(logTag, "Failed to save file to $fileUri", e)
+        } catch (e: SecurityException) {
+            Log.e(logTag, "Permission denied to access $fileUri", e)
         }
 
         return success
@@ -105,18 +121,6 @@ object FileSavingUtils {
         return if (uriString != null) Uri.parse(uriString) else null
     }
 
-    public fun fileExists(context: Context, fileUri: Uri): Boolean {
-        return try {
-            context.contentResolver.openInputStream(fileUri)?.use { true } ?: false
-        } catch (e: FileNotFoundException) {
-            false
-        } catch (e: Exception) {
-            // Handle other exceptions, e.g., SecurityException
-            Log.e("fileExists", "Error checking file existence: ${e.message}", e)
-            false
-        }
-    }
-
     @SuppressLint("RestrictedApi")
     fun fixBaseNameToSave(
         context: Context, grantedDirectoryUri: Uri, data: ByteArray, baseNameInput: String
@@ -131,41 +135,39 @@ object FileSavingUtils {
         val timestamp = SimpleDateFormat("yy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
         filename = "${filename.substringBeforeLast(".")}_${timestamp}.wav"
 
-        val fileUri = grantedDirectoryUri.buildUpon().appendPath(filename).build()
-        if (fileExists(context, fileUri)) {
-            runOnUiThread {
-                Toast.makeText(
-                    context,
-                    "Somehow context filename and timestamp already existed, overwrote it: $filename",
-                    Toast.LENGTH_SHORT
-                ).show()
-                Log.e(
-                    logTag,
-                    "Somehow context filename and timestamp already existed, overwrote it: $filename"
-                )
-            }
+        val directory = DocumentFile.fromTreeUri(context, grantedDirectoryUri)
+        if (directory == null || !directory.exists() || !directory.isDirectory) {
+            Log.e(logTag, "Invalid directory URI or directory does not exist: $grantedDirectoryUri")
+            return false
         }
 
-        var success: Boolean = false
-
-        fileUri?.let {
-            success = saveFile(
-                context, ViewModelHolder.getSharedViewModel().myBufferService!!, data, it
-            )
-        } ?: run {
-            // Handle file creation failure
-            runOnUiThread {
-                Toast.makeText(
-                    context, "Error creating file", Toast.LENGTH_SHORT
-                ).show()
-                Log.e(logTag, "Failed to create file: $filename")
+        var file = directory.findFile(filename)
+        if (file != null) {
+            // File exists, prompt for overwrite
+            var overwrite = false
+            val dialog = AlertDialog.Builder(context)
+                .setTitle("File Exists")
+                .setMessage("A file with the name '$filename' already exists. Do you want to overwrite it?")
+                .setPositiveButton("Overwrite") { _, _ -> overwrite = true }
+                .setNegativeButton("Cancel") { dialog, _ -> dialog.cancel() }
+                .create()
+            dialog.show()
+            if (!overwrite) {
+                Log.i(logTag, "File not overwritten: $filename")
+                return false
             }
+            file.delete()
+        }
+        file = directory.createFile("audio/wav", filename)
+        if (file == null) {
+            Log.e(logTag, "Failed to create file: $filename")
+            return false
         }
 
-
-        return success
+        return saveFile(
+            context, ViewModelHolder.getSharedViewModel().myBufferService!!, data, file.uri
+        )
     }
-
 
     @SuppressLint("RestrictedApi")
     public fun promptSaveFileName(
