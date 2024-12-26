@@ -46,6 +46,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 class SharedViewModel : ViewModel() {
     var myBufferService: MyBufferServiceInterface? = null
@@ -408,7 +409,12 @@ class MainActivity : AppCompatActivity() {
                 .setContentTitle("Recording Recent Audio")
                 .setContentText(if (myBufferService.isRecording.get()) "Running...\n" else "Stopped.\n")
                 .setContentText(
-                    "${if (myBufferService.hasOverflowed.get()) "100%" else "${myBufferService.recorderIndex.get().toFloat() / myBufferService.totalRingBufferSize.get() * 100}%"} - ${myBufferService.time.get()}"
+                    "${
+                        if (myBufferService.hasOverflowed.get()) "100%" else "${
+                            ((myBufferService.recorderIndex.get()
+                                .toFloat() / myBufferService.totalRingBufferSize.get()) * 100).roundToInt()
+                        }%"
+                    } - ${myBufferService.time.get()}"
                 ).setSmallIcon(R.drawable.baseline_record_voice_over_24)
                 .setProgress(  // Bar visualization
                     myBufferService.totalRingBufferSize.get(),
