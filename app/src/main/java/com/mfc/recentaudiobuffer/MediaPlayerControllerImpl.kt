@@ -74,7 +74,7 @@ class MyMediaController : WidgetMediaController {
 
     override fun onFinishInflate() {
         super.onFinishInflate()
-        durationTextView = findViewById(R.id.duration_textview)
+//        durationTextView = findViewById(R.id.duration_textview)
     }
 
     public fun getUpdateTime(currentTime: Int, duration: Int) {

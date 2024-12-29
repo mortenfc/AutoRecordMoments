@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">Recent Audio Buffer</string>
+    <string name="default_web_client_id">341850391115-esant6sul9ghjb3k96gqfgr7rg8sr0ca.apps.googleusercontent.com</string>
 
     <string name="start_buffering_in_the_background">Start recording</string>
     <string name="pause_buffering_in_the_background">Pause recording</string>
@@ -29,4 +30,11 @@
     <string name="initial_duration">%1$02d:%2$02d:%3$03d</string>
     <string name="rename_file">Rename File</string>
     <string name="DefaultRecordingName">recording.wav</string>
+
+    <!-- GPay -->
+    <string name="googlepay_button_content_description">Google Pay</string>
+    <string name="buy_with_googlepay_button_content_description">Buy with Google Pay</string>
+    <string name="add_to_google_wallet_button_content_description">Add to Google Wallet</string>
+    <string name="donate_and_remove_ads">Donate and get rid of ADs</string>
+
 </resources>

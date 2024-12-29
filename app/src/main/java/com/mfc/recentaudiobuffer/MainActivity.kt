@@ -156,12 +156,16 @@ class MainActivity : AppCompatActivity() {
                 ).show()
             }
         }
+        findViewById<Button>(R.id.Donate).setOnClickListener {
+            onClickDonate()
+        }
 
         frameLayout = FrameLayout(this).apply { // Initialize frameLayout here
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
             )
         }
+
         addContentView(frameLayout, frameLayout?.layoutParams)
 
         mediaController = MyMediaController(this)
@@ -321,6 +325,12 @@ class MainActivity : AppCompatActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
+    }
+
+    private fun onClickDonate()
+    {
+        val intent = Intent(this, DonationActivity::class.java)
+        startActivity(intent)
     }
 
     private fun createNotificationChannels() {

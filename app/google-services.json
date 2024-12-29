@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "341850391115",
+    "project_id": "recent-audio-buffer",
+    "storage_bucket": "recent-audio-buffer.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:341850391115:android:24d5be86e1fc3c831b83ce",
+        "android_client_info": {
+          "package_name": "com.mfc.recentaudiobuffer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1At4G158sUbCNzrJh29yXtFJ6LdYO9dg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

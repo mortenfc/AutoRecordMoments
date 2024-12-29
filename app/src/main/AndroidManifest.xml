@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:tools="http://schemas.android.com/tools">
+
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+    <uses-permission
+            android:name="android.permission.READ_EXTERNAL_STORAGE"
             android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Include required permissions for Google Mobile Ads to run. -->
@@ -22,6 +24,10 @@
             android:supportsRtl="true"
             android:theme="@style/Theme.RecentAudioBuffer">
 
+        <meta-data
+                android:name="com.google.android.gms.wallet.api.enabled"
+                android:value="true" />
+
         <receiver android:name=".NotificationActionReceiver" />
 
         <activity
@@ -29,7 +35,9 @@
                 android:exported="false"
                 android:label="@string/title_activity_settings" />
 
-        <service android:name=".FileSavingService" />
+        <activity
+                android:name=".DonationActivity"
+                android:exported="false" />
 
         <activity
                 android:name=".MainActivity"
@@ -42,19 +50,19 @@
             </intent-filter>
         </activity> <!-- Include the AdActivity configChanges and theme. -->
 
-        <!--
-             You can find your app ID in the AdMob UI. For android:value,
-            insert your own AdMob app ID in quotes, as shown below.
-            Sample AdMob App ID: ca-app-pub-3940256099942544~3347511713
-        -->
-        <meta-data
-                android:name="com.google.android.gms.ads.APPLICATION_ID"
-                android:value="ca-app-pub-3940256099942544~3347511713" />
-        <activity
-                android:name="com.google.android.gms.ads.AdActivity"
-                android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|uiMode|screenSize|smallestScreenSize"
-                android:exported="false"
-                android:theme="@android:style/Theme.Translucent" />
+<!--        &lt;!&ndash;-->
+<!--             You can find your app ID in the AdMob UI. For android:value,-->
+<!--            insert your own AdMob app ID in quotes, as shown below.-->
+<!--            Sample AdMob App ID: ca-app-pub-3940256099942544~3347511713-->
+<!--        &ndash;&gt;-->
+<!--        <meta-data-->
+<!--                android:name="com.google.android.gms.ads.APPLICATION_ID"-->
+<!--                android:value="ca-app-pub-3940256099942544~3347511713" />-->
+<!--        <activity-->
+<!--                android:name="com.google.android.gms.ads.AdActivity"-->
+<!--                android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|uiMode|screenSize|smallestScreenSize"-->
+<!--                android:exported="false"-->
+<!--                android:theme="@android:style/Theme.Translucent" />-->
 
         <service
                 android:name=".MyBufferService"

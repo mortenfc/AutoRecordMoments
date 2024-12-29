@@ -148,5 +148,29 @@
                 app:iconTint="@color/white"
                 android:textColor="@color/teal_900" />
 
+        <com.google.android.material.button.MaterialButton
+                android:id="@+id/Donate"
+                android:layout_marginTop="60dp"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                app:background="@drawable/gradient_button_background"
+                android:clickable="true"
+                android:layout_width="260dp"
+                android:layout_height="wrap_content"
+                android:text="@string/donate_and_remove_ads"
+                app:icon="@drawable/dollar"
+                app:iconGravity="start"
+                app:iconSize="22dp"
+                android:elevation="10dp"
+                android:shadowColor="@color/teal_900"
+                android:shadowRadius="60"
+                android:outlineAmbientShadowColor="@color/black"
+                android:outlineSpotShadowColor="@color/black"
+                app:rippleColor="@color/button_ripple"
+                app:backgroundTint="@color/teal_350"
+                app:strokeColor="@color/purple_accent"
+                app:strokeWidth="2dp"
+                app:iconTint="@color/red"
+                android:textColor="@color/teal_900" />
+
     </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>
