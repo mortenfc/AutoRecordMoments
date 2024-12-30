@@ -25,6 +25,10 @@
             android:theme="@style/Theme.RecentAudioBuffer">
 
         <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-5330230981165217~5808556024" />
+
+        <meta-data
                 android:name="com.google.android.gms.wallet.api.enabled"
                 android:value="true" />
 

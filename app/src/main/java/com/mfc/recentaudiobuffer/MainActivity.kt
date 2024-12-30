@@ -436,7 +436,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 .addAction(
                     if (myBufferService.isRecording.get()) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24,
-                    if (myBufferService.isRecording.get()) "Stop" else "Restart", // Update action text
+                    if (myBufferService.isRecording.get()) "Pause" else "Continue", // Update action text
                     if (myBufferService.isRecording.get()) stopIntent else startIntent // Update PendingIntent
                 ).setAutoCancel(false)
                 .addAction(
