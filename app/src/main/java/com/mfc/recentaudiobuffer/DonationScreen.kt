@@ -3,7 +3,6 @@ package com.mfc.recentaudiobuffer
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -43,7 +42,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -70,6 +68,7 @@ fun DonationScreen(
     val passContainerVisible by remember { mutableStateOf(false) }
     var donationAmount by remember { mutableStateOf("") }
     var isError by rememberSaveable { mutableStateOf(false) }
+    val isLoggedIn: Boolean = (signInButtonText.value == "Sign Out")
 
     ConstraintLayout(
         modifier = Modifier
@@ -115,12 +114,15 @@ fun DonationScreen(
             )
 
             if (isGooglePayReady.value) {
+                GoogleSignInButton(onClick = onSignInClick, signInButtonText)
+
+                Spacer(modifier = Modifier.height(30.dp))
+            }
+
+            if (isGooglePayReady.value && isLoggedIn) {
                 when (signInButtonViewState.value) {
                     SignInButtonViewState.Hidden -> {}
                     SignInButtonViewState.Ready -> {
-                        GoogleSignInButton(onClick = onSignInClick, signInButtonText)
-
-                        Spacer(modifier = Modifier.height(30.dp))
 
                         TextField(
                             value = donationAmount,
@@ -153,7 +155,7 @@ fun DonationScreen(
                         })
                     }
                 }
-            } else {
+            } else if (!isGooglePayReady.value) {
                 TextField(
                     value = donationAmount,
                     onValueChange = {
@@ -407,6 +409,6 @@ fun AddToGoogleWalletButton(context: Context) {
 fun DonationScreenPreview() {
     val signInTextState = remember { mutableStateOf("Sign Out") }
     val signInButtonViewState = remember { mutableStateOf(SignInButtonViewState.Ready) }
-    val isGooglePayReady = remember { mutableStateOf(true) }
+    val isGooglePayReady = remember { mutableStateOf(false) }
     DonationScreen({}, {}, {}, signInTextState, signInButtonViewState, isGooglePayReady)
 }

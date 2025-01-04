@@ -38,24 +38,187 @@ import org.json.JSONObject
 import java.io.IOException
 
 class DonationActivity : AppCompatActivity() {
+
     private val httpClient = OkHttpClient()
-    private val logTag = "DonationActivity"
-    private val serverUrl = "https://us-central1-recent-audio-buffer.cloudfunctions.net"
+    private val logTag = DonationConstants.LOG_TAG
+    private val serverUrl = DonationConstants.SERVER_URL
     private lateinit var googleSignInClient: GoogleSignInClient
     private lateinit var auth: FirebaseAuth
-
     private lateinit var googlePayLauncher: GooglePayLauncher
     private lateinit var stripePaymentSheet: PaymentSheet
-
     private var clientSecret: String? = null
-    private val stripeApiKey: String =
-        "pk_test_51Qb05qH7rOdAu0fXFO9QEU8ygiSSOdlkqDofr9nSI54UHdWbxfIj0Iz0BBKIGlfzxwEUJTUOVILcNEVYs2UNS0Af00yMhr6dX1"
+    private val stripeApiKey = DonationConstants.STRIPE_API_KEY
     private var signInButtonText = mutableStateOf("Sign In")
     private var signInButtonViewState = mutableStateOf(SignInButtonViewState.Ready)
     private var isGooglePayReady = mutableStateOf(false)
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        auth = FirebaseAuth.getInstance()
+        setupGoogleSignIn()
+        setupStripe()
+        setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background
+                ) {
+                    DonationScreen(
+                        onSignInClick = { onClickSignIn() },
+                        onPayClick = { amount -> sendPaymentRequest(amount) },
+                        onCardPayClick = { amount -> sendPaymentRequest(amount) },
+                        signInButtonText = signInButtonText,
+                        signInButtonViewState = signInButtonViewState,
+                        isGooglePayReady = isGooglePayReady
+                    )
+                }
+            }
+        }
+        updateInitialSignInStatus()
+    }
+
+    private fun setupGoogleSignIn() {
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(getString(R.string.default_web_client_id)).requestEmail().build()
+        googleSignInClient = GoogleSignIn.getClient(this, gso)
+    }
+
+    private fun setupStripe() {
+        PaymentConfiguration.init(this, stripeApiKey)
+        googlePayLauncher = GooglePayLauncher(
+            activity = this, config = GooglePayLauncher.Config(
+                environment = GooglePayEnvironment.Test,
+                merchantCountryCode = "SE",
+                merchantName = "Recent Audio Buffer"
+            ), readyCallback = ::onGooglePayReady, resultCallback = ::onGooglePayResult
+        )
+        stripePaymentSheet = PaymentSheet(this, ::onPaymentSheetResult)
+    }
+
+    private fun updateInitialSignInStatus() {
+        onSuccessSignInOut(auth.currentUser)
+    }
+
+    private fun onClickSignIn() {
+        if (auth.currentUser != null) {
+            onClickSignOut()
+        } else {
+            val signInIntent = googleSignInClient.signInIntent
+            signInScreenLauncher.launch(signInIntent)
+        }
+    }
+
+    private val signInScreenLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                try {
+                    val account = task.getResult(ApiException::class.java)
+                    launchFirebaseAuthWithGoogle(account)
+                } catch (e: ApiException) {
+                    logSignInError(e)
+                }
+            } else {
+                logSignInError(result)
+            }
+        }
+
+    private fun launchFirebaseAuthWithGoogle(account: GoogleSignInAccount) {
+        val credential = GoogleAuthProvider.getCredential(account.idToken, null)
+        auth.signInWithCredential(credential).addOnCompleteListener(this) { task ->
+            if (task.isSuccessful) {
+                onSuccessSignInOut(auth.currentUser)
+            } else {
+                logSignInError(task.exception)
+            }
+        }
+    }
+
+    private fun onSuccessSignInOut(user: FirebaseUser?) {
+        signInButtonText.value = if (user != null) "Sign Out" else "Sign In"
+    }
+
+    private fun onClickSignOut() {
+        auth.signOut()
+        googleSignInClient.signOut().addOnCompleteListener(this) {
+            onSuccessSignInOut(null)
+        }
+    }
+
+    private fun presentPaymentSheet(clientSecret: String) {
+        val configuration = PaymentSheet.Configuration(
+            merchantDisplayName = "Recent Audio Buffer", allowsDelayedPaymentMethods = true
+        )
+        stripePaymentSheet.presentWithPaymentIntent(clientSecret, configuration)
+    }
+
+    private fun onPaymentSheetResult(paymentSheetResult: PaymentSheetResult) {
+        when (paymentSheetResult) {
+            is PaymentSheetResult.Completed -> showPaymentResultToast("Payment complete!")
+            is PaymentSheetResult.Canceled -> showPaymentResultToast("Payment canceled.")
+            is PaymentSheetResult.Failed -> showPaymentError(paymentSheetResult.error.toString(), paymentSheetResult.error)
+        }
+    }
+
+    private fun sendPaymentRequest(amount: Int) {
+        fetchClientSecret(amount)
+    }
+
+    private fun handlePaymentWithClientSecret() {
+        runOnUiThread {
+            if (clientSecret == null) {
+                showPaymentError("Failed to get client secret")
+                return@runOnUiThread
+            }
+            if (isGooglePayReady.value) {
+                handleGooglePayPayment()
+            } else {
+                handleCardPayment()
+            }
+        }
+    }
+
+    private fun handleGooglePayPayment() {
+        Log.d(logTag, "handleGooglePayPayment: Paying with GPay ...")
+        googlePayLauncher.presentForPaymentIntent(clientSecret!!)
+    }
+
+    private fun handleCardPayment() {
+        Log.d(logTag, "handleCardPayment: Paying with Card ...")
+        presentPaymentSheet(clientSecret!!)
+    }
+
+    private fun fetchClientSecret(amount: Int) {
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val jsonBody = JSONObject().apply { put("amount", amount * 100) }
+        val requestBody = jsonBody.toString().toRequestBody(mediaType)
+        val request =
+            Request.Builder().url("$serverUrl/createPaymentIntent").post(requestBody).build()
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                logNetworkError(e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (!response.isSuccessful) {
+                    logServerError(response.code)
+                    return
+                }
+                val responseBody = response.body?.string() ?: run {
+                    logEmptyResponse()
+                    return
+                }
+                try {
+                    val jsonObject = JSONObject(responseBody)
+                    clientSecret = jsonObject.getString("clientSecret")
+                    handlePaymentWithClientSecret()
+                } catch (e: Exception) {
+                    logJsonError(e)
+                }
+            }
+        })
+    }
+
     private fun onGooglePayReady(isReady: Boolean) {
-        Log.d(logTag, "onGooglePayReady: isReady: $isReady")
         isGooglePayReady.value = isReady
         if (!isReady) {
             signInButtonViewState.value = SignInButtonViewState.Hidden
@@ -65,313 +228,88 @@ class DonationActivity : AppCompatActivity() {
         }
     }
 
-    private fun showGooglePayNotReadyDialog() {
-        val builder = AlertDialog.Builder(this)
-        builder.setTitle("Google Pay Not Available")
-        builder.setMessage("Google Pay is not available on this device. If you want to us it as the payment method, please make sure you have the Google Wallet app installed and have added a payment method.")
-        builder.setPositiveButton("OK") { dialog, _ ->
-            dialog.dismiss()
-        }
-        builder.create().show()
-    }
-
     private fun onGooglePayResult(result: GooglePayLauncher.Result) {
         when (result) {
-            GooglePayLauncher.Result.Completed -> {
-                // Payment succeeded, show a receipt view
-                Toast.makeText(this, "Payment Successful!", Toast.LENGTH_SHORT).show()
-                // Here you would update your database to remove ads for this user
-                // You'll need to associate the payment with the user's ID (auth.currentUser?.uid)
-            }
-
-            GooglePayLauncher.Result.Canceled -> {
-                // User canceled the operation
-                Toast.makeText(this, "Payment Canceled", Toast.LENGTH_SHORT).show()
-            }
-
-            is GooglePayLauncher.Result.Failed -> {
-                // Operation failed; inspect `result.error` for the exception
-                Toast.makeText(
-                    this,
-                    "Payment Failed: ${result.error.message}",
-                    Toast.LENGTH_SHORT
-                )
-                    .show()
-                Log.e(logTag, "Payment Failed", result.error)
-            }
+            is GooglePayLauncher.Result.Completed -> showPaymentResultToast("Payment Successful!")
+            is GooglePayLauncher.Result.Canceled -> showPaymentResultToast("Payment Canceled")
+            is GooglePayLauncher.Result.Failed -> showPaymentError(result.error.toString(), result.error)
         }
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        Log.d(logTag, "onCreate: Started")
-        super.onCreate(savedInstanceState)
+    private fun showGooglePayNotReadyDialog() {
+        AlertDialog.Builder(this).setTitle("Google Pay Not Available")
+            .setMessage("Google Pay is not available on this device. Please make sure you have the Google Wallet app installed and have added a payment method.")
+            .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }.create().show()
+    }
 
-        auth = FirebaseAuth.getInstance()
+    private fun showPaymentResultToast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
 
-        // Configure Google Sign In
-        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(getString(R.string.default_web_client_id)) // Make sure you have this in strings.xml
-            .requestEmail().build()
+    private fun showPaymentError(message: String, error: Throwable? = null) {
+        error?.let { Log.e(logTag, "Payment Failed", it) }
+        Toast.makeText(this, "Payment failed: $message", Toast.LENGTH_SHORT).show()
+    }
 
-        googleSignInClient = GoogleSignIn.getClient(this, gso)
+    private fun logSignInError(e: ApiException) {
+        Log.w(logTag, "Google sign in failed", e)
+        Log.w(logTag, "Statuscode: ${e.statusCode}")
+        Log.w(logTag, "Message: ${e.message}")
+        showPaymentError("Google sign in failed")
+    }
 
-        PaymentConfiguration.init(
-            this, stripeApiKey
+    private fun logSignInError(result: ActivityResult) {
+        Log.e(
+            logTag,
+            "Google sign in failed with error code, data: ${result.resultCode}, ${result.data?.extras}"
         )
-
-        googlePayLauncher = GooglePayLauncher(
-            activity = this, config = GooglePayLauncher.Config(
-                environment = GooglePayEnvironment.Test,
-                merchantCountryCode = "SE",
-                merchantName = "Widget Store"
-            ), readyCallback = ::onGooglePayReady, resultCallback = ::onGooglePayResult
-        )
-        stripePaymentSheet = PaymentSheet(this, ::onPaymentSheetResult)
-
-
-        setContent {
-            MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    DonationScreen(
-                        onSignInClick = { onClickSignIn() },
-                        onPayClick = { amount ->
-                            sendPaymentRequest(amount)
-                        },
-                        onCardPayClick = { amount ->
-                            sendPaymentRequest(amount)
-                        },
-                        signInButtonText = signInButtonText,
-                        signInButtonViewState = signInButtonViewState,
-                        isGooglePayReady = isGooglePayReady
-                    )
-                }
+        val bundle = result.data?.extras
+        if (bundle != null) {
+            for (key in bundle.keySet()) {
+                val value = bundle.get(key)
+                Log.e(logTag, "Bundle data - Key: $key, Value: $value")
             }
         }
-
-        updateInitialSignInStatus()
+        showPaymentError("Google sign in failed")
     }
 
-    private fun updateInitialSignInStatus() {
-        Log.d(logTag, "updateInitialSignInStatus: Started")
+    private fun logSignInError(e: Exception?) {
+        Log.w(logTag, "signInWithCredential:failure", e)
+        showPaymentError("Authentication Failed.")
+    }
 
-        if (auth.currentUser != null) {
-            // User is signed in
-            onSuccessSignInOut(auth.currentUser)
-        } else {
-            // User is signed out
-            onSuccessSignInOut(null)
+    private fun logNetworkError(e: IOException) {
+        Log.e(logTag, "sendPaymentRequest: Failed to fetch clientSecret", e)
+        runOnUiThread {
+            showPaymentError("Failed to connect to server")
         }
     }
 
-    private fun onClickSignIn() {
-        Log.d(logTag, "onClickSignIn: Started")
-        if (auth.currentUser != null) {
-            onClickSignOut()
-        } else {
-            val signInIntent = googleSignInClient.signInIntent
-            signInScreenLauncher.launch(signInIntent)
+    private fun logServerError(code: Int) {
+        Log.e(logTag, "sendPaymentRequest: Server returned an error: $code")
+        runOnUiThread {
+            showPaymentError("Server error: $code")
         }
     }
 
-    private val signInScreenLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result: ActivityResult ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            Log.d(logTag, "Google sign in returned RESULT_OK")
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            try {
-                val account = task.getResult(ApiException::class.java)
-                launchFirebaseAuthWithGoogle(account)
-            } catch (e: ApiException) {
-                Log.w(logTag, "Google sign in failed", e)
-                Log.w(logTag, "Statuscode: ${e.statusCode}")
-                Log.w(logTag, "Message: ${e.message}")
-            }
-        } else {
-            Log.e(
-                logTag,
-                "Google sign in failed with error code, data: ${result.resultCode}, ${result.data?.extras}"
-            )
-
-            val bundle = result.data?.extras
-            if (bundle != null) {
-                for (key in bundle.keySet()) {
-                    val value = bundle.get(key)
-                    Log.e(logTag, "Bundle data - Key: $key, Value: $value")
-                }
-            }
+    private fun logEmptyResponse() {
+        Log.e(logTag, "sendPaymentRequest: Empty response body")
+        runOnUiThread {
+            showPaymentError("Empty response from server")
         }
     }
 
-    private fun launchFirebaseAuthWithGoogle(account: GoogleSignInAccount) {
-        Log.d(logTag, "launchFirebaseAuthWithGoogle started")
-        val credential = GoogleAuthProvider.getCredential(account.idToken, null)
-        auth.signInWithCredential(credential).addOnCompleteListener(this) { task ->
-            if (task.isSuccessful) {
-                // Sign in success, update UI with the signed-in user's information
-                Log.d(logTag, "signInWithCredential:success")
-                onSuccessSignInOut(auth.currentUser)
-            } else {
-                // If sign in fails, display a message to the user.
-                Log.w(logTag, "signInWithCredential:failure", task.exception)
-                Toast.makeText(this, "Authentication Failed.", Toast.LENGTH_SHORT).show()
-            }
+    private fun logJsonError(e: Exception) {
+        Log.e(logTag, "sendPaymentRequest: Failed to parse JSON", e)
+        runOnUiThread {
+            showPaymentError("Failed to parse server response")
         }
     }
+}
 
-    private fun onSuccessSignInOut(user: FirebaseUser?) {
-        if (user != null) {
-            // User is signed in
-            Log.d(logTag, "onSuccessSignInOut: Sign Out On Click")
-            signInButtonText.value = "Sign Out"
-        } else {
-            // User is signed out
-            Log.d(logTag, "onSuccessSignInOut: Sign In On Click")
-            signInButtonText.value = "Sign In"
-        }
-    }
-
-    // Sign out function
-    private fun onClickSignOut() {
-        auth.signOut()
-        googleSignInClient.signOut().addOnCompleteListener(this) {
-            // Update UI after sign out
-            onSuccessSignInOut(null)
-        }
-    }
-
-    private fun presentPaymentSheet(clientSecret: String) {
-        clientSecret.let { paymentIntentClientSecret ->
-            val configuration = PaymentSheet.Configuration(
-                merchantDisplayName = "Recent Audio Buffer",
-                // Set `allowsDelayedPaymentMethods` to true if your business can handle payment
-                //methods that complete payment after a delay, like SEPA Debit and Sofort.
-                allowsDelayedPaymentMethods = true
-            )
-
-            stripePaymentSheet.presentWithPaymentIntent(
-                paymentIntentClientSecret,
-                configuration
-            )
-        }
-    }
-
-    private fun onPaymentSheetResult(paymentSheetResult: PaymentSheetResult) {
-        when (paymentSheetResult) {
-            is PaymentSheetResult.Completed -> {
-                Log.i(logTag, "PaymentSheetResult.Completed")
-                // Payment was successful!
-                Toast.makeText(this, "Payment complete!", Toast.LENGTH_SHORT).show()
-            }
-
-            is PaymentSheetResult.Canceled -> {
-                Log.i(logTag, "PaymentSheetResult.Canceled")
-                // Payment was canceled.
-                Toast.makeText(this, "Payment canceled.", Toast.LENGTH_SHORT).show()
-            }
-
-            is PaymentSheetResult.Failed -> {
-                Log.e(logTag, "PaymentSheetResult.Failed", paymentSheetResult.error)
-                // Payment failed.
-                Toast.makeText(
-                    this,
-                    "Payment failed: ${paymentSheetResult.error.message}",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-    }
-
-    private fun sendPaymentRequest(amount: Int) {
-        Log.d(logTag, "sendPaymentRequest: Started with amount: $amount")
-        val mediaType = "application/json; charset=utf-8".toMediaType()
-        val jsonBody = JSONObject().apply {
-            put("amount", amount * 100) // Amount in cents (e.g., 500 for 5 SEK)
-        }
-        val requestBody = jsonBody.toString().toRequestBody(mediaType)
-        val request =
-            Request.Builder().url("$serverUrl/createPaymentIntent")
-                .post(requestBody).build()
-        Log.d(logTag, "sendPaymentRequest: Request URL: ${request.url}")
-
-        httpClient.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                Log.e(logTag, "sendPaymentRequest: Failed to fetch clientSecret", e)
-                runOnUiThread {
-                    Toast.makeText(
-                        this@DonationActivity, "Failed to connect to server", Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-
-            override fun onResponse(call: Call, response: Response) {
-                Log.d(logTag, "sendPaymentRequest: Response received")
-                if (!response.isSuccessful) {
-                    Log.e(
-                        logTag,
-                        "sendPaymentRequest: Server returned an error: ${response.code}"
-                    )
-                    runOnUiThread {
-                        Toast.makeText(
-                            this@DonationActivity,
-                            "Server error: ${response.code}",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    return
-                }
-
-                val responseBody = response.body?.string()
-                if (responseBody == null) {
-                    Log.e(logTag, "sendPaymentRequest: Empty response body")
-                    runOnUiThread {
-                        Toast.makeText(
-                            this@DonationActivity,
-                            "Empty response from server",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    return
-                }
-
-                try {
-                    val jsonObject = JSONObject(responseBody)
-                    clientSecret = jsonObject.getString("clientSecret")
-                    Log.d(logTag, "sendPaymentRequest: clientSecret: $clientSecret")
-
-                    runOnUiThread {
-                        if (!isGooglePayReady.value && clientSecret != null) {
-                            Log.d(logTag, "sendPaymentRequest: Paying with Card ...")
-                            presentPaymentSheet(clientSecret!!)
-                        } else if (clientSecret != null) {
-                            Log.d(logTag, "sendPaymentRequest: Paying with GPay ...")
-                            googlePayLauncher.presentForPaymentIntent(clientSecret!!)
-                        } else {
-                            Toast.makeText(
-                                this@DonationActivity,
-                                "Failed to get client secret",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            Log.d(
-                                logTag,
-                                "sendPaymentRequest: Failed to get secret, hiding pay button"
-                            )
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(logTag, "sendPaymentRequest: Failed to parse JSON", e)
-                    runOnUiThread {
-                        Toast.makeText(
-                            this@DonationActivity,
-                            "Failed to parse server response",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                }
-            }
-        })
-    }
+object DonationConstants {
+    const val LOG_TAG = "DonationActivity"
+    const val SERVER_URL = "https://us-central1-recent-audio-buffer.cloudfunctions.net"
+    const val STRIPE_API_KEY =
+        "pk_test_51Qb05qH7rOdAu0fXFO9QEU8ygiSSOdlkqDofr9nSI54UHdWbxfIj0Iz0BBKIGlfzxwEUJTUOVILcNEVYs2UNS0Af00yMhr6dX1"
 }
