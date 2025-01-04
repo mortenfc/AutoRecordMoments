@@ -1,18 +1,21 @@
-// import * as functions from "firebase-functions";
-import {https} from "firebase-functions";
-import {stripeSecret} from "./MyFunctions/secret";
+import {onRequest} from "firebase-functions/v2/https";
+import {logger} from "firebase-functions/v2";
+import {defineSecret} from "firebase-functions/params";
 import Stripe from "stripe";
 
-export const createPaymentIntent = https.onRequest(
+const stripeSecret = defineSecret("STRIPE_SECRET");
+
+export const createPaymentIntent = onRequest({secrets: [stripeSecret]},
   async (req, res) => {
     const secretValue = await stripeSecret.value();
+    logger.info("Secret value: " + secretValue);
     const stripe = new Stripe(secretValue, {
       apiVersion: "2024-12-18.acacia",
     });
 
     try {
       const paymentIntent = await stripe.paymentIntents.create({
-        amount: 5, // Example amount (in cents)
+        amount: 500, // Minimum amount is 300 cents = 3 SEK
         currency: "SEK",
         automatic_payment_methods: {enabled: true},
       });

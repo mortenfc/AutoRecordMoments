@@ -12,7 +12,20 @@
           "package_name": "com.mfc.recentaudiobuffer"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "341850391115-cu0g09qajtio96gsag68e7ktig9dgio6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mfc.recentaudiobuffer",
+            "certificate_hash": "35125af0c9d20479c127d5e4d305a58f7e25baa3"
+          }
+        },
+        {
+          "client_id": "341850391115-esant6sul9ghjb3k96gqfgr7rg8sr0ca.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyB1At4G158sUbCNzrJh29yXtFJ6LdYO9dg"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "341850391115-esant6sul9ghjb3k96gqfgr7rg8sr0ca.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

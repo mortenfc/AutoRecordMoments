@@ -13,6 +13,7 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="red">#FFFF1111</color>
+    <color name="google_blue">#4285F4</color>
 
     <color name="colorPrimary">@color/teal_500</color>
     <color name="colorPrimaryDark">@color/teal_700</color>

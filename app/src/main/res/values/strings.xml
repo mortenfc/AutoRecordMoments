@@ -36,5 +36,13 @@
     <string name="buy_with_googlepay_button_content_description">Buy with Google Pay</string>
     <string name="add_to_google_wallet_button_content_description">Add to Google Wallet</string>
     <string name="donate_and_remove_ads">Donate and get rid of ADs</string>
+    <string name="sign_in">Sign In</string>
+    <string name="sign_out">Sign Out</string>
+    <string name="google_logo">Google Logo</string>
+    <string name="pay">Pay</string>
+    <string name="it_supports_the_developer_and_gets_rid_of_ads">It supports the developer and gets rid of ads</string>
+    <string name="or_add_a_pass_to_your_google_wallet">Or add a pass to your Google Wallet:</string>
+    <string name="donate_your_heart_out">Donate Your Heart Out</string>
+    <string name="donate_ads_away">Donate ads away</string>
 
 </resources>

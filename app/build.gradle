@@ -68,6 +68,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
 
     // Test
     androidTestImplementation 'androidx.test:runner:1.6.2'
@@ -102,6 +103,7 @@ dependencies {
     debugImplementation 'androidx.compose.ui:ui-test-manifest'
     implementation 'androidx.activity:activity-compose:1.9.3'
     implementation "androidx.lifecycle:lifecycle-viewmodel-compose"
+    implementation("androidx.constraintlayout:constraintlayout-compose:1.1.0")
 
     // Persistency
     implementation "androidx.datastore:datastore-preferences:1.1.1"
