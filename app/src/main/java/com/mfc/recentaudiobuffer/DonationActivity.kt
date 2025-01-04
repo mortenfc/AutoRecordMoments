@@ -25,6 +25,8 @@ import com.google.firebase.auth.GoogleAuthProvider
 import com.stripe.android.PaymentConfiguration
 import com.stripe.android.googlepaylauncher.GooglePayEnvironment
 import com.stripe.android.googlepaylauncher.GooglePayLauncher
+import com.stripe.android.paymentsheet.PaymentSheet
+import com.stripe.android.paymentsheet.PaymentSheetResult
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -43,20 +45,23 @@ class DonationActivity : AppCompatActivity() {
     private lateinit var auth: FirebaseAuth
 
     private lateinit var googlePayLauncher: GooglePayLauncher
+    private lateinit var stripePaymentSheet: PaymentSheet
+
     private var clientSecret: String? = null
     private val stripeApiKey: String =
         "pk_test_51Qb05qH7rOdAu0fXFO9QEU8ygiSSOdlkqDofr9nSI54UHdWbxfIj0Iz0BBKIGlfzxwEUJTUOVILcNEVYs2UNS0Af00yMhr6dX1"
     private var signInButtonText = mutableStateOf("Sign In")
-    private var payButtonViewState = mutableStateOf(PayButtonViewState.Hidden)
+    private var signInButtonViewState = mutableStateOf(SignInButtonViewState.Ready)
     private var isGooglePayReady = mutableStateOf(false)
 
     private fun onGooglePayReady(isReady: Boolean) {
         Log.d(logTag, "onGooglePayReady: isReady: $isReady")
         isGooglePayReady.value = isReady
         if (!isReady) {
+            signInButtonViewState.value = SignInButtonViewState.Hidden
             showGooglePayNotReadyDialog()
         } else {
-            payButtonViewState.value = PayButtonViewState.Ready
+            signInButtonViewState.value = SignInButtonViewState.Ready
         }
     }
 
@@ -121,6 +126,8 @@ class DonationActivity : AppCompatActivity() {
                 merchantName = "Widget Store"
             ), readyCallback = ::onGooglePayReady, resultCallback = ::onGooglePayResult
         )
+        stripePaymentSheet = PaymentSheet(this, ::onPaymentSheetResult)
+
 
         setContent {
             MaterialTheme {
@@ -137,7 +144,7 @@ class DonationActivity : AppCompatActivity() {
                             sendPaymentRequest(amount)
                         },
                         signInButtonText = signInButtonText,
-                        payButtonViewState = payButtonViewState,
+                        signInButtonViewState = signInButtonViewState,
                         isGooglePayReady = isGooglePayReady
                     )
                 }
@@ -220,14 +227,10 @@ class DonationActivity : AppCompatActivity() {
             // User is signed in
             Log.d(logTag, "onSuccessSignInOut: Sign Out On Click")
             signInButtonText.value = "Sign Out"
-            // Attempt to enable Google Pay
-            payButtonViewState.value = PayButtonViewState.Ready
         } else {
             // User is signed out
             Log.d(logTag, "onSuccessSignInOut: Sign In On Click")
             signInButtonText.value = "Sign In"
-            // Disable Google Pay
-            payButtonViewState.value = PayButtonViewState.Hidden
         }
     }
 
@@ -237,6 +240,48 @@ class DonationActivity : AppCompatActivity() {
         googleSignInClient.signOut().addOnCompleteListener(this) {
             // Update UI after sign out
             onSuccessSignInOut(null)
+        }
+    }
+
+    private fun presentPaymentSheet(clientSecret: String) {
+        clientSecret.let { paymentIntentClientSecret ->
+            val configuration = PaymentSheet.Configuration(
+                merchantDisplayName = "Recent Audio Buffer",
+                // Set `allowsDelayedPaymentMethods` to true if your business can handle payment
+                //methods that complete payment after a delay, like SEPA Debit and Sofort.
+                allowsDelayedPaymentMethods = true
+            )
+
+            stripePaymentSheet.presentWithPaymentIntent(
+                paymentIntentClientSecret,
+                configuration
+            )
+        }
+    }
+
+    private fun onPaymentSheetResult(paymentSheetResult: PaymentSheetResult) {
+        when (paymentSheetResult) {
+            is PaymentSheetResult.Completed -> {
+                Log.i(logTag, "PaymentSheetResult.Completed")
+                // Payment was successful!
+                Toast.makeText(this, "Payment complete!", Toast.LENGTH_SHORT).show()
+            }
+
+            is PaymentSheetResult.Canceled -> {
+                Log.i(logTag, "PaymentSheetResult.Canceled")
+                // Payment was canceled.
+                Toast.makeText(this, "Payment canceled.", Toast.LENGTH_SHORT).show()
+            }
+
+            is PaymentSheetResult.Failed -> {
+                Log.e(logTag, "PaymentSheetResult.Failed", paymentSheetResult.error)
+                // Payment failed.
+                Toast.makeText(
+                    this,
+                    "Payment failed: ${paymentSheetResult.error.message}",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 
@@ -299,7 +344,8 @@ class DonationActivity : AppCompatActivity() {
 
                     runOnUiThread {
                         if (!isGooglePayReady.value && clientSecret != null) {
-                            Log.d(logTag, "sendPaymentRequest: Paid with card!")
+                            Log.d(logTag, "sendPaymentRequest: Paying with Card ...")
+                            presentPaymentSheet(clientSecret!!)
                         } else if (clientSecret != null) {
                             Log.d(logTag, "sendPaymentRequest: Paying with GPay ...")
                             googlePayLauncher.presentForPaymentIntent(clientSecret!!)
@@ -313,7 +359,6 @@ class DonationActivity : AppCompatActivity() {
                                 logTag,
                                 "sendPaymentRequest: Failed to get secret, hiding pay button"
                             )
-                            payButtonViewState.value = PayButtonViewState.Hidden
                         }
                     }
                 } catch (e: Exception) {

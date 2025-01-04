@@ -53,8 +53,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 
-enum class PayButtonViewState {
-    Hidden, Loading, Ready
+enum class SignInButtonViewState {
+    Hidden, Ready
 }
 
 @Composable
@@ -63,7 +63,7 @@ fun DonationScreen(
     onPayClick: (Int) -> Unit,
     onCardPayClick: (Int) -> Unit,
     signInButtonText: MutableState<String>,
-    payButtonViewState: MutableState<PayButtonViewState>,
+    signInButtonViewState: MutableState<SignInButtonViewState>,
     isGooglePayReady: MutableState<Boolean>
 ) {
     val context = LocalContext.current
@@ -114,19 +114,14 @@ fun DonationScreen(
                 color = MaterialTheme.colorScheme.secondary
             )
 
-            GoogleSignInButton(onClick = onSignInClick, signInButtonText)
-
-            Spacer(modifier = Modifier.height(30.dp))
-
             if (isGooglePayReady.value) {
-                when (payButtonViewState.value) {
-                    PayButtonViewState.Hidden -> {}
-                    PayButtonViewState.Loading -> {
-                        Text("Loading...")
-                        CircularProgressIndicator()
-                    }
+                when (signInButtonViewState.value) {
+                    SignInButtonViewState.Hidden -> {}
+                    SignInButtonViewState.Ready -> {
+                        GoogleSignInButton(onClick = onSignInClick, signInButtonText)
 
-                    PayButtonViewState.Ready -> {
+                        Spacer(modifier = Modifier.height(30.dp))
+
                         TextField(
                             value = donationAmount,
                             onValueChange = {
@@ -282,7 +277,8 @@ fun GooglePayButton(onClick: () -> Unit) {
                     )
                 }
             }
-            .clip(CircleShape), // Fully rounded corners
+            .clip(CircleShape) // Fully rounded corners
+            .background(Color.Black),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent, // Make container transparent
             contentColor = Color.White // Text color
@@ -347,7 +343,7 @@ fun CardPayButton(onClick: () -> Unit) {
                 }
             }
             .clip(CircleShape) // Fully rounded corners
-            .background(Color.Black), // Add background color here
+            .background(Color.Black),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent, // Make container transparent
             contentColor = Color.White // Text color
@@ -410,7 +406,7 @@ fun AddToGoogleWalletButton(context: Context) {
 @Composable
 fun DonationScreenPreview() {
     val signInTextState = remember { mutableStateOf("Sign Out") }
-    val payButtonViewState = remember { mutableStateOf(PayButtonViewState.Ready) }
-    val isGooglePayReady = remember { mutableStateOf(false) }
-    DonationScreen({}, {}, {}, signInTextState, payButtonViewState, isGooglePayReady)
+    val signInButtonViewState = remember { mutableStateOf(SignInButtonViewState.Ready) }
+    val isGooglePayReady = remember { mutableStateOf(true) }
+    DonationScreen({}, {}, {}, signInTextState, signInButtonViewState, isGooglePayReady)
 }
