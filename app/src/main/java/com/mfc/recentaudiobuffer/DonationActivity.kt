@@ -47,7 +47,7 @@ class DonationActivity : AppCompatActivity() {
     private val stripeApiKey: String =
         "pk_test_51Qb05qH7rOdAu0fXFO9QEU8ygiSSOdlkqDofr9nSI54UHdWbxfIj0Iz0BBKIGlfzxwEUJTUOVILcNEVYs2UNS0Af00yMhr6dX1"
     private var signInButtonText = mutableStateOf("Sign In")
-    private var googlePayButtonViewState = mutableStateOf(GooglePayButtonViewState.Hidden)
+    private var payButtonViewState = mutableStateOf(PayButtonViewState.Hidden)
     private var isGooglePayReady = mutableStateOf(false)
 
     private fun onGooglePayReady(isReady: Boolean) {
@@ -55,20 +55,20 @@ class DonationActivity : AppCompatActivity() {
         isGooglePayReady.value = isReady
         if (!isReady) {
             showGooglePayNotReadyDialog()
-            googlePayButtonViewState.value = GooglePayButtonViewState.Hidden
+        } else {
+            payButtonViewState.value = PayButtonViewState.Ready
         }
     }
 
     private fun showGooglePayNotReadyDialog() {
         val builder = AlertDialog.Builder(this)
         builder.setTitle("Google Pay Not Available")
-        builder.setMessage("Google Pay is not available on this device. Please make sure you have the Google Pay app installed and have added a payment method.")
+        builder.setMessage("Google Pay is not available on this device. If you want to us it as the payment method, please make sure you have the Google Wallet app installed and have added a payment method.")
         builder.setPositiveButton("OK") { dialog, _ ->
             dialog.dismiss()
         }
         builder.create().show()
     }
-
 
     private fun onGooglePayResult(result: GooglePayLauncher.Result) {
         when (result) {
@@ -130,27 +130,15 @@ class DonationActivity : AppCompatActivity() {
                 ) {
                     DonationScreen(
                         onSignInClick = { onClickSignIn() },
-                        onPayClick = {
-                            if (clientSecret != null && isGooglePayReady.value) {
-                                googlePayLauncher.presentForPaymentIntent(clientSecret!!)
-                            } else {
-                                if (!isGooglePayReady.value) {
-                                    Toast.makeText(
-                                        this@DonationActivity,
-                                        "Google Pay is not ready",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                } else {
-                                    Toast.makeText(
-                                        this@DonationActivity,
-                                        "Failed to get client secret",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
+                        onPayClick = { amount ->
+                            sendPaymentRequest(amount)
+                        },
+                        onCardPayClick = { amount ->
+                            sendPaymentRequest(amount)
                         },
                         signInButtonText = signInButtonText,
-                        googlePayButtonViewState = googlePayButtonViewState
+                        payButtonViewState = payButtonViewState,
+                        isGooglePayReady = isGooglePayReady
                     )
                 }
             }
@@ -233,14 +221,13 @@ class DonationActivity : AppCompatActivity() {
             Log.d(logTag, "onSuccessSignInOut: Sign Out On Click")
             signInButtonText.value = "Sign Out"
             // Attempt to enable Google Pay
-            googlePayButtonViewState.value = GooglePayButtonViewState.Loading
-            fetchClientSecret()
+            payButtonViewState.value = PayButtonViewState.Ready
         } else {
             // User is signed out
             Log.d(logTag, "onSuccessSignInOut: Sign In On Click")
             signInButtonText.value = "Sign In"
             // Disable Google Pay
-            googlePayButtonViewState.value = GooglePayButtonViewState.Hidden
+            payButtonViewState.value = PayButtonViewState.Hidden
         }
     }
 
@@ -253,21 +240,21 @@ class DonationActivity : AppCompatActivity() {
         }
     }
 
-    private fun fetchClientSecret() {
-        Log.d(logTag, "fetchClientSecret: Started")
+    private fun sendPaymentRequest(amount: Int) {
+        Log.d(logTag, "sendPaymentRequest: Started with amount: $amount")
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val jsonBody = JSONObject().apply {
-            put("amount", 500) // Amount in cents (5 SEK)
+            put("amount", amount * 100) // Amount in cents (e.g., 500 for 5 SEK)
         }
         val requestBody = jsonBody.toString().toRequestBody(mediaType)
         val request =
             Request.Builder().url("$serverUrl/createPaymentIntent")
                 .post(requestBody).build()
-        Log.d(logTag, "fetchClientSecret: Request URL: ${request.url}")
+        Log.d(logTag, "sendPaymentRequest: Request URL: ${request.url}")
 
         httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                Log.e(logTag, "fetchClientSecret: Failed to fetch clientSecret", e)
+                Log.e(logTag, "sendPaymentRequest: Failed to fetch clientSecret", e)
                 runOnUiThread {
                     Toast.makeText(
                         this@DonationActivity, "Failed to connect to server", Toast.LENGTH_SHORT
@@ -276,11 +263,11 @@ class DonationActivity : AppCompatActivity() {
             }
 
             override fun onResponse(call: Call, response: Response) {
-                Log.d(logTag, "fetchClientSecret: Response received")
+                Log.d(logTag, "sendPaymentRequest: Response received")
                 if (!response.isSuccessful) {
                     Log.e(
                         logTag,
-                        "fetchClientSecret: Server returned an error: ${response.code}"
+                        "sendPaymentRequest: Server returned an error: ${response.code}"
                     )
                     runOnUiThread {
                         Toast.makeText(
@@ -294,7 +281,7 @@ class DonationActivity : AppCompatActivity() {
 
                 val responseBody = response.body?.string()
                 if (responseBody == null) {
-                    Log.e(logTag, "fetchClientSecret: Empty response body")
+                    Log.e(logTag, "sendPaymentRequest: Empty response body")
                     runOnUiThread {
                         Toast.makeText(
                             this@DonationActivity,
@@ -308,25 +295,29 @@ class DonationActivity : AppCompatActivity() {
                 try {
                     val jsonObject = JSONObject(responseBody)
                     clientSecret = jsonObject.getString("clientSecret")
-                    Log.d(logTag, "fetchClientSecret: clientSecret: $clientSecret")
+                    Log.d(logTag, "sendPaymentRequest: clientSecret: $clientSecret")
 
-                    if (clientSecret != null) {
-                        Log.d(logTag, "fetchClientSecret: GPay is ready")
-                        googlePayButtonViewState.value = GooglePayButtonViewState.Ready
-                    } else {
-                        runOnUiThread {
+                    runOnUiThread {
+                        if (!isGooglePayReady.value && clientSecret != null) {
+                            Log.d(logTag, "sendPaymentRequest: Paid with card!")
+                        } else if (clientSecret != null) {
+                            Log.d(logTag, "sendPaymentRequest: Paying with GPay ...")
+                            googlePayLauncher.presentForPaymentIntent(clientSecret!!)
+                        } else {
                             Toast.makeText(
                                 this@DonationActivity,
                                 "Failed to get client secret",
                                 Toast.LENGTH_SHORT
                             ).show()
+                            Log.d(
+                                logTag,
+                                "sendPaymentRequest: Failed to get secret, hiding pay button"
+                            )
+                            payButtonViewState.value = PayButtonViewState.Hidden
                         }
-
-                        Log.d(logTag, "fetchClientSecret: GPay is hidden")
-                        googlePayButtonViewState.value = GooglePayButtonViewState.Hidden
                     }
                 } catch (e: Exception) {
-                    Log.e(logTag, "fetchClientSecret: Failed to parse JSON", e)
+                    Log.e(logTag, "sendPaymentRequest: Failed to parse JSON", e)
                     runOnUiThread {
                         Toast.makeText(
                             this@DonationActivity,

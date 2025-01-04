@@ -14,8 +14,19 @@ export const createPaymentIntent = onRequest({secrets: [stripeSecret]},
     });
 
     try {
+      // Extract the amount from the request body
+      const {amount} = req.body;
+
+      // Validate the amount
+      if (!amount || typeof amount !== "number" || amount < 500) {
+        logger.error("Invalid amount received:", amount);
+        res.status(400).json({error: "Invalid amount. Amount must be a number and at least 500 (5 SEK)."});
+        return;
+      }
+
+      // Create the PaymentIntent with the dynamic amount
       const paymentIntent = await stripe.paymentIntents.create({
-        amount: 500, // Minimum amount is 300 cents = 3 SEK
+        amount: amount, // Use the amount from the request
         currency: "SEK",
         automatic_payment_methods: {enabled: true},
       });

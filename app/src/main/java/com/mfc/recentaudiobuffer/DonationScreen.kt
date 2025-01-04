@@ -3,6 +3,10 @@ package com.mfc.recentaudiobuffer
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,7 +34,6 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,29 +44,32 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.State
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 
-enum class GooglePayButtonViewState {
-    Hidden,
-    Loading,
-    Ready
+enum class PayButtonViewState {
+    Hidden, Loading, Ready
 }
 
 @Composable
 fun DonationScreen(
     onSignInClick: () -> Unit,
-    onPayClick: () -> Unit,
+    onPayClick: (Int) -> Unit,
+    onCardPayClick: (Int) -> Unit,
     signInButtonText: MutableState<String>,
-    googlePayButtonViewState: MutableState<GooglePayButtonViewState>
+    payButtonViewState: MutableState<PayButtonViewState>,
+    isGooglePayReady: MutableState<Boolean>
 ) {
     val context = LocalContext.current
     val passContainerVisible by remember { mutableStateOf(false) }
+    var donationAmount by remember { mutableStateOf("") }
+    var isError by rememberSaveable { mutableStateOf(false) }
 
     ConstraintLayout(
         modifier = Modifier
@@ -112,19 +118,76 @@ fun DonationScreen(
 
             Spacer(modifier = Modifier.height(30.dp))
 
-            when (googlePayButtonViewState.value) {
-                GooglePayButtonViewState.Hidden -> {
-                    // Don't show the button
-                }
+            if (isGooglePayReady.value) {
+                when (payButtonViewState.value) {
+                    PayButtonViewState.Hidden -> {}
+                    PayButtonViewState.Loading -> {
+                        Text("Loading...")
+                        CircularProgressIndicator()
+                    }
 
-                GooglePayButtonViewState.Loading -> {
-                    // Show a loading indicator
-                    CircularProgressIndicator()
+                    PayButtonViewState.Ready -> {
+                        TextField(
+                            value = donationAmount,
+                            onValueChange = {
+                                donationAmount = it
+                                isError = it.toIntOrNull() == null || it.toIntOrNull()!! < 5
+                            },
+                            label = { Text("Donation Amount ≥ 5 SEK") },
+                            modifier = Modifier.padding(bottom = 16.dp),
+                            isError = isError,
+                            singleLine = true,
+                            supportingText = {
+                                if (isError) {
+                                    Text(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        text = "Error: Amount must be at least 5 SEK",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            },
+                        )
+                        GooglePayButton(onClick = {
+                            val amount = donationAmount.toIntOrNull()
+                            if (amount != null && amount >= 5) {
+                                isError = false
+                                onPayClick(amount)
+                            } else {
+                                isError = true
+                            }
+                        })
+                    }
                 }
-
-                GooglePayButtonViewState.Ready -> {
-                    GooglePayButton(onClick = onPayClick)
-                }
+            } else {
+                TextField(
+                    value = donationAmount,
+                    onValueChange = {
+                        donationAmount = it
+                        isError = it.toIntOrNull() == null || it.toIntOrNull()!! < 5
+                    },
+                    label = { Text("Donation Amount ≥ 5 SEK") },
+                    modifier = Modifier.padding(bottom = 16.dp),
+                    isError = isError,
+                    singleLine = true,
+                    supportingText = {
+                        if (isError) {
+                            Text(
+                                modifier = Modifier.fillMaxWidth(),
+                                text = "Error: Amount must be at least 5 SEK",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
+                )
+                CardPayButton(onClick = {
+                    val amount = donationAmount.toIntOrNull()
+                    if (amount != null && amount >= 5) {
+                        isError = false
+                        onCardPayClick(amount)
+                    } else {
+                        isError = true
+                    }
+                })
             }
 
             Spacer(modifier = Modifier.height(15.dp))
@@ -160,8 +223,7 @@ fun GoogleSignInButton(onClick: () -> Unit, signInButtonText: MutableState<Strin
             .height(48.dp)
             .shadow(elevation = 2.dp, shape = RoundedCornerShape(4.dp)),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White,
-            contentColor = Color.Black // Text color
+            containerColor = Color.White, contentColor = Color.Black // Text color
         ),
         shape = RoundedCornerShape(4.dp)
     ) {
@@ -171,17 +233,13 @@ fun GoogleSignInButton(onClick: () -> Unit, signInButtonText: MutableState<Strin
             Image(
                 painter = painterResource(id = R.drawable.ic_google_logo),
                 contentDescription = stringResource(id = R.string.google_logo),
-                modifier = Modifier
-                    .size(24.dp)
+                modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(5.dp))
             Text(
                 text = if (signInButtonText.value == "Sign In") stringResource(id = R.string.sign_in) else stringResource(
                     id = R.string.sign_out
-                ),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.DarkGray
+                ), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray
             )
         }
     }
@@ -190,20 +248,44 @@ fun GoogleSignInButton(onClick: () -> Unit, signInButtonText: MutableState<Strin
 @Composable
 fun GooglePayButton(onClick: () -> Unit) {
     Button(
-        onClick = onClick,
-        modifier = Modifier
+        onClick = onClick, modifier = Modifier
             .width(150.dp)
             .height(48.dp)
-            .shadow(
-                elevation = 3.dp,
-                shape = CircleShape,
-                ambientColor = Color.White,
-                spotColor = Color.White
-            )
+            .drawBehind {
+                val shadowColor = Color.White
+                val transparentColor = Color.Transparent
+                val shadowRadius = 4.dp.toPx()
+                val offset = 2.dp.toPx() // Offset downwards
+
+                val paint = Paint().apply {
+                    this.color = transparentColor
+                    this.isAntiAlias = true
+                    this
+                        .asFrameworkPaint()
+                        .setShadowLayer(
+                            shadowRadius, // Half of height
+                            0f, // No horizontal offset
+                            offset, // Vertical offset
+                            shadowColor.toArgb()
+                        )
+                }
+
+                drawIntoCanvas { canvas ->
+                    canvas.drawRoundRect(
+                        left = 0f,
+                        top = offset, // Anchor is 0
+                        right = size.width,
+                        bottom = size.height, // Draw to the bottom of the button
+                        radiusX = size.height / 2, // Half the height for rounded corners
+                        radiusY = size.height / 2, // Half the height for rounded corners
+                        paint = paint
+                    )
+                }
+            }
             .clip(CircleShape), // Fully rounded corners
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Black, // Black background
-            contentColor = Color.White // White text
+            containerColor = Color.Transparent, // Make container transparent
+            contentColor = Color.White // Text color
         ),
         shape = CircleShape
     ) {
@@ -219,6 +301,72 @@ fun GooglePayButton(onClick: () -> Unit) {
             Spacer(modifier = Modifier.width(1.dp))
             Text(
                 text = stringResource(id = R.string.pay),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White
+            )
+        }
+    }
+}
+
+@Composable
+fun CardPayButton(onClick: () -> Unit) {
+    Button(
+        onClick = onClick, modifier = Modifier
+            .width(200.dp)
+            .height(48.dp)
+            .drawBehind {
+                val shadowColor = Color.White
+                val transparentColor = Color.Transparent
+                val shadowRadius = 4.dp.toPx()
+                val offset = 2.dp.toPx() // Offset downwards
+
+                val paint = Paint().apply {
+                    this.color = transparentColor
+                    this.isAntiAlias = true
+                    this
+                        .asFrameworkPaint()
+                        .setShadowLayer(
+                            shadowRadius, // Half of height
+                            0f, // No horizontal offset
+                            offset, // Vertical offset
+                            shadowColor.toArgb()
+                        )
+                }
+
+                drawIntoCanvas { canvas ->
+                    canvas.drawRoundRect(
+                        left = 0f,
+                        top = offset, // Anchor is 0
+                        right = size.width,
+                        bottom = size.height, // Draw to the bottom of the button
+                        radiusX = size.height / 2, // Half the height for rounded corners
+                        radiusY = size.height / 2, // Half the height for rounded corners
+                        paint = paint
+                    )
+                }
+            }
+            .clip(CircleShape) // Fully rounded corners
+            .background(Color.Black), // Add background color here
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Transparent, // Make container transparent
+            contentColor = Color.White // Text color
+        ),
+        shape = CircleShape
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.baseline_credit_card_24),
+                contentDescription = stringResource(id = R.string.pay_with_credit_card),
+                modifier = Modifier.size(24.dp),
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(colorResource(id = R.color.teal_900))
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+                text = stringResource(id = R.string.pay_with_credit_card),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 color = Color.White
@@ -262,6 +410,7 @@ fun AddToGoogleWalletButton(context: Context) {
 @Composable
 fun DonationScreenPreview() {
     val signInTextState = remember { mutableStateOf("Sign Out") }
-    val googlePayButtonViewState = remember { mutableStateOf(GooglePayButtonViewState.Ready) }
-    DonationScreen({}, {}, signInTextState, googlePayButtonViewState)
+    val payButtonViewState = remember { mutableStateOf(PayButtonViewState.Ready) }
+    val isGooglePayReady = remember { mutableStateOf(false) }
+    DonationScreen({}, {}, {}, signInTextState, payButtonViewState, isGooglePayReady)
 }
