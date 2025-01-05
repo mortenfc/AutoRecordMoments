@@ -155,7 +155,9 @@ class DonationActivity : AppCompatActivity() {
         when (paymentSheetResult) {
             is PaymentSheetResult.Completed -> showPaymentResultToast("Payment complete!")
             is PaymentSheetResult.Canceled -> showPaymentResultToast("Payment canceled.")
-            is PaymentSheetResult.Failed -> showPaymentError(paymentSheetResult.error.toString(), paymentSheetResult.error)
+            is PaymentSheetResult.Failed -> showPaymentError(
+                paymentSheetResult.error.toString(), paymentSheetResult.error
+            )
         }
     }
 
@@ -189,7 +191,7 @@ class DonationActivity : AppCompatActivity() {
 
     private fun fetchClientSecret(amount: Int) {
         val mediaType = "application/json; charset=utf-8".toMediaType()
-        val jsonBody = JSONObject().apply { put("amount", amount * 100) }
+        val jsonBody = JSONObject().apply { put("amount", amount * 100) } // Convert to cents
         val requestBody = jsonBody.toString().toRequestBody(mediaType)
         val request =
             Request.Builder().url("$serverUrl/createPaymentIntent").post(requestBody).build()
@@ -232,13 +234,15 @@ class DonationActivity : AppCompatActivity() {
         when (result) {
             is GooglePayLauncher.Result.Completed -> showPaymentResultToast("Payment Successful!")
             is GooglePayLauncher.Result.Canceled -> showPaymentResultToast("Payment Canceled")
-            is GooglePayLauncher.Result.Failed -> showPaymentError(result.error.toString(), result.error)
+            is GooglePayLauncher.Result.Failed -> showPaymentError(
+                result.error.toString(), result.error
+            )
         }
     }
 
     private fun showGooglePayNotReadyDialog() {
         AlertDialog.Builder(this).setTitle("Google Pay Not Available")
-            .setMessage("Google Pay is not available on this device. Please make sure you have the Google Wallet app installed and have added a payment method.")
+            .setMessage("No worries! Google Pay is just one way to donate. If you want to use it, make sure you've installed the Google Wallet app and added a credit or debit card.")
             .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }.create().show()
     }
 
