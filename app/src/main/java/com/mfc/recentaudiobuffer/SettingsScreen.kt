@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,6 +20,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -26,6 +28,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedTextField
@@ -33,6 +36,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
@@ -45,6 +50,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -62,6 +68,11 @@ import androidx.compose.ui.unit.dp
 import com.mfc.recentaudiobuffer.ui.theme.RecentAudioBufferTheme
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.PaintingStyle
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
@@ -69,21 +80,15 @@ fun SettingsScreen(
     config: AudioConfig,
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
-    onBufferTimeLengthChanged: (Int) -> Unit,
-    onSubmit: () -> Unit
+    onSubmit: (Int) -> Unit
 ) {
     var showSampleRateMenu by remember { mutableStateOf(false) }
     var showBitDepthMenu by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
-    var isFirstTime by remember { mutableStateOf(true) } // Because collectAsState is async the screen can render before it finishes
-    var bufferTimeLength by remember { mutableIntStateOf(config.BUFFER_TIME_LENGTH_S) }
+    val bufferTimeLength = rememberSaveable { mutableIntStateOf(config.BUFFER_TIME_LENGTH_S) }
 
     LaunchedEffect(config.BUFFER_TIME_LENGTH_S) {
-        if (!isFirstTime) {
-            bufferTimeLength = config.BUFFER_TIME_LENGTH_S
-        } else {
-            isFirstTime = false
-        }
+        bufferTimeLength.intValue = config.BUFFER_TIME_LENGTH_S
     }
 
     Scaffold(containerColor = colorResource(id = R.color.teal_100),
@@ -91,6 +96,9 @@ fun SettingsScreen(
             detectTapGestures {
                 focusManager.clearFocus()
             }
+        },
+        topBar = {
+            SettingsTopAppBar(onBackButtonClicked = { onSubmit(bufferTimeLength.intValue) })
         }) { innerPadding ->
         Column(
             modifier = Modifier
@@ -171,7 +179,6 @@ fun SettingsScreen(
 
             MyOutlinedBufferInputField(
                 bufferTimeLength = bufferTimeLength,
-                onBufferTimeLengthChanged = onBufferTimeLengthChanged
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -180,7 +187,7 @@ fun SettingsScreen(
                 text = stringResource(id = R.string.submit),
                 icon = R.drawable.baseline_save_alt_24,
                 onClick = {
-                    onSubmit()
+                    onSubmit(bufferTimeLength.intValue)
                 },
                 iconTint = colorResource(id = R.color.purple_accent),
                 width = 130.dp
@@ -222,24 +229,24 @@ fun SettingsButton(text: String, icon: ImageVector, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyOutlinedBufferInputField(
-    bufferTimeLength: Int, onBufferTimeLengthChanged: (Int) -> Unit
+    bufferTimeLength: MutableIntState
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focusManager = LocalFocusManager.current
 
     BasicTextField(
-        value = bufferTimeLength.toString(),
+        value = bufferTimeLength.intValue.toString(),
         singleLine = true,
         interactionSource = interactionSource,
         cursorBrush = SolidColor(Color.White),
         onValueChange = { userInput: String ->
             if (userInput.isEmpty()) {
                 // Allow complete deletion
-                onBufferTimeLengthChanged(1)
+                bufferTimeLength.intValue = 1
             } else {
                 val parsedValue = userInput.trim().toIntOrNull()
                 if (parsedValue != null) {
-                    onBufferTimeLengthChanged(parsedValue)
+                    bufferTimeLength.intValue = parsedValue
                 }
                 // Consider adding an error message if the input is invalid
             }
@@ -249,6 +256,7 @@ fun MyOutlinedBufferInputField(
             .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 0.dp)
             .onFocusChanged {
                 if (!it.isFocused) {
+                    Log.v("SettingsScreen", "Focus lost, clearing focus")
                 }
             },
         textStyle = TextStyle(
@@ -256,10 +264,10 @@ fun MyOutlinedBufferInputField(
         ),
         keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = {
-            focusManager.moveFocus(FocusDirection.Down)
+            focusManager.clearFocus()
         }),
     ) { innerTextField ->
-        OutlinedTextFieldDefaults.DecorationBox(value = bufferTimeLength.toString(),
+        OutlinedTextFieldDefaults.DecorationBox(value = bufferTimeLength.intValue.toString(),
             innerTextField = innerTextField,
             enabled = true,
             singleLine = true,
@@ -272,7 +280,7 @@ fun MyOutlinedBufferInputField(
                 )
             },
             container = {
-                OutlinedTextFieldDefaults.ContainerBox(
+                OutlinedTextFieldDefaults.Container(
                     enabled = true,
                     isError = false,
                     interactionSource = interactionSource,
@@ -310,10 +318,66 @@ fun StyledDropdownMenuItem(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsTopAppBar(
+    onBackButtonClicked: () -> Unit
+) {
+    val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
+    val toolbarBackgroundColor = colorResource(id = R.color.teal_350)
+    TopAppBar(title = {
+        Text(
+            text = stringResource(id = R.string.settings),
+            color = colorResource(id = R.color.teal_900)
+        )
+    }, modifier = Modifier.drawBehind {
+        val paint = Paint().apply {
+            color = toolbarOutlineColor
+            strokeWidth = 8.dp.toPx()
+            style = PaintingStyle.Stroke
+        }
+        drawIntoCanvas { canvas ->
+            canvas.drawRoundRect(
+                left = 0f,
+                top = 0f,
+                right = size.width,
+                bottom = size.height,
+                radiusX = 0.dp.toPx(),
+                radiusY = 0.dp.toPx(),
+                paint = paint
+            )
+        }
+        drawRoundRect(
+            color = toolbarBackgroundColor,
+            topLeft = Offset(0f, 0f),
+            size = size,
+            style = Fill,
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(
+                0.dp.toPx(), 0.dp.toPx()
+            )
+        )
+    }, navigationIcon = {
+        Row(
+            modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { onBackButtonClicked() }) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(id = R.string.back),
+                    tint = Color.White
+                )
+            }
+        }
+    }, colors = TopAppBarDefaults.topAppBarColors(
+        containerColor = Color.Transparent
+    )
+    )
+}
+
 @Preview(showBackground = true)
 @Composable
 fun SettingsScreenPreview() {
     RecentAudioBufferTheme {
-        SettingsScreen(AudioConfig(44100, 10, bitDepths["16"]!!), {}, {}, {}, {})
+        SettingsScreen(AudioConfig(44100, 10, bitDepths["16"]!!), {}, {}, {})
     }
 }

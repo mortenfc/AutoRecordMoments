@@ -23,7 +23,7 @@
     <string name="attachment_summary_on">Automatically download attachments for incoming emails
     </string>
     <string name="attachment_summary_off">Only download attachments when manually requested</string>
-    <string name="settings">Settings</string>
+    <string name="settings">Configuration</string>
 
     <!-- Media -->
     <string name="time_display">%1$s / %2$s</string>
@@ -47,5 +47,6 @@
     <string name="donate_ads_away">Donate ads away</string>
     <string name="buffer_length_seconds">Buffer length in Seconds</string>
     <string name="submit">Submit</string>
+    <string name="back">Return</string>
 
 </resources>
