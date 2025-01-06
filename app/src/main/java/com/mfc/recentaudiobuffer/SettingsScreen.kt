@@ -1,133 +1,140 @@
 package com.mfc.recentaudiobuffer
 
 import android.annotation.SuppressLint
-import android.app.Activity
-import android.content.Context
-import android.content.Intent
-import android.content.res.ColorStateList
 import android.util.Log
-import android.util.TypedValue
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CornerSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.vectorResource
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight.Companion.Bold
-import androidx.compose.ui.text.font.FontWeight.Companion.W500
-import androidx.compose.ui.text.font.FontWeight.Companion.W700
-import androidx.compose.ui.text.font.FontWeight.Companion.W900
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.core.content.ContextCompat
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import com.mfc.recentaudiobuffer.ui.theme.RecentAudioBufferTheme
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusDirection
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun SettingsScreen(
-    settingsViewModel: SettingsViewModel
+    config: AudioConfig,
+    onSampleRateChanged: (Int) -> Unit,
+    onBitDepthChanged: (BitDepth) -> Unit,
+    onBufferTimeLengthChanged: (Int) -> Unit,
+    onSubmit: () -> Unit
 ) {
-    val context = LocalContext.current
-    val activity = (LocalContext.current as? Activity) // Get the Activity
-
-    val config by settingsViewModel.config.collectAsState()
     var showSampleRateMenu by remember { mutableStateOf(false) }
     var showBitDepthMenu by remember { mutableStateOf(false) }
-
+    val focusManager = LocalFocusManager.current
+    var isFirstTime by remember { mutableStateOf(true) } // Because collectAsState is async the screen can render before it finishes
     var bufferTimeLength by remember { mutableIntStateOf(config.BUFFER_TIME_LENGTH_S) }
 
+    LaunchedEffect(config.BUFFER_TIME_LENGTH_S) {
+        if (!isFirstTime) {
+            bufferTimeLength = config.BUFFER_TIME_LENGTH_S
+        } else {
+            isFirstTime = false
+        }
+    }
 
-    Scaffold(
-        containerColor = Color(
-            ContextCompat.getColor(
-                context, R.color.teal_200
-            )
-        ) // Set page background color
-    ) { innerPadding ->
+    Scaffold(containerColor = colorResource(id = R.color.teal_100),
+        modifier = Modifier.pointerInput(Unit) {
+            detectTapGestures {
+                focusManager.clearFocus()
+            }
+        }) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(innerPadding)
                 .padding(16.dp)
+                .shadow(elevation = 8.dp, shape = RoundedCornerShape(12.dp))
                 .border(
-                    1.5.dp,
-                    Color(ContextCompat.getColor(context, R.color.purple_accent)),
-                    RoundedCornerShape(12.dp)
+                    4.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(12.dp)
                 )
                 .background(
-                    Color(ContextCompat.getColor(context, R.color.teal_100)),
-                    RoundedCornerShape(12.dp)
+                    colorResource(id = R.color.teal_200), RoundedCornerShape(12.dp)
                 )
-                .padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally
+                .padding(16.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() }, indication = null
+                ) {
+                    focusManager.clearFocus()
+                }, horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Sample Rate
-            Button(
-                onClick = { showSampleRateMenu = true },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.Transparent
-                ),
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .border(
-                        1.5.dp,
-                        Color(ContextCompat.getColor(context, R.color.purple_accent)),
-                        RoundedCornerShape(20.dp)
-                    )
-                    .background(
-                        Color(ContextCompat.getColor(context, R.color.teal_200)),
-                        RoundedCornerShape(20.dp)
-                    )
-            ) {
-                Text(
-                    "Sample Rate: ${config.SAMPLE_RATE_HZ} Hz",
-                    color = Color(ContextCompat.getColor(context, R.color.purple_accent))
-                )
-
-                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Icon(
-                    imageVector = Icons.Filled.ArrowDropDown,
-                    contentDescription = "Sample Rate",
-                    modifier = Modifier.size(ButtonDefaults.IconSize + 8.dp)
-
-                )
-            }
+            SettingsButton(text = "Sample Rate: ${config.SAMPLE_RATE_HZ} Hz",
+                icon = Icons.Filled.ArrowDropDown,
+                onClick = { showSampleRateMenu = true })
             DropdownMenu(
                 expanded = showSampleRateMenu,
                 onDismissRequest = { showSampleRateMenu = false },
+                modifier = Modifier
+                    .background(colorResource(id = R.color.teal_350))
+                    .border(
+                        width = 2.dp,
+                        color = colorResource(id = R.color.purple_accent),
+                        shape = RoundedCornerShape(8.dp)
+                    )
             ) {
                 sampleRates.forEach { (label, value) ->
                     StyledDropdownMenuItem(text = "$label Hz", onClick = {
-                        Log.i("SettingsScreen", "Clicked SampleRate $label with value: $value")
-                        settingsViewModel.updateSampleRate(value)
+                        Log.i(
+                            "SettingsScreen", "Clicked SampleRate $label with value: $value"
+                        )
+                        onSampleRateChanged(value)
                         showSampleRateMenu = false
-                        val intent = Intent(context, MyBufferService::class.java)
-                        intent.action = "com.mfc.recentaudiobuffer.SETTINGS_UPDATED"
-                        context.sendBroadcast(intent)
                     })
                 }
             }
@@ -135,167 +142,152 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Bit Depth
-            Button(
-                onClick = { showBitDepthMenu = true },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.Transparent
-                ),
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .border(
-                        1.5.dp,
-                        Color(ContextCompat.getColor(context, R.color.purple_accent)),
-                        RoundedCornerShape(20.dp)
-                    )
-                    .background(
-                        Color(ContextCompat.getColor(context, R.color.teal_200)),
-                        RoundedCornerShape(20.dp)
-                    )
-            ) {
-                Text(
-                    "Bit Depth: ${config.BIT_DEPTH.bytes} bit",
-                    color = Color(ContextCompat.getColor(context, R.color.purple_accent))
-                )
-                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Icon(
-                    imageVector = Icons.Filled.ArrowDropDown,
-                    contentDescription = "Sample Rate",
-                    modifier = Modifier.size(ButtonDefaults.IconSize + 8.dp)
-                )
-            }
+            SettingsButton(text = "Bit Depth: ${config.BIT_DEPTH.bytes} bit",
+                icon = Icons.Filled.ArrowDropDown,
+                onClick = { showBitDepthMenu = true })
             DropdownMenu(
                 expanded = showBitDepthMenu,
-                onDismissRequest = { showBitDepthMenu = false }) {
+                onDismissRequest = { showBitDepthMenu = false },
+                modifier = Modifier
+                    .background(colorResource(id = R.color.teal_350))
+                    .border(
+                        width = 2.dp,
+                        color = colorResource(id = R.color.purple_accent),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+            ) {
                 bitDepths.forEach { (label, value) ->
                     StyledDropdownMenuItem(text = "$label bit", onClick = {
-                        Log.i("SettingsScreen", "Clicked BitDepth $label with value: $value")
-                        settingsViewModel.updateBitDepth(value)
+                        Log.i(
+                            "SettingsScreen", "Clicked BitDepth $label with value: $value"
+                        )
+                        onBitDepthChanged(value)
                         showBitDepthMenu = false
-                        val intent = Intent(context, MyBufferService::class.java)
-                        intent.action = "com.mfc.recentaudiobuffer.SETTINGS_UPDATED"
-                        context.sendBroadcast(intent)
                     })
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            OutlinedTextField(
-                value = bufferTimeLength.toString(),
-                onValueChange = { userInput: String ->
-                    if (userInput.isEmpty()) {
-                        // Allow complete deletion
-                        bufferTimeLength = 1
-                    } else {
-                        val parsedValue = userInput.trim().toIntOrNull()
-                        if (parsedValue != null) {
-                            bufferTimeLength = parsedValue
-                        }
-                        // Consider adding an error message if the input is invalid
-                    }
-                },
-                colors = TextFieldDefaults.colors(
-                    unfocusedContainerColor = Color(
-                        ContextCompat.getColor(
-                            context, R.color.teal_100
-                        )
-                    ), focusedContainerColor = Color(
-                        ContextCompat.getColor(
-                            context, R.color.teal_200
-                        )
-                    ),
-                    errorContainerColor = Color.Red
-                ),
-                shape = RoundedCornerShape(20.dp),
-                label = {
-                    Text("Buffer Length (seconds)")
-                    Modifier.weight(900F)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 0.dp),
-                keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = {
-                    Log.i("SettingsScreen", "onDone triggered")
-                    settingsViewModel.updateBufferTimeLength(bufferTimeLength)
-                    val intent = Intent(context, MyBufferService::class.java)
-                    intent.action = "com.mfc.recentaudiobuffer.SETTINGS_UPDATED"
-                    context.sendBroadcast(intent)
-                }),
-                textStyle = TextStyle(
-                    color = Color(
-                        ContextCompat.getColor(
-                            context, R.color.purple_accent
-                        )
-                    ),
-                    fontWeight = W500
-                ),
+            MyOutlinedBufferInputField(
+                bufferTimeLength = bufferTimeLength,
+                onBufferTimeLengthChanged = onBufferTimeLengthChanged
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            StyledSubmitButton(onClick = {
-                // Save the values (including bufferTimeLength) and send broadcast
-                settingsViewModel.updateBufferTimeLength(bufferTimeLength)
-                val intent = Intent(context, MyBufferService::class.java)
-                intent.action = "com.mfc.recentaudiobuffer.SETTINGS_UPDATED"
-                context.sendBroadcast(intent)
-                activity?.finish()
-            }, icon = ImageVector.vectorResource(id = R.drawable.baseline_save_alt_24))
-
-            LaunchedEffect(config) {
-                bufferTimeLength = config.BUFFER_TIME_LENGTH_S
-            }
+            MainButton(
+                text = stringResource(id = R.string.submit),
+                icon = R.drawable.baseline_save_alt_24,
+                onClick = {
+                    onSubmit()
+                },
+                iconTint = colorResource(id = R.color.purple_accent),
+                width = 130.dp
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
         }
-
-        innerPadding.calculateTopPadding()
-        innerPadding.calculateBottomPadding()
     }
 }
 
-// Helper function to convert dp to px
-private fun Int.dpToPx(context: Context): Float {
-    return TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), context.resources.displayMetrics
-    )
-}
-
 @Composable
-fun StyledSubmitButton(onClick: () -> Unit, icon: ImageVector) {
-    val context = LocalContext.current
-
+fun SettingsButton(text: String, icon: ImageVector, onClick: () -> Unit) {
     Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(
+        onClick = onClick, colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent
-        ),
-        modifier = Modifier
-            .padding(top = 8.dp)
+        ), modifier = Modifier
             .border(
-                1.5.dp,
-                Color(ContextCompat.getColor(context, R.color.purple_accent)),
-                RoundedCornerShape(20.dp)
+                2.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(8.dp)
             )
             .background(
-                Color(ContextCompat.getColor(context, R.color.teal_200)),
-                RoundedCornerShape(20.dp)
-            ),
+                colorResource(id = R.color.teal_350), RoundedCornerShape(8.dp)
+            )
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = "Submit",
-            modifier = Modifier.size(ButtonDefaults.IconSize + 8.dp)
+        Text(
+            text = text,
+            color = colorResource(id = R.color.teal_900),
+            style = MaterialTheme.typography.bodyLarge
         )
         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-        Text(
-            "Submit", color = Color(
-                ContextCompat.getColor(
-                    context, R.color.purple_accent
-                )
-            )
+        Icon(
+            imageVector = icon,
+            contentDescription = text,
+            modifier = Modifier.size(ButtonDefaults.IconSize + 8.dp),
+            tint = colorResource(id = R.color.purple_accent)
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MyOutlinedBufferInputField(
+    bufferTimeLength: Int, onBufferTimeLengthChanged: (Int) -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focusManager = LocalFocusManager.current
+
+    BasicTextField(
+        value = bufferTimeLength.toString(),
+        singleLine = true,
+        interactionSource = interactionSource,
+        cursorBrush = SolidColor(Color.White),
+        onValueChange = { userInput: String ->
+            if (userInput.isEmpty()) {
+                // Allow complete deletion
+                onBufferTimeLengthChanged(1)
+            } else {
+                val parsedValue = userInput.trim().toIntOrNull()
+                if (parsedValue != null) {
+                    onBufferTimeLengthChanged(parsedValue)
+                }
+                // Consider adding an error message if the input is invalid
+            }
+        },
+        modifier = Modifier
+            .width(220.dp)
+            .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 0.dp)
+            .onFocusChanged {
+                if (!it.isFocused) {
+                }
+            },
+        textStyle = TextStyle(
+            color = colorResource(id = R.color.teal_900), fontWeight = FontWeight.Medium
+        ),
+        keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = {
+            focusManager.moveFocus(FocusDirection.Down)
+        }),
+    ) { innerTextField ->
+        OutlinedTextFieldDefaults.DecorationBox(value = bufferTimeLength.toString(),
+            innerTextField = innerTextField,
+            enabled = true,
+            singleLine = true,
+            interactionSource = interactionSource,
+            visualTransformation = VisualTransformation.None,
+            label = {
+                Text(
+                    stringResource(id = R.string.buffer_length_seconds),
+                    color = colorResource(id = R.color.purple_accent)
+                )
+            },
+            container = {
+                OutlinedTextFieldDefaults.ContainerBox(
+                    enabled = true,
+                    isError = false,
+                    interactionSource = interactionSource,
+                    colors = TextFieldDefaults.colors(
+                        unfocusedIndicatorColor = colorResource(id = R.color.purple_accent),
+                        focusedIndicatorColor = colorResource(id = R.color.purple_accent),
+                        unfocusedContainerColor = colorResource(id = R.color.teal_350),
+                        focusedContainerColor = colorResource(id = R.color.teal_200),
+                        errorContainerColor = Color.Red,
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    focusedBorderThickness = 4.dp,
+                    unfocusedBorderThickness = 2.dp
+                )
+            })
     }
 }
 
@@ -303,17 +295,25 @@ fun StyledSubmitButton(onClick: () -> Unit, icon: ImageVector) {
 fun StyledDropdownMenuItem(
     text: String, onClick: () -> Unit
 ) {
-    val context = LocalContext.current
-
     DropdownMenuItem(
-        text = { Text(text) },
+        text = {
+            Text(
+                text = text,
+                color = colorResource(id = R.color.teal_900),
+                style = MaterialTheme.typography.bodyLarge
+            )
+        },
         onClick = onClick,
         colors = MenuDefaults.itemColors(
-            textColor = Color(
-                ContextCompat.getColor(
-                    context, R.color.purple_accent
-                )
-            ),
+            textColor = colorResource(id = R.color.teal_900),
         ),
     )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun SettingsScreenPreview() {
+    RecentAudioBufferTheme {
+        SettingsScreen(AudioConfig(44100, 10, bitDepths["16"]!!), {}, {}, {}, {})
+    }
 }

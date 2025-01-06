@@ -9,10 +9,10 @@ import kotlinx.coroutines.launch
 import androidx.lifecycle.AndroidViewModel
 import kotlinx.coroutines.flow.stateIn
 
-class SettingsViewModel(application: Application) : AndroidViewModel(application) {
+open class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application
     private val repository: SettingsRepository by lazy { SettingsRepository(context.dataStore) }
-    val config: StateFlow<AudioConfig> = repository.config.stateIn(
+    open val config: StateFlow<AudioConfig> = repository.config.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
         initialValue = AudioConfig(
@@ -22,19 +22,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         )
     )
 
-    fun updateSampleRate(sampleRate: Int) {
+    open fun updateSampleRate(sampleRate: Int) {
         viewModelScope.launch {
             repository.updateSampleRate(sampleRate)
         }
     }
 
-    fun updateBufferTimeLength(bufferTimeLength: Int) {
+    open fun updateBufferTimeLength(bufferTimeLength: Int) {
         viewModelScope.launch {
             repository.updateBufferTimeLength(bufferTimeLength)
         }
     }
 
-    fun updateBitDepth(bitDepth: BitDepth) {
+    open fun updateBitDepth(bitDepth: BitDepth) {
         viewModelScope.launch {
             repository.updateBitDepth(bitDepth)
         }

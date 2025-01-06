@@ -13,14 +13,12 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.graphics.PorterDuff
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -32,12 +30,9 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.DocumentsContract
-import android.view.Menu
-import android.view.MenuItem
-import android.widget.ImageView
-import android.widget.LinearLayout
+import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.appcompat.widget.Toolbar
+import androidx.compose.material3.MaterialTheme
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -117,10 +112,19 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.layout)
-
-        val toolbar = findViewById<Toolbar>(R.id.toolbar)
-        setSupportActionBar(toolbar)
+        setContent {
+            MaterialTheme {
+                MainScreen(
+                    onStartBufferingClick = { onClickStartRecording() },
+                    onStopBufferingClick = { onClickStopRecording() },
+                    onResetBufferClick = { onClickResetBuffer() },
+                    onSaveBufferClick = { onClickSaveBuffer() },
+                    onPickAndPlayFileClick = { onClickPickAndPlayFile() },
+                    onDonateClick = { onClickDonate() },
+                    onSettingsClick = { onClickSettings() }
+                )
+            }
+        }
 
         Log.i(logTag, "onCreate(): Build.VERSION.SDK_INT: ${Build.VERSION.SDK_INT}")
         if (Build.VERSION.SDK_INT >= 34) {
@@ -133,32 +137,6 @@ class MainActivity : AppCompatActivity() {
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
 
         getPermissions()
-
-        findViewById<Button>(R.id.StartBuffering).setOnClickListener {
-            onClickStartRecording()
-        }
-        findViewById<Button>(R.id.StopBuffering).setOnClickListener {
-            onClickStopRecording()
-        }
-        findViewById<Button>(R.id.ResetBuffer).setOnClickListener {
-            onClickResetBuffer()
-        }
-        findViewById<Button>(R.id.SaveBuffer).setOnClickListener {
-            onClickSaveBuffer()
-        }
-        findViewById<Button>(R.id.PickAndPlayFile).setOnClickListener {
-            if (haveAllPermissions(requiredPermissions)) {
-                pickAndPlayFile()
-            } else {
-                getPermissions()
-                Toast.makeText(
-                    this, "Accept the permissions and then try again", Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-        findViewById<Button>(R.id.Donate).setOnClickListener {
-            onClickDonate()
-        }
 
         frameLayout = FrameLayout(this).apply { // Initialize frameLayout here
             layoutParams = FrameLayout.LayoutParams(
@@ -183,29 +161,36 @@ class MainActivity : AppCompatActivity() {
         ViewModelHolder.setSharedViewModel(sharedViewModel)
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.main_menu, menu)
+//    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+//        menuInflater.inflate(R.menu.main_menu, menu)
+//
+//        val settingsItem = menu.findItem(R.id.action_settings)
+//        val actionView = settingsItem.actionView as LinearLayout
+//        val iconView = actionView.findViewById<ImageView>(R.id.menu_icon)
+//
+//        iconView.setImageResource(R.drawable.baseline_settings_24)
+//        iconView.setColorFilter(ContextCompat.getColor(this, R.color.white), PorterDuff.Mode.SRC_IN)
+//
+//        actionView.setOnClickListener {
+//            Intent(this, SettingsActivity::class.java).also {
+//                it.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+//                startActivity(it)
+//            }
+//        }
+//
+//        return true
+//    }
 
-        val settingsItem = menu.findItem(R.id.action_settings)
-        val actionView = settingsItem.actionView as LinearLayout
-        val iconView = actionView.findViewById<ImageView>(R.id.menu_icon)
+//    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+//        return when (item.itemId) {
+//            else -> super.onOptionsItemSelected(item) // Handle other menu items or let the superclass handle it
+//        }
+//    }
 
-        iconView.setImageResource(R.drawable.baseline_settings_24)
-        iconView.setColorFilter(ContextCompat.getColor(this, R.color.white), PorterDuff.Mode.SRC_IN)
-
-        actionView.setOnClickListener {
-            Intent(this, SettingsActivity::class.java).also {
-                it.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                startActivity(it)
-            }
-        }
-
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            else -> super.onOptionsItemSelected(item) // Handle other menu items or let the superclass handle it
+    private fun onClickSettings() {
+        Intent(this, SettingsActivity::class.java).also {
+            it.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            startActivity(it)
         }
     }
 
@@ -327,8 +312,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun onClickDonate()
-    {
+    private fun onClickPickAndPlayFile() {
+
+        if (haveAllPermissions(requiredPermissions)) {
+            pickAndPlayFile()
+        } else {
+            getPermissions()
+            Toast.makeText(
+                this, "Accept the permissions and then try again", Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun onClickDonate() {
         val intent = Intent(this, DonationActivity::class.java)
         startActivity(intent)
     }
@@ -512,7 +508,7 @@ class MainActivity : AppCompatActivity() {
             AlertDialog.Builder(this).setTitle("$permissionIn permission required")
                 .setMessage("This permission is needed for this app to work")
                 .setPositiveButton("Open settings") { _, _ ->
-                    goToSettings()
+
                 }.create().show()
         }
     }

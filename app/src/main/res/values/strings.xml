@@ -45,5 +45,7 @@
     <string name="or_add_a_pass_to_your_google_wallet">Or add a pass to your Google Wallet:</string>
     <string name="donate_your_heart_out">Donate Your Heart Out</string>
     <string name="donate_ads_away">Donate ads away</string>
+    <string name="buffer_length_seconds">Buffer length in Seconds</string>
+    <string name="submit">Submit</string>
 
 </resources>
