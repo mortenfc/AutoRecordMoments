@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#80000000"
+        android:orientation="vertical"
+        android:paddingTop="4dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp">
+
+            <ImageButton
+                android:id="@id/exo_rew"
+                style="@style/ExoMediaButton.Rewind"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/exo_controls_rewind_description"
+                tools:ignore="PrivateResource" />
+
+            <ImageButton
+                android:id="@id/exo_play_pause"
+                style="@style/ExoMediaButton.Play"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/exo_controls_play_description"
+                tools:ignore="PrivateResource" />
+
+            <ImageButton
+                android:id="@id/exo_ffwd"
+                style="@style/ExoMediaButton.FastForward"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/exo_controls_fastforward_description"
+                tools:ignore="PrivateResource" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@id/exo_position"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:includeFontPadding="false"
+                android:textColor="#FFBEBEBE"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <androidx.media3.ui.DefaultTimeBar
+                android:id="@id/exo_progress"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                app:bar_height="4dp"
+                app:buffered_color="@color/exo_white"
+                app:played_color="@color/exo_white"
+                app:scrubber_color="@color/exo_white"
+                app:scrubber_disabled_size="10dp"
+                app:scrubber_dragged_size="10dp"
+                app:scrubber_enabled_size="10dp"
+                app:unplayed_color="@color/exo_white"
+                tools:ignore="PrivateResource" />
+
+            <TextView
+                android:id="@id/exo_duration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:includeFontPadding="false"
+                android:textColor="#FFBEBEBE"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+        <TextView
+            android:id="@+id/exo_file_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:gravity="center"
+            android:textColor="@color/white"
+            android:textSize="16sp"
+            android:paddingBottom="12dp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</merge>

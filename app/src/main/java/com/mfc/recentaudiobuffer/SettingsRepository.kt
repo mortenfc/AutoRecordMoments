@@ -13,6 +13,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 data class BitDepth(val bytes: Int, val encodingEnum: Int) {
     override fun toString(): String {
@@ -90,27 +94,27 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
 
     private val settings: Flow<Settings> =
         dataStore.data.catch { exception ->  // Catch exceptions in the flow
-                // Log the error for debugging
-                Log.e("SettingsRepository", "Error reading settings", exception)
-                // Emit default settings to avoid crashes
-                emit(emptyPreferences())
-            }.map { preferences ->
-                val bitDepthString =
-                    preferences[BIT_DEPTH] ?: "8" // Default to 16-bit if missing or invalid
-                var bitDepth = BitDepth.fromString(bitDepthString)
-                bitDepth = if (bitDepth == null) {
-                    Log.e("SettingsRepository", "Invalid bit depth: $bitDepthString")
-                    // Handle invalid bit depth (e.g., reset to default, show a message)
-                    bitDepths["8"]!! // Use a valid default BitDepth here
-                } else {
-                    bitDepth
-                }
-                Settings(
-                    sampleRate = preferences[SAMPLE_RATE] ?: 22050,
-                    bitDepth = bitDepth,
-                    bufferTimeLengthS = preferences[BUFFER_TIME_LENGTH_S] ?: 120
-                )
+            // Log the error for debugging
+            Log.e("SettingsRepository", "Error reading settings", exception)
+            // Emit default settings to avoid crashes
+            emit(emptyPreferences())
+        }.map { preferences ->
+            val bitDepthString =
+                preferences[BIT_DEPTH] ?: "8" // Default to 16-bit if missing or invalid
+            var bitDepth = BitDepth.fromString(bitDepthString)
+            bitDepth = if (bitDepth == null) {
+                Log.e("SettingsRepository", "Invalid bit depth: $bitDepthString")
+                // Handle invalid bit depth (e.g., reset to default, show a message)
+                bitDepths["8"]!! // Use a valid default BitDepth here
+            } else {
+                bitDepth
             }
+            Settings(
+                sampleRate = preferences[SAMPLE_RATE] ?: 22050,
+                bitDepth = bitDepth,
+                bufferTimeLengthS = preferences[BUFFER_TIME_LENGTH_S] ?: 120
+            )
+        }
 
     val config: Flow<AudioConfig> = settings.map { settings ->
         AudioConfig(
@@ -139,5 +143,57 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { preferences ->
             preferences[BUFFER_TIME_LENGTH_S] = bufferTimeLength
         }
+    }
+}
+
+class SettingsScreenState(initialConfig: AudioConfig) {
+    var config by mutableStateOf(initialConfig)
+        private set
+    var isBufferTimeLengthNull = mutableStateOf(false)
+        private set
+    var isMaxExceeded = mutableStateOf(false)
+        private set
+    var isSubmitEnabled = mutableStateOf(true)
+        private set
+    var errorMessage = mutableStateOf<String?>(null)
+        private set
+    var bufferTimeLengthTemp = mutableIntStateOf(initialConfig.BUFFER_TIME_LENGTH_S)
+        private set
+
+    fun updateConfig(newConfig: AudioConfig) {
+        Log.d("SettingsScreenState", "updateConfig")
+        config = newConfig
+        bufferTimeLengthTemp.intValue = newConfig.BUFFER_TIME_LENGTH_S
+        validateSettings()
+    }
+
+    fun updateBufferTimeLengthTemp(newBufferTimeLength: Int) {
+        Log.d("SettingsScreenState", "updateBufferTimeLengthTemp to $newBufferTimeLength")
+        bufferTimeLengthTemp.intValue = newBufferTimeLength
+        validateSettings()
+    }
+
+    private fun validateSettings() {
+        val calculatedValue: Long =
+            config.SAMPLE_RATE_HZ.toLong() * (config.BIT_DEPTH.bytes / 8).toLong() * bufferTimeLengthTemp.intValue.toLong()
+        Log.d("SettingsScreenState", "calculatedValue:  $calculatedValue")
+        isMaxExceeded.value = calculatedValue > 100_000_000L
+        isBufferTimeLengthNull.value = bufferTimeLengthTemp.intValue == 0
+        Log.d(
+            "SettingsScreenState",
+            "isBufferTimeLengthNull, isMaxExceeded: ${isBufferTimeLengthNull.value}, ${isMaxExceeded.value}"
+        )
+        isSubmitEnabled.value = !isMaxExceeded.value && !isBufferTimeLengthNull.value
+
+        // Only update errorMessage if input is invalid
+        if (isMaxExceeded.value) {
+            errorMessage.value = "Value(s) too high: Multiplication of settings exceeds 100 MB"
+        } else if (isBufferTimeLengthNull.value) {
+            errorMessage.value = "Invalid buffer length. Must be a number greater than 0"
+        } else {
+            errorMessage.value = null
+        }
+
+        Log.d("SettingsScreenState", "validateSettings errorMessage:  ${errorMessage.value}")
     }
 }

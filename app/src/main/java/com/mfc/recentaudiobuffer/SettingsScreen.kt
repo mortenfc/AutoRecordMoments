@@ -31,7 +31,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -43,10 +42,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,17 +64,17 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.mfc.recentaudiobuffer.ui.theme.RecentAudioBufferTheme
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.text.input.KeyboardType
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun SettingsScreen(
-    config: AudioConfig,
+    state: SettingsScreenState,
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
     onSubmit: (Int) -> Unit
@@ -85,11 +82,8 @@ fun SettingsScreen(
     var showSampleRateMenu by remember { mutableStateOf(false) }
     var showBitDepthMenu by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
-    val bufferTimeLength = rememberSaveable { mutableIntStateOf(config.BUFFER_TIME_LENGTH_S) }
 
-    LaunchedEffect(config.BUFFER_TIME_LENGTH_S) {
-        bufferTimeLength.intValue = config.BUFFER_TIME_LENGTH_S
-    }
+    Log.d("SettingsScreen", "recompose")
 
     Scaffold(containerColor = colorResource(id = R.color.teal_100),
         modifier = Modifier.pointerInput(Unit) {
@@ -98,7 +92,11 @@ fun SettingsScreen(
             }
         },
         topBar = {
-            SettingsTopAppBar(onBackButtonClicked = { onSubmit(bufferTimeLength.intValue) })
+            SettingsTopAppBar(onBackButtonClicked = {
+                if (state.isSubmitEnabled.value) {
+                    onSubmit(state.bufferTimeLengthTemp.intValue)
+                }
+            })
         }) { innerPadding ->
         Column(
             modifier = Modifier
@@ -122,7 +120,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Sample Rate
-            SettingsButton(text = "Sample Rate: ${config.SAMPLE_RATE_HZ} Hz",
+            SettingsButton(text = "Sample Rate: ${state.config.SAMPLE_RATE_HZ} Hz",
                 icon = Icons.Filled.ArrowDropDown,
                 onClick = { showSampleRateMenu = true })
             DropdownMenu(
@@ -142,6 +140,7 @@ fun SettingsScreen(
                             "SettingsScreen", "Clicked SampleRate $label with value: $value"
                         )
                         onSampleRateChanged(value)
+                        state.updateConfig(state.config.copy(SAMPLE_RATE_HZ = value))
                         showSampleRateMenu = false
                     })
                 }
@@ -150,7 +149,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Bit Depth
-            SettingsButton(text = "Bit Depth: ${config.BIT_DEPTH.bytes} bit",
+            SettingsButton(text = "Bit Depth: ${state.config.BIT_DEPTH.bytes} bit",
                 icon = Icons.Filled.ArrowDropDown,
                 onClick = { showBitDepthMenu = true })
             DropdownMenu(
@@ -170,6 +169,7 @@ fun SettingsScreen(
                             "SettingsScreen", "Clicked BitDepth $label with value: $value"
                         )
                         onBitDepthChanged(value)
+                        state.updateConfig(state.config.copy(BIT_DEPTH = value))
                         showBitDepthMenu = false
                     })
                 }
@@ -178,19 +178,33 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             MyOutlinedBufferInputField(
-                bufferTimeLength = bufferTimeLength,
+                bufferTimeLength = state.bufferTimeLengthTemp,
+                onValueChange = { value ->
+                    state.updateBufferTimeLengthTemp(value)
+                },
+                isMaxExceeded = state.isMaxExceeded,
+                isNull = state.isBufferTimeLengthNull
             )
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Error Message
+            if (state.errorMessage.value != null) {
+                Text(text = state.errorMessage.value!!, color = Color.Red)
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             MainButton(
                 text = stringResource(id = R.string.submit),
                 icon = R.drawable.baseline_save_alt_24,
                 onClick = {
-                    onSubmit(bufferTimeLength.intValue)
+                    if (state.isSubmitEnabled.value) {
+                        onSubmit(state.bufferTimeLengthTemp.intValue)
+                    }
                 },
                 iconTint = colorResource(id = R.color.purple_accent),
-                width = 130.dp
+                width = 130.dp,
+                enabled = state.isSubmitEnabled.value
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -229,10 +243,14 @@ fun SettingsButton(text: String, icon: ImageVector, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyOutlinedBufferInputField(
-    bufferTimeLength: MutableIntState
+    onValueChange: (Int) -> Unit,
+    bufferTimeLength: MutableIntState,
+    isMaxExceeded: MutableState<Boolean>,
+    isNull: MutableState<Boolean>
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focusManager = LocalFocusManager.current
+    Log.d("MyOutlinedBufferInputField", "recompose")
 
     BasicTextField(
         value = bufferTimeLength.intValue.toString(),
@@ -240,15 +258,23 @@ fun MyOutlinedBufferInputField(
         interactionSource = interactionSource,
         cursorBrush = SolidColor(Color.White),
         onValueChange = { userInput: String ->
-            if (userInput.isEmpty()) {
-                // Allow complete deletion
-                bufferTimeLength.intValue = 1
+            Log.d("MyOutlinedBufferInputField", "onValueChange to $userInput")
+            val filteredInput = userInput.filter { it.isDigit() }
+            if (filteredInput.isEmpty()) {
+                onValueChange(0)
             } else {
-                val parsedValue = userInput.trim().toIntOrNull()
+                val parsedValue = filteredInput.toIntOrNull()
                 if (parsedValue != null) {
-                    bufferTimeLength.intValue = parsedValue
+                    if (parsedValue > 1_000_000)
+                    {
+                        isMaxExceeded.value = true
+                        return@BasicTextField
+                    }
+                    Log.d("MyOutlinedBufferInputField", "parsedValue: $parsedValue")
+                    onValueChange(parsedValue)
+                } else {
+                    onValueChange(0)
                 }
-                // Consider adding an error message if the input is invalid
             }
         },
         modifier = Modifier
@@ -256,13 +282,16 @@ fun MyOutlinedBufferInputField(
             .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 0.dp)
             .onFocusChanged {
                 if (!it.isFocused) {
-                    Log.v("SettingsScreen", "Focus lost, clearing focus")
+                    Log.v("SettingsScreen", "Focus lost")
                 }
             },
         textStyle = TextStyle(
             color = colorResource(id = R.color.teal_900), fontWeight = FontWeight.Medium
         ),
-        keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
+        keyboardOptions = KeyboardOptions.Default.copy(
+            imeAction = ImeAction.Done,
+            keyboardType = KeyboardType.Number
+        ),
         keyboardActions = KeyboardActions(onDone = {
             focusManager.clearFocus()
         }),
@@ -282,14 +311,15 @@ fun MyOutlinedBufferInputField(
             container = {
                 OutlinedTextFieldDefaults.Container(
                     enabled = true,
-                    isError = false,
+                    isError = isNull.value || isMaxExceeded.value,
                     interactionSource = interactionSource,
                     colors = TextFieldDefaults.colors(
                         unfocusedIndicatorColor = colorResource(id = R.color.purple_accent),
                         focusedIndicatorColor = colorResource(id = R.color.purple_accent),
                         unfocusedContainerColor = colorResource(id = R.color.teal_350),
-                        focusedContainerColor = colorResource(id = R.color.teal_200),
-                        errorContainerColor = Color.Red,
+                        focusedContainerColor = colorResource(id =R.color.teal_200),
+                        errorContainerColor = colorResource(id = R.color.teal_200),
+                        errorIndicatorColor = Color.Red
                     ),
                     shape = RoundedCornerShape(8.dp),
                     focusedBorderThickness = 4.dp,
@@ -378,6 +408,6 @@ fun SettingsTopAppBar(
 @Composable
 fun SettingsScreenPreview() {
     RecentAudioBufferTheme {
-        SettingsScreen(AudioConfig(44100, 10, bitDepths["16"]!!), {}, {}, {})
+        SettingsScreen(SettingsScreenState(AudioConfig(44100, 10, bitDepths["16"]!!)), {}, {}, {})
     }
 }

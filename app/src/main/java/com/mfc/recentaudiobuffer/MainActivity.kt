@@ -1,7 +1,6 @@
 package com.mfc.recentaudiobuffer
 
-import MyMediaPlayerController
-import MyMediaController
+import MediaPlayerManager
 import android.Manifest
 import android.app.AlertDialog
 import android.app.NotificationChannel
@@ -13,40 +12,46 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
-import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Build
 import android.os.Environment
-import android.os.Handler
-import android.os.Looper
 import android.os.PowerManager
 import android.provider.DocumentsContract
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import androidx.media3.ui.PlayerControlView
 
 class SharedViewModel : ViewModel() {
     var myBufferService: MyBufferServiceInterface? = null
 }
 
+@UnstableApi
 class MainActivity : AppCompatActivity() {
     private val logTag = "MainActivity"
     private val sharedViewModel: SharedViewModel by viewModels()
@@ -78,11 +83,7 @@ class MainActivity : AppCompatActivity() {
         private const val REQUEST_CODE_SAVE = 3
     }
 
-    private lateinit var mediaPlayerViewModel: MediaPlayerViewModel
-    private var mediaPlayerController: MyMediaPlayerController? = null
-    private var mediaController: MyMediaController? = null
-
-    private var frameLayout: FrameLayout? = null
+    private var mediaPlayerManager: MediaPlayerManager? = null
 
     private lateinit var foregroundServiceAudioBuffer: Intent
     private val foregroundServiceAudioBufferConnection = object : ServiceConnection {
@@ -112,19 +113,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            MaterialTheme {
-                MainScreen(
-                    onStartBufferingClick = { onClickStartRecording() },
-                    onStopBufferingClick = { onClickStopRecording() },
-                    onResetBufferClick = { onClickResetBuffer() },
-                    onSaveBufferClick = { onClickSaveBuffer() },
-                    onPickAndPlayFileClick = { onClickPickAndPlayFile() },
-                    onDonateClick = { onClickDonate() },
-                    onSettingsClick = { onClickSettings() }
-                )
-            }
-        }
 
         Log.i(logTag, "onCreate(): Build.VERSION.SDK_INT: ${Build.VERSION.SDK_INT}")
         if (Build.VERSION.SDK_INT >= 34) {
@@ -138,16 +126,6 @@ class MainActivity : AppCompatActivity() {
 
         getPermissions()
 
-        frameLayout = FrameLayout(this).apply { // Initialize frameLayout here
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-
-        addContentView(frameLayout, frameLayout?.layoutParams)
-
-        mediaController = MyMediaController(this)
-
         ContextCompat.registerReceiver(
             this,
             NotificationActionReceiver(),
@@ -159,33 +137,28 @@ class MainActivity : AppCompatActivity() {
         )
 
         ViewModelHolder.setSharedViewModel(sharedViewModel)
+
+        mediaPlayerManager = MediaPlayerManager(
+            context = this,
+            onPlayerReady = {
+                Log.i(logTag, "Player is ready")
+            })
+
+        setContent {
+            MaterialTheme {
+                MainScreen(
+                    onStartBufferingClick = { onClickStartRecording() },
+                    onStopBufferingClick = { onClickStopRecording() },
+                    onResetBufferClick = { onClickResetBuffer() },
+                    onSaveBufferClick = { onClickSaveBuffer() },
+                    onPickAndPlayFileClick = { onClickPickAndPlayFile() },
+                    onDonateClick = { onClickDonate() },
+                    onSettingsClick = { onClickSettings() },
+                    mediaPlayerManager = mediaPlayerManager!!
+                )
+            }
+        }
     }
-
-//    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-//        menuInflater.inflate(R.menu.main_menu, menu)
-//
-//        val settingsItem = menu.findItem(R.id.action_settings)
-//        val actionView = settingsItem.actionView as LinearLayout
-//        val iconView = actionView.findViewById<ImageView>(R.id.menu_icon)
-//
-//        iconView.setImageResource(R.drawable.baseline_settings_24)
-//        iconView.setColorFilter(ContextCompat.getColor(this, R.color.white), PorterDuff.Mode.SRC_IN)
-//
-//        actionView.setOnClickListener {
-//            Intent(this, SettingsActivity::class.java).also {
-//                it.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-//                startActivity(it)
-//            }
-//        }
-//
-//        return true
-//    }
-
-//    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-//        return when (item.itemId) {
-//            else -> super.onOptionsItemSelected(item) // Handle other menu items or let the superclass handle it
-//        }
-//    }
 
     private fun onClickSettings() {
         Intent(this, SettingsActivity::class.java).also {
@@ -313,7 +286,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onClickPickAndPlayFile() {
-
         if (haveAllPermissions(requiredPermissions)) {
             pickAndPlayFile()
         } else {
@@ -454,18 +426,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun closeMediaPlayer() {
-        mediaPlayerController?.let {
-            if (it.isPlaying) {
-                it.pause()
-            }
-        }
-        mediaController?.setAllowHiding(true)
-        mediaController?.hide()
-//        mediaController?.setAllowHiding(false) // Would prevent back button from hiding it
-        mediaPlayerController = null
-    }
-
     private fun haveAllPermissions(permissions: MutableList<String>): Boolean {
         for (permission in permissions) {
             if (PackageManager.PERMISSION_GRANTED != checkSelfPermission(permission)) {
@@ -482,8 +442,8 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) {}
 
-    private fun goToSettings() {
-        Log.i(logTag, "goToSettings()")
+    private fun goToAndroidAppSettings() {
+        Log.i(logTag, "goToAndroidAppSettings()")
         val thisAppSettings = Intent(
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse(
                 "package:$packageName"
@@ -508,7 +468,7 @@ class MainActivity : AppCompatActivity() {
             AlertDialog.Builder(this).setTitle("$permissionIn permission required")
                 .setMessage("This permission is needed for this app to work")
                 .setPositiveButton("Open settings") { _, _ ->
-
+                    goToAndroidAppSettings()
                 }.create().show()
         }
     }
@@ -527,55 +487,26 @@ class MainActivity : AppCompatActivity() {
         Log.i(logTag, "done getPermissions()")
     }
 
+    private fun closeMediaPlayer() {
+        mediaPlayerManager?.closeMediaPlayer()
+    }
+
     private fun setUpMediaPlayer(selectedMediaToPlayUri: Uri) {
-        mediaPlayerViewModel = ViewModelProvider(this)[MediaPlayerViewModel::class.java]
-        val audioAttributes =
-            AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
-
-        mediaPlayerViewModel.createMediaPlayer(
-            this, selectedMediaToPlayUri, audioAttributes
-        ) {
-            mediaPlayerController = MyMediaPlayerController(mediaPlayerViewModel.mediaPlayer!!)
-            mediaController?.setMediaPlayer(mediaPlayerController)
-            mediaController?.setAnchorView(frameLayout)
-            mediaController?.isEnabled = true
-            mediaController?.show(0) // Show indefinitely
-
-            // Update the duration display initially and periodically
-            updateDurationDisplay()
-
-            mediaPlayerViewModel.mediaPlayer?.setOnCompletionListener {
-                // Stop updating duration when playback completes
-                durationUpdateHandler.removeCallbacks(updateDurationRunnable)
-            }
-        }
-    }
-
-    private val durationUpdateHandler = Handler(Looper.getMainLooper())
-    private val updateDurationRunnable = object : Runnable {
-        override fun run() {
-            val currentPosition = mediaPlayerController?.currentPosition ?: 0
-            val playedDuration = mediaPlayerController?.duration ?: 0
-            mediaController?.getUpdateTime(currentPosition, playedDuration)
-
-            durationUpdateHandler.postDelayed(this, 100) // Update every 0.1 second
-        }
-    }
-
-    private fun updateDurationDisplay() {
-        val duration = mediaPlayerController?.duration ?: 0
-        mediaController?.getUpdateTime(0, duration) // Initial update
-
-        durationUpdateHandler.post(updateDurationRunnable) // Start periodic updates
+        Log.d(logTag, "setUpMediaPlayer: selectedMediaToPlayUri = $selectedMediaToPlayUri")
+        mediaPlayerManager?.setUpMediaPlayer(selectedMediaToPlayUri)
     }
 
     private val filePickerLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) {
+                Log.d(logTag, "RESULT_OK with data: ${result.data}")
                 result.data?.data?.let { selectedMediaToPlayUri ->
                     Log.i(logTag, "Selected file URI: $selectedMediaToPlayUri")
                     setUpMediaPlayer(selectedMediaToPlayUri)
                 }
+
+            } else {
+                Log.i(logTag, "ERROR selecting file: ${result.resultCode}")
             }
         }
 

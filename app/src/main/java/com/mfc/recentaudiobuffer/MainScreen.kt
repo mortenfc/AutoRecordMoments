@@ -1,5 +1,16 @@
 package com.mfc.recentaudiobuffer
 
+import MediaPlayerManager
+import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.drawable.RippleDrawable
+import android.util.Log
+import android.view.LayoutInflater
+import android.view.View
+import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.widget.TextView
+import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,11 +52,33 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ripple
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.constraintlayout.compose.Dimension
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.constraintlayout.widget.ConstraintSet
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.ui.PlayerControlView
+import arte.programar.materialfile.ui.FilePickerActivity
 
+@androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -55,7 +88,8 @@ fun MainScreen(
     onSaveBufferClick: () -> Unit,
     onPickAndPlayFileClick: () -> Unit,
     onDonateClick: () -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    mediaPlayerManager: MediaPlayerManager
 ) {
     val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
     val toolbarBackgroundColor = colorResource(id = R.color.teal_350)
@@ -169,6 +203,8 @@ fun MainScreen(
                     width = 260.dp
                 )
             }
+
+            PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
         }
     )
 }
@@ -179,7 +215,8 @@ fun MainButton(
     icon: Int,
     onClick: () -> Unit,
     iconTint: Color = Color.White,
-    width: Dp = 180.dp
+    width: Dp = 180.dp,
+    enabled: Boolean = true
 ) {
     Button(
         onClick = onClick,
@@ -219,7 +256,9 @@ fun MainButton(
             },
         colors = ButtonDefaults.buttonColors(
             containerColor = colorResource(id = R.color.teal_350),
-            contentColor = colorResource(id = R.color.teal_900)
+            contentColor = colorResource(id = R.color.teal_900),
+            disabledContainerColor = colorResource(id = R.color.grey),
+            disabledContentColor = colorResource(id = R.color.teal_100)
         ),
         shape = RoundedCornerShape(8.dp),
         contentPadding = PaddingValues(16.dp),
@@ -227,7 +266,8 @@ fun MainButton(
             brush = androidx.compose.ui.graphics.SolidColor(
                 colorResource(id = R.color.purple_accent)
             ), width = 2.dp
-        )
+        ),
+        enabled = enabled
     ) {
         Row(
             modifier = Modifier
@@ -252,6 +292,137 @@ fun MainButton(
     }
 }
 
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+fun PlayerControlViewContainer(
+    mediaPlayerManager: MediaPlayerManager,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    var currentFileName by remember { mutableStateOf("") }
+    val currentFileNameState by rememberUpdatedState(newValue = currentFileName)
+
+    DisposableEffect(mediaPlayerManager) {
+        Log.d("PlayerControlViewContainer", "DisposableEffect mediaPlayerManager")
+        mediaPlayerManager.onPlayerReady = { fileName ->
+            Log.i("PlayerControlViewContainer", "Player is ready with filename: $fileName")
+            currentFileName = fileName
+        }
+        onDispose {
+            mediaPlayerManager.onPlayerReady = {}
+        }
+    }
+
+    Box(modifier = modifier, contentAlignment = Alignment.BottomCenter) {
+        AndroidView(
+            factory = {
+                ConstraintLayout(context).apply {
+                    id = View.generateViewId()
+                    val playerControlView = PlayerControlView(context).apply {
+                        id = View.generateViewId()
+                        setShowFastForwardButton(true)
+                        setShowPlayButtonIfPlaybackIsSuppressed(true)
+                        setShowRewindButton(true)
+                        isAnimationEnabled = true
+                        setTimeBarMinUpdateInterval(100)
+                        showTimeoutMs = 0
+                        hide()
+                        hideImmediately()
+                        player = mediaPlayerManager.player
+                    }
+                    mediaPlayerManager.playerControlView = playerControlView
+                    val layoutParamsIn = ConstraintLayout.LayoutParams(
+                        ConstraintLayout.LayoutParams.MATCH_PARENT,
+                        ConstraintLayout.LayoutParams.MATCH_PARENT
+                    )
+                    playerControlView.layoutParams = layoutParamsIn
+                    Log.d(
+                        "PlayerControlViewContainer",
+                        "PlayerControlView created with ID: ${playerControlView.id}"
+                    )
+                    addView(playerControlView)
+                    val closeButton = setCloseButton(playerControlView, context, mediaPlayerManager)
+                    val constraintSet = ConstraintSet().apply {
+                        clone(this) // Clone the ConstraintLayout
+                        // Constrain PlayerControlView to the bottom
+                        connect(
+                            playerControlView.id,
+                            ConstraintSet.BOTTOM,
+                            ConstraintSet.PARENT_ID,
+                            ConstraintSet.BOTTOM
+                        )
+                        // Constrain PlayerControlView to the start
+                        connect(
+                            playerControlView.id,
+                            ConstraintSet.START,
+                            ConstraintSet.PARENT_ID,
+                            ConstraintSet.START
+                        )
+                        // Constrain PlayerControlView to the end
+                        connect(
+                            playerControlView.id,
+                            ConstraintSet.END,
+                            ConstraintSet.PARENT_ID,
+                            ConstraintSet.END
+                        )
+                        // Set height to 20% of the parent
+                        constrainPercentHeight(playerControlView.id, 0.20f)
+                        // Set width to 100% of the parent
+                        constrainPercentWidth(playerControlView.id, 1.0f)
+                        // Constrain closeButton to the top
+                        connect(
+                            closeButton.id,
+                            ConstraintSet.TOP,
+                            playerControlView.id,
+                            ConstraintSet.TOP
+                        )
+                        // Constrain closeButton to the end
+                        connect(
+                            closeButton.id,
+                            ConstraintSet.END,
+                            playerControlView.id,
+                            ConstraintSet.END
+                        )
+                    }
+                    // Apply constraints
+                    constraintSet.applyTo(this@apply)
+                }
+            },
+            update = {
+                Log.d("PlayerControlViewContainer", "AndroidView Update")
+                mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        LaunchedEffect(currentFileNameState) {
+            Log.d("PlayerControlViewContainer", "LaunchedEffect currentFileNameState update")
+            val fileNameTextView =
+                mediaPlayerManager.playerControlView?.findViewById<TextView>(R.id.exo_file_name)
+            fileNameTextView?.text = currentFileNameState
+        }
+    }
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+private fun setCloseButton(
+    playerControlView: PlayerControlView,
+    context: android.content.Context,
+    mediaPlayerManager: MediaPlayerManager
+): FrameLayout {
+    val layoutInflater = LayoutInflater.from(context)
+    val closeButtonContainer =
+        layoutInflater.inflate(R.layout.exo_close_button, playerControlView, false) as FrameLayout
+    closeButtonContainer.id = View.generateViewId()
+    val closeButton = closeButtonContainer.findViewById<ImageButton>(R.id.exo_close)
+    closeButton.setOnClickListener {
+        mediaPlayerManager.player?.stop()
+        mediaPlayerManager.playerControlView?.hide()
+        mediaPlayerManager.closeMediaPlayer()
+    }
+    playerControlView.addView(closeButtonContainer)
+    return closeButtonContainer
+}
+
 @Preview(showBackground = true)
 @Composable
 fun MainScreenPreview() {
@@ -262,6 +433,20 @@ fun MainScreenPreview() {
         onSaveBufferClick = {},
         onPickAndPlayFileClick = {},
         onDonateClick = {},
-        onSettingsClick = {}
+        onSettingsClick = {},
+        mediaPlayerManager = MediaPlayerManager(LocalContext.current) {}
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MainButtonPreview() {
+    MainButton(
+        "jesper ROFLMFAO",
+        icon = R.drawable.baseline_play_circle_outline_24,
+        {},
+        Color.White,
+        180.dp,
+        false
     )
 }

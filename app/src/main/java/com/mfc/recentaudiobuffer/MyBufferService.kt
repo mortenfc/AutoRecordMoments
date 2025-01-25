@@ -29,6 +29,8 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 
+private const val MAX_BUFFER_SIZE: Int = 100_000_000
+
 interface MyBufferServiceInterface {
     fun getBuffer(): ByteArray
     fun writeWavHeader(out: OutputStream, audioDataLen: Long)
@@ -50,13 +52,16 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     private lateinit var config: AudioConfig
     private lateinit var buffer: ByteArray
 
-    public override val isRecording: AtomicLiveDataThrottled<Boolean> = AtomicLiveDataThrottled(false)
+    public override val isRecording: AtomicLiveDataThrottled<Boolean> =
+        AtomicLiveDataThrottled(false)
 
-    public override val hasOverflowed: AtomicLiveDataThrottled<Boolean> = AtomicLiveDataThrottled(false)
+    public override val hasOverflowed: AtomicLiveDataThrottled<Boolean> =
+        AtomicLiveDataThrottled(false)
 
     public override val recorderIndex: AtomicLiveDataThrottled<Int> = AtomicLiveDataThrottled(0)
 
-    public override val totalRingBufferSize: AtomicLiveDataThrottled<Int> = AtomicLiveDataThrottled(100)
+    public override val totalRingBufferSize: AtomicLiveDataThrottled<Int> =
+        AtomicLiveDataThrottled(100)
 
     public override val time: AtomicLiveDataThrottled<String> = AtomicLiveDataThrottled("00:00:00")
 
@@ -99,7 +104,18 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         totalRingBufferSize.set(
             config.SAMPLE_RATE_HZ * (config.BIT_DEPTH.bytes / 8) * config.BUFFER_TIME_LENGTH_S
         )
-        buffer = ByteArray(totalRingBufferSize.get())
+        // This shouldn't be bigger than ~100 MB, which means totalRingBufferSize < 100_000_000
+        Log.d(logTag, "updateTotalBufferSize(): totalRingBufferSize = $totalRingBufferSize")
+        if (totalRingBufferSize.get() > MAX_BUFFER_SIZE) {
+            Log.e(logTag, "totalRingBufferSize > MAX_BUFFER_SIZE")
+            Toast.makeText(
+                this,
+                "ERROR: Configured settings resulted in too large of a buffer to allocate. Reduce numbers, they are multiplied.",
+                Toast.LENGTH_LONG
+            ).show()
+        } else {
+            buffer = ByteArray(totalRingBufferSize.get())
+        }
     }
 
     private fun prepareAndStartRecording(): Int {

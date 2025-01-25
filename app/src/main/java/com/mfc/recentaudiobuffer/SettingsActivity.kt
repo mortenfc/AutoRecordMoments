@@ -1,10 +1,6 @@
 package com.mfc.recentaudiobuffer
 
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -15,7 +11,7 @@ import androidx.compose.runtime.getValue
 import android.util.Log
 
 class SettingsActivity : ComponentActivity() {
-    val logTag = "SettingsActivity"
+    private val logTag = "SettingsActivity"
 
     private val settingsViewModel: SettingsViewModel by viewModels()
 
@@ -26,7 +22,7 @@ class SettingsActivity : ComponentActivity() {
             MaterialTheme {
                 val config by settingsViewModel.config.collectAsState()
                 SettingsScreen(
-                    config = config,
+                    state = SettingsScreenState(config),
                     onSampleRateChanged = { value ->
                         Log.d(logTag, "onSampleRateChanged to $value")
                         settingsViewModel.updateSampleRate(value)
