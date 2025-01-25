@@ -14,7 +14,7 @@ open class SettingsViewModel(application: Application) : AndroidViewModel(applic
     private val repository: SettingsRepository by lazy { SettingsRepository(context.dataStore) }
     open val config: StateFlow<AudioConfig> = repository.config.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.Eagerly,
+        started = SharingStarted.Lazily,
         initialValue = AudioConfig(
             SAMPLE_RATE_HZ = sampleRates["22050"] ?: error("Invalid sample rate"),
             BUFFER_TIME_LENGTH_S = 120,

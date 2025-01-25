@@ -3,6 +3,7 @@ package com.mfc.recentaudiobuffer
 import android.content.Context
 import android.media.AudioFormat
 import android.util.Log
+import androidx.compose.runtime.MutableIntState
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -147,53 +148,45 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
 }
 
 class SettingsScreenState(initialConfig: AudioConfig) {
-    var config by mutableStateOf(initialConfig)
+    var isBufferTimeLengthNull by mutableStateOf(false)
         private set
-    var isBufferTimeLengthNull = mutableStateOf(false)
+    var isMaxExceeded by mutableStateOf(false)
         private set
-    var isMaxExceeded = mutableStateOf(false)
+    var isSubmitEnabled by mutableStateOf(true)
         private set
-    var isSubmitEnabled = mutableStateOf(true)
+    var errorMessage by mutableStateOf<String?>(null)
         private set
-    var errorMessage = mutableStateOf<String?>(null)
-        private set
-    var bufferTimeLengthTemp = mutableIntStateOf(initialConfig.BUFFER_TIME_LENGTH_S)
+    var bufferTimeLengthTemp: MutableIntState = mutableIntStateOf(initialConfig.BUFFER_TIME_LENGTH_S)
         private set
 
-    fun updateConfig(newConfig: AudioConfig) {
-        Log.d("SettingsScreenState", "updateConfig")
-        config = newConfig
-        bufferTimeLengthTemp.intValue = newConfig.BUFFER_TIME_LENGTH_S
-        validateSettings()
+    init {
+        validateSettings(initialConfig)
     }
 
     fun updateBufferTimeLengthTemp(newBufferTimeLength: Int) {
         Log.d("SettingsScreenState", "updateBufferTimeLengthTemp to $newBufferTimeLength")
         bufferTimeLengthTemp.intValue = newBufferTimeLength
-        validateSettings()
     }
 
-    private fun validateSettings() {
+    fun validateSettings(config: AudioConfig) {
         val calculatedValue: Long =
             config.SAMPLE_RATE_HZ.toLong() * (config.BIT_DEPTH.bytes / 8).toLong() * bufferTimeLengthTemp.intValue.toLong()
         Log.d("SettingsScreenState", "calculatedValue:  $calculatedValue")
-        isMaxExceeded.value = calculatedValue > 100_000_000L
-        isBufferTimeLengthNull.value = bufferTimeLengthTemp.intValue == 0
+        isMaxExceeded = calculatedValue > 100_000_000L
+        isBufferTimeLengthNull = bufferTimeLengthTemp.intValue == 0
         Log.d(
             "SettingsScreenState",
-            "isBufferTimeLengthNull, isMaxExceeded: ${isBufferTimeLengthNull.value}, ${isMaxExceeded.value}"
+            "isBufferTimeLengthNull, isMaxExceeded: $isBufferTimeLengthNull, $isMaxExceeded"
         )
-        isSubmitEnabled.value = !isMaxExceeded.value && !isBufferTimeLengthNull.value
+        isSubmitEnabled = !isMaxExceeded && !isBufferTimeLengthNull
 
         // Only update errorMessage if input is invalid
-        if (isMaxExceeded.value) {
-            errorMessage.value = "Value(s) too high: Multiplication of settings exceeds 100 MB"
-        } else if (isBufferTimeLengthNull.value) {
-            errorMessage.value = "Invalid buffer length. Must be a number greater than 0"
-        } else {
-            errorMessage.value = null
+        errorMessage = when {
+            isMaxExceeded -> "Value(s) too high: Multiplication of settings exceeds 100 MB"
+            isBufferTimeLengthNull -> "Invalid buffer length. Must be a number greater than 0"
+            else -> null
         }
 
-        Log.d("SettingsScreenState", "validateSettings errorMessage:  ${errorMessage.value}")
+        Log.d("SettingsScreenState", "validateSettings errorMessage:  $errorMessage")
     }
 }

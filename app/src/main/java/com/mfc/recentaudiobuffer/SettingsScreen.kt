@@ -42,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -74,10 +75,18 @@ import androidx.compose.ui.text.input.KeyboardType
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun SettingsScreen(
-    state: SettingsScreenState,
+    sampleRate: Int,
+    bitDepth: BitDepth,
+    bufferTimeLengthTemp: MutableIntState,
+    isMaxExceeded: MutableState<Boolean>,
+    isBufferTimeLengthNull: MutableState<Boolean>,
+    errorMessage: MutableState<String?>,
+    isSubmitEnabled: MutableState<Boolean>,
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
-    onSubmit: (Int) -> Unit
+    onBufferTimeLengthChanged: (Int) -> Unit,
+    onSubmit: (Int) -> Unit,
+    justExit: () -> Unit
 ) {
     var showSampleRateMenu by remember { mutableStateOf(false) }
     var showBitDepthMenu by remember { mutableStateOf(false) }
@@ -93,8 +102,12 @@ fun SettingsScreen(
         },
         topBar = {
             SettingsTopAppBar(onBackButtonClicked = {
-                if (state.isSubmitEnabled.value) {
-                    onSubmit(state.bufferTimeLengthTemp.intValue)
+                if (isSubmitEnabled.value) {
+                    onSubmit(bufferTimeLengthTemp.intValue)
+                }
+                else
+                {
+                   justExit()
                 }
             })
         }) { innerPadding ->
@@ -120,7 +133,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Sample Rate
-            SettingsButton(text = "Sample Rate: ${state.config.SAMPLE_RATE_HZ} Hz",
+            SettingsButton(text = "Sample Rate: ${sampleRate} Hz",
                 icon = Icons.Filled.ArrowDropDown,
                 onClick = { showSampleRateMenu = true })
             DropdownMenu(
@@ -140,7 +153,6 @@ fun SettingsScreen(
                             "SettingsScreen", "Clicked SampleRate $label with value: $value"
                         )
                         onSampleRateChanged(value)
-                        state.updateConfig(state.config.copy(SAMPLE_RATE_HZ = value))
                         showSampleRateMenu = false
                     })
                 }
@@ -149,7 +161,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Bit Depth
-            SettingsButton(text = "Bit Depth: ${state.config.BIT_DEPTH.bytes} bit",
+            SettingsButton(text = "Bit Depth: ${bitDepth.bytes} bit",
                 icon = Icons.Filled.ArrowDropDown,
                 onClick = { showBitDepthMenu = true })
             DropdownMenu(
@@ -169,7 +181,6 @@ fun SettingsScreen(
                             "SettingsScreen", "Clicked BitDepth $label with value: $value"
                         )
                         onBitDepthChanged(value)
-                        state.updateConfig(state.config.copy(BIT_DEPTH = value))
                         showBitDepthMenu = false
                     })
                 }
@@ -178,16 +189,17 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             MyOutlinedBufferInputField(
-                bufferTimeLength = state.bufferTimeLengthTemp, onValueChange = { value ->
-                    state.updateBufferTimeLengthTemp(value)
-                }, isMaxExceeded = state.isMaxExceeded, isNull = state.isBufferTimeLengthNull
+                bufferTimeLength = bufferTimeLengthTemp,
+                onValueChange = onBufferTimeLengthChanged,
+                isMaxExceeded = isMaxExceeded,
+                isNull = isBufferTimeLengthNull
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             // Error Message
-            if (state.errorMessage.value != null) {
-                Text(text = state.errorMessage.value!!, color = Color.Red)
+            if (errorMessage.value != null) {
+                Text(text = errorMessage.value!!, color = Color.Red)
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
@@ -195,13 +207,13 @@ fun SettingsScreen(
                 text = stringResource(id = R.string.submit),
                 icon = R.drawable.baseline_save_alt_24,
                 onClick = {
-                    if (state.isSubmitEnabled.value) {
-                        onSubmit(state.bufferTimeLengthTemp.intValue)
+                    if (isSubmitEnabled.value) {
+                        onSubmit(bufferTimeLengthTemp.intValue)
                     }
                 },
                 iconTint = colorResource(id = R.color.purple_accent),
                 width = 130.dp,
-                enabled = state.isSubmitEnabled.value
+                enabled = isSubmitEnabled.value
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -399,10 +411,23 @@ fun SettingsTopAppBar(
     )
 }
 
+@SuppressLint("UnrememberedMutableState")
 @Preview(showBackground = true)
 @Composable
 fun SettingsScreenPreview() {
     RecentAudioBufferTheme {
-        SettingsScreen(SettingsScreenState(AudioConfig(44100, 10, bitDepths["16"]!!)), {}, {}, {})
+        SettingsScreen(
+            44100,
+            bitDepths["16"]!!,
+            mutableIntStateOf(10),
+            mutableStateOf(false),
+            mutableStateOf(false),
+            mutableStateOf(""),
+            mutableStateOf(true),
+            {},
+            {},
+            {},
+            {},
+            {})
     }
 }
