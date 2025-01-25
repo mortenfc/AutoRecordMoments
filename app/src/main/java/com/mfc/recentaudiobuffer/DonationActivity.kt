@@ -66,6 +66,7 @@ class DonationActivity : AppCompatActivity() {
                         onSignInClick = { onClickSignIn() },
                         onPayClick = { amount -> sendPaymentRequest(amount) },
                         onCardPayClick = { amount -> sendPaymentRequest(amount) },
+                        onBackClick = { this.finish() },
                         signInButtonText = signInButtonText,
                         signInButtonViewState = signInButtonViewState,
                         isGooglePayReady = isGooglePayReady

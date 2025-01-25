@@ -1,5 +1,6 @@
 package com.mfc.recentaudiobuffer
 
+import android.annotation.SuppressLint
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -36,14 +37,25 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.PaintingStyle
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.text.style.TextAlign
 
@@ -56,6 +68,7 @@ fun DonationScreen(
     onSignInClick: () -> Unit,
     onPayClick: (Int) -> Unit,
     onCardPayClick: (Int) -> Unit,
+    onBackClick: () -> Unit,
     signInButtonText: MutableState<String>,
     signInButtonViewState: MutableState<SignInButtonViewState>,
     isGooglePayReady: MutableState<Boolean>
@@ -64,33 +77,59 @@ fun DonationScreen(
     var isDonationAmountError by rememberSaveable { mutableStateOf(false) }
     val isLoggedIn: Boolean = (signInButtonText.value == "Sign Out")
 
-    ConstraintLayout(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colorResource(id = R.color.teal_350))
-    ) {
-        val (contentColumn) = createRefs()
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 25.dp, end = 25.dp)
-                .constrainAs(contentColumn) {
-                    top.linkTo(parent.top)
-                }, horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            DonationHeader()
+    Scaffold(
+        topBar = {
+            DonationTopAppBar(onBackButtonClicked = onBackClick)
+        },
+        content = { innerPadding ->
+            ConstraintLayout(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .background(colorResource(id = R.color.teal_100))
+            ) {
+                val (contentColumn) = createRefs()
 
-            if (isGooglePayReady.value) {
-                GoogleSignInButton(onClick = onSignInClick, signInButtonText)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 25.dp, end = 25.dp)
+                        .constrainAs(contentColumn) {
+                            top.linkTo(parent.top)
+                        }, horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    DonationHeader()
 
-                Spacer(modifier = Modifier.height(16.dp))
-            }
+                    if (isGooglePayReady.value) {
+                        GoogleSignInButton(onClick = onSignInClick, signInButtonText)
 
-            if (isGooglePayReady.value && isLoggedIn) {
-                when (signInButtonViewState.value) {
-                    SignInButtonViewState.Hidden -> {}
-                    SignInButtonViewState.Ready -> {
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    if (isGooglePayReady.value && isLoggedIn) {
+                        when (signInButtonViewState.value) {
+                            SignInButtonViewState.Hidden -> {}
+                            SignInButtonViewState.Ready -> {
+                                DonationAmountTextField(
+                                    donationAmount = donationAmount, onValueChange = {
+                                        donationAmount = it
+                                        isDonationAmountError =
+                                            it.toIntOrNull() == null || it.toIntOrNull()!! < 5
+                                    }, isDonationAmountError = isDonationAmountError
+                                )
+                                GooglePayButton(onClick = {
+                                    val amount = donationAmount.toIntOrNull()
+                                    if (amount != null && amount >= 5) {
+                                        isDonationAmountError = false
+                                        onPayClick(amount)
+                                    } else {
+                                        isDonationAmountError = true
+                                    }
+                                })
+                            }
+                        }
+                    } else if (!isGooglePayReady.value) {
                         DonationAmountTextField(
                             donationAmount = donationAmount, onValueChange = {
                                 donationAmount = it
@@ -98,37 +137,78 @@ fun DonationScreen(
                                     it.toIntOrNull() == null || it.toIntOrNull()!! < 5
                             }, isDonationAmountError = isDonationAmountError
                         )
-                        GooglePayButton(onClick = {
+                        CardPayButton(onClick = {
                             val amount = donationAmount.toIntOrNull()
                             if (amount != null && amount >= 5) {
                                 isDonationAmountError = false
-                                onPayClick(amount)
+                                onCardPayClick(amount)
                             } else {
                                 isDonationAmountError = true
                             }
                         })
                     }
                 }
-            } else if (!isGooglePayReady.value) {
-                DonationAmountTextField(
-                    donationAmount = donationAmount, onValueChange = {
-                        donationAmount = it
-                        isDonationAmountError = it.toIntOrNull() == null || it.toIntOrNull()!! < 5
-                    }, isDonationAmountError = isDonationAmountError
-                )
-                CardPayButton(onClick = {
-                    val amount = donationAmount.toIntOrNull()
-                    if (amount != null && amount >= 5) {
-                        isDonationAmountError = false
-                        onCardPayClick(amount)
-                    } else {
-                        isDonationAmountError = true
-                    }
-                })
             }
         }
-    }
+    )
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DonationTopAppBar(
+    onBackButtonClicked: () -> Unit
+) {
+    val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
+    val toolbarBackgroundColor = colorResource(id = R.color.teal_350)
+    TopAppBar(title = {
+        Text(
+            text = stringResource(id = R.string.donate),
+            color = colorResource(id = R.color.teal_900)
+        )
+    }, modifier = Modifier.drawBehind {
+        val paint = Paint().apply {
+            color = toolbarOutlineColor
+            strokeWidth = 8.dp.toPx()
+            style = PaintingStyle.Stroke
+        }
+        drawIntoCanvas { canvas ->
+            canvas.drawRoundRect(
+                left = 0f,
+                top = 0f,
+                right = size.width,
+                bottom = size.height,
+                radiusX = 0.dp.toPx(),
+                radiusY = 0.dp.toPx(),
+                paint = paint
+            )
+        }
+        drawRoundRect(
+            color = toolbarBackgroundColor,
+            topLeft = Offset(0f, 0f),
+            size = size,
+            style = Fill,
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(
+                0.dp.toPx(), 0.dp.toPx()
+            )
+        )
+    }, navigationIcon = {
+        Row(
+            modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { onBackButtonClicked() }) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(id = R.string.back),
+                    tint = Color.White
+                )
+            }
+        }
+    }, colors = TopAppBarDefaults.topAppBarColors(
+        containerColor = Color.Transparent
+    )
+    )
+}
+
 
 @Composable
 fun DonationHeader() {
@@ -331,5 +411,5 @@ fun DonationScreenPreview() {
     val signInTextState = remember { mutableStateOf("Sign Out") }
     val signInButtonViewState = remember { mutableStateOf(SignInButtonViewState.Ready) }
     val isGooglePayReady = remember { mutableStateOf(true) }
-    DonationScreen({}, {}, {}, signInTextState, signInButtonViewState, isGooglePayReady)
+    DonationScreen({}, {}, {}, {}, signInTextState, signInButtonViewState, isGooglePayReady)
 }

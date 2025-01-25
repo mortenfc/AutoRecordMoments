@@ -49,5 +49,6 @@
     <string name="buffer_length_seconds">Buffer length in Seconds</string>
     <string name="submit">Submit</string>
     <string name="back">Return</string>
+    <string name="donate">Donate</string>
 
 </resources>

@@ -178,12 +178,9 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             MyOutlinedBufferInputField(
-                bufferTimeLength = state.bufferTimeLengthTemp,
-                onValueChange = { value ->
+                bufferTimeLength = state.bufferTimeLengthTemp, onValueChange = { value ->
                     state.updateBufferTimeLengthTemp(value)
-                },
-                isMaxExceeded = state.isMaxExceeded,
-                isNull = state.isBufferTimeLengthNull
+                }, isMaxExceeded = state.isMaxExceeded, isNull = state.isBufferTimeLengthNull
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -265,8 +262,7 @@ fun MyOutlinedBufferInputField(
             } else {
                 val parsedValue = filteredInput.toIntOrNull()
                 if (parsedValue != null) {
-                    if (parsedValue > 1_000_000)
-                    {
+                    if (parsedValue > 1_000_000) {
                         isMaxExceeded.value = true
                         return@BasicTextField
                     }
@@ -289,8 +285,7 @@ fun MyOutlinedBufferInputField(
             color = colorResource(id = R.color.teal_900), fontWeight = FontWeight.Medium
         ),
         keyboardOptions = KeyboardOptions.Default.copy(
-            imeAction = ImeAction.Done,
-            keyboardType = KeyboardType.Number
+            imeAction = ImeAction.Done, keyboardType = KeyboardType.Number
         ),
         keyboardActions = KeyboardActions(onDone = {
             focusManager.clearFocus()
@@ -317,7 +312,7 @@ fun MyOutlinedBufferInputField(
                         unfocusedIndicatorColor = colorResource(id = R.color.purple_accent),
                         focusedIndicatorColor = colorResource(id = R.color.purple_accent),
                         unfocusedContainerColor = colorResource(id = R.color.teal_350),
-                        focusedContainerColor = colorResource(id =R.color.teal_200),
+                        focusedContainerColor = colorResource(id = R.color.teal_200),
                         errorContainerColor = colorResource(id = R.color.teal_200),
                         errorIndicatorColor = Color.Red
                     ),
