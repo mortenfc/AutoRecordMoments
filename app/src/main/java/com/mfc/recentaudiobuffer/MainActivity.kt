@@ -26,35 +26,36 @@ import android.os.Environment
 import android.os.PowerManager
 import android.provider.DocumentsContract
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResult
 import androidx.activity.viewModels
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
-import androidx.media3.ui.PlayerControlView
+import javax.inject.Inject
+import dagger.hilt.android.AndroidEntryPoint
 
 class SharedViewModel : ViewModel() {
     var myBufferService: MyBufferServiceInterface? = null
 }
 
+@AndroidEntryPoint
 @UnstableApi
 class MainActivity : AppCompatActivity() {
     private val logTag = "MainActivity"
+
+    @Inject
+    lateinit var authenticationManager: AuthenticationManager
     private val sharedViewModel: SharedViewModel by viewModels()
+    private val settingsViewModel: SettingsViewModel by viewModels()
     private lateinit var myBufferService: MyBufferServiceInterface
 
     private val requiredPermissions = if (Build.VERSION.SDK_INT >= 33) {
@@ -62,13 +63,18 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.POST_NOTIFICATIONS,
             Manifest.permission.READ_MEDIA_AUDIO,
             Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.FOREGROUND_SERVICE
+            Manifest.permission.FOREGROUND_SERVICE,
+            Manifest.permission.INTERNET,
+            Manifest.permission.ACCESS_NETWORK_STATE
         )
     } else {
         mutableListOf(
+            Manifest.permission.ACCESS_NOTIFICATION_POLICY,
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.FOREGROUND_SERVICE
+            Manifest.permission.FOREGROUND_SERVICE,
+            Manifest.permission.INTERNET,
+            Manifest.permission.ACCESS_NETWORK_STATE
         )
     }
 
@@ -113,7 +119,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         Log.i(logTag, "onCreate(): Build.VERSION.SDK_INT: ${Build.VERSION.SDK_INT}")
         if (Build.VERSION.SDK_INT >= 34) {
             requiredPermissions.add(Manifest.permission.FOREGROUND_SERVICE_MICROPHONE)
@@ -126,27 +131,30 @@ class MainActivity : AppCompatActivity() {
 
         getPermissions()
 
+        authenticationManager.setGoogleSignInLauncher(registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result: ActivityResult ->
+            authenticationManager.onSignInResult(result)
+        })
+
         ContextCompat.registerReceiver(
-            this,
-            NotificationActionReceiver(),
-            IntentFilter().apply {
+            this, NotificationActionReceiver(), IntentFilter().apply {
                 addAction(NotificationActionReceiver.ACTION_STOP_RECORDING)
                 addAction(NotificationActionReceiver.ACTION_START_RECORDING)
-            },
-            ContextCompat.RECEIVER_NOT_EXPORTED
+            }, ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
         ViewModelHolder.setSharedViewModel(sharedViewModel)
 
-        mediaPlayerManager = MediaPlayerManager(
-            context = this,
-            onPlayerReady = {
-                Log.i(logTag, "Player is ready")
-            })
+        mediaPlayerManager = MediaPlayerManager(context = this, onPlayerReady = {
+            Log.i(logTag, "Player is ready")
+        })
 
         setContent {
             MaterialTheme {
                 MainScreen(
+                    signInButtonText = authenticationManager.signInButtonText,
+                    onSignInClick = { authenticationManager.onSignInClick() },
                     onStartBufferingClick = { onClickStartRecording() },
                     onStopBufferingClick = { onClickStopRecording() },
                     onResetBufferClick = { onClickResetBuffer() },
@@ -244,13 +252,10 @@ class MainActivity : AppCompatActivity() {
                     "takePersistableUriPermission called for grantedDirectoryUri: $grantedDirectoryUri"
                 )
                 FileSavingUtils.cacheGrantedUri(
-                    this@MainActivity,
-                    grantedDirectoryUri
+                    this@MainActivity, grantedDirectoryUri
                 )
                 FileSavingUtils.promptSaveFileName(
-                    this@MainActivity,
-                    grantedDirectoryUri,
-                    myBufferService.getBuffer()
+                    this@MainActivity, grantedDirectoryUri, myBufferService.getBuffer()
                 )
             } else {
                 // Handle case where grantedUri is null
@@ -267,9 +272,7 @@ class MainActivity : AppCompatActivity() {
                 if (grantedUri != null) {
                     // Use previously permitted cached uri
                     FileSavingUtils.promptSaveFileName(
-                        this@MainActivity,
-                        grantedUri,
-                        myBufferService.getBuffer()
+                        this@MainActivity, grantedUri, myBufferService.getBuffer()
                     )
                 } else {
                     // Otherwise get file saving location permission
@@ -335,11 +338,9 @@ class MainActivity : AppCompatActivity() {
             updateRecordingNotification()
         })
 
-        myBufferService.totalRingBufferSize.observe(
-            this@MainActivity,
-            Observer { _ ->
-                updateRecordingNotification()
-            })
+        myBufferService.totalRingBufferSize.observe(this@MainActivity, Observer { _ ->
+            updateRecordingNotification()
+        })
 
         myBufferService.time.observe(this@MainActivity, Observer { _ ->
             updateRecordingNotification()
@@ -374,12 +375,9 @@ class MainActivity : AppCompatActivity() {
         )
 
         val saveIntent = PendingIntent.getBroadcast(
-            this,
-            REQUEST_CODE_SAVE,
-            Intent(this, NotificationActionReceiver::class.java).apply {
+            this, REQUEST_CODE_SAVE, Intent(this, NotificationActionReceiver::class.java).apply {
                 action = NotificationActionReceiver.ACTION_SAVE_RECORDING
-            },
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val recordingNotification =
@@ -400,14 +398,13 @@ class MainActivity : AppCompatActivity() {
                         myBufferService.totalRingBufferSize.get()
                     } else {
                         myBufferService.recorderIndex.get()
-                    }, false
-                )
-                .addAction(
+                    },
+                    false
+                ).addAction(
                     if (myBufferService.isRecording.get()) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24,
                     if (myBufferService.isRecording.get()) "Pause" else "Continue", // Update action text
                     if (myBufferService.isRecording.get()) stopIntent else startIntent // Update PendingIntent
-                ).setAutoCancel(false)
-                .addAction(
+                ).setAutoCancel(false).addAction(
                     if (myBufferService.isRecording.get()) R.drawable.baseline_save_alt_24 else 0,
                     if (myBufferService.isRecording.get()) "Save and clear" else null,
                     if (myBufferService.isRecording.get()) saveIntent else null

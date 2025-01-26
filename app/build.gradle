@@ -1,7 +1,9 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
-    id("com.google.gms.google-services")
+    id 'kotlin-kapt'
+    id 'com.google.dagger.hilt.android'
+    id 'com.google.gms.google-services'
 }
 
 android {
@@ -61,6 +63,7 @@ android {
 
 dependencies {
     // Android
+    //noinspection GradleDependency Update requires API >= 35
     implementation 'androidx.activity:activity-ktx:1.9.3'
     implementation 'androidx.fragment:fragment-ktx:1.8.5'
     implementation 'androidx.core:core-ktx'
@@ -80,7 +83,7 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
 
     // Donation
-    implementation platform("com.google.firebase:firebase-bom:33.7.0")
+    implementation platform("com.google.firebase:firebase-bom:33.8.0")
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation 'com.google.android.gms:play-services-wallet:19.4.0'
@@ -88,6 +91,7 @@ dependencies {
     implementation "com.google.pay.button:compose-pay-button:1.0.0"
     implementation 'com.stripe:stripe-android:21.3.0'
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
+
 
     // UI
     implementation 'com.google.android.material:material:1.12.0'
@@ -101,6 +105,7 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
     debugImplementation 'androidx.compose.ui:ui-tooling'
     debugImplementation 'androidx.compose.ui:ui-test-manifest'
+    //noinspection GradleDependency Update requires API >= 35
     implementation 'androidx.activity:activity-compose:1.9.3'
     implementation "androidx.lifecycle:lifecycle-viewmodel-compose"
     implementation("androidx.constraintlayout:constraintlayout-compose:1.1.0")
@@ -111,10 +116,21 @@ dependencies {
     implementation "androidx.datastore:datastore-preferences:1.1.2"
     implementation 'androidx.preference:preference-ktx:1.2.1'
     implementation 'androidx.datastore:datastore-core-android:1.1.2'
+    implementation 'com.google.firebase:firebase-firestore-ktx:25.1.1'
+    implementation 'com.google.firebase:firebase-firestore:25.1.1'
+
+    // Hilt dependencies
+    implementation("com.google.dagger:hilt-android:2.48.1")
+    kapt("com.google.dagger:hilt-compiler:2.48.1")
+    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // Media
     //noinspection GradleDependency Update requires API >= 35
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     //noinspection GradleDependency Update requires API >= 35
     implementation("androidx.media3:media3-ui:1.4.1")
+}
+
+kapt {
+    correctErrorTypes = true
 }

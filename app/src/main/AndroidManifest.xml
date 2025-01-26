@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
@@ -15,6 +14,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
+            android:name=".RecentAudioBufferApplication"
             android:allowBackup="true"
             android:dataExtractionRules="@xml/data_extraction_rules"
             android:fullBackupContent="@xml/backup_rules"
@@ -25,12 +25,22 @@
             android:theme="@style/Theme.RecentAudioBuffer">
 
         <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-5330230981165217~5808556024" />
+                android:name="com.google.android.gms.ads.APPLICATION_ID"
+                android:value="ca-app-pub-5330230981165217~5808556024" />
+
+        <meta-data
+                android:name="com.google.android.gms.version"
+                android:value="@integer/google_play_services_version" />
 
         <meta-data
                 android:name="com.google.android.gms.wallet.api.enabled"
                 android:value="true" />
+
+        <activity
+                android:name="com.google.android.gms.ads.AdActivity"
+                android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|uiMode|screenSize|smallestScreenSize"
+                android:exported="false"
+                android:theme="@android:style/Theme.Translucent" />
 
         <receiver android:name=".NotificationActionReceiver" />
 
@@ -52,21 +62,7 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity> <!-- Include the AdActivity configChanges and theme. -->
-
-<!--        &lt;!&ndash;-->
-<!--             You can find your app ID in the AdMob UI. For android:value,-->
-<!--            insert your own AdMob app ID in quotes, as shown below.-->
-<!--            Sample AdMob App ID: ca-app-pub-3940256099942544~3347511713-->
-<!--        &ndash;&gt;-->
-<!--        <meta-data-->
-<!--                android:name="com.google.android.gms.ads.APPLICATION_ID"-->
-<!--                android:value="ca-app-pub-3940256099942544~3347511713" />-->
-<!--        <activity-->
-<!--                android:name="com.google.android.gms.ads.AdActivity"-->
-<!--                android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|uiMode|screenSize|smallestScreenSize"-->
-<!--                android:exported="false"-->
-<!--                android:theme="@android:style/Theme.Translucent" />-->
+        </activity>
 
         <service
                 android:name=".MyBufferService"

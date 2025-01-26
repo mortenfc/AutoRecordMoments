@@ -1,6 +1,7 @@
 package com.mfc.recentaudiobuffer
 
 import MediaPlayerManager
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.drawable.RippleDrawable
@@ -57,6 +58,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,9 +81,10 @@ import androidx.media3.ui.PlayerControlView
 import arte.programar.materialfile.ui.FilePickerActivity
 
 @androidx.annotation.OptIn(UnstableApi::class)
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
+    signInButtonText: MutableState<String>,
+    onSignInClick: () -> Unit,
     onStartBufferingClick: () -> Unit,
     onStopBufferingClick: () -> Unit,
     onResetBufferClick: () -> Unit,
@@ -91,76 +94,18 @@ fun MainScreen(
     onSettingsClick: () -> Unit,
     mediaPlayerManager: MediaPlayerManager
 ) {
-    val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
-    val toolbarBackgroundColor = colorResource(id = R.color.teal_350)
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(id = R.string.app_name),
-                        color = colorResource(id = R.color.teal_900)
-                    )
-                },
-                modifier = Modifier
-                    .drawBehind {
-                        val paint = Paint().apply {
-                            color = toolbarOutlineColor
-                            strokeWidth = 8.dp.toPx()
-                            style = PaintingStyle.Stroke
-                        }
-                        drawIntoCanvas { canvas ->
-                            canvas.drawRoundRect(
-                                left = 0f,
-                                top = 0f,
-                                right = size.width,
-                                bottom = size.height,
-                                radiusX = 0.dp.toPx(),
-                                radiusY = 0.dp.toPx(),
-                                paint = paint
-                            )
-                        }
-                        drawRoundRect(
-                            color = toolbarBackgroundColor,
-                            topLeft = Offset(0f, 0f),
-                            size = size,
-                            style = androidx.compose.ui.graphics.drawscope.Fill,
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(
-                                0.dp.toPx(),
-                                0.dp.toPx()
-                            )
-                        )
-                    },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent
-                ),
-                actions = {
-                    Row(
-                        modifier = Modifier
-                            .clip(CircleShape) // Clip to a circle shape
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = ripple(
-                                    bounded = true,
-                                    radius = 24.dp
-                                ), // Circular ripple
-                                onClick = {
-                                    onSettingsClick()
-                                }
-                            )
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.baseline_settings_24),
-                            contentDescription = stringResource(id = R.string.settings),
-                            tint = Color.White
-                        )
-                    }
-                }
-            )
-        },
-        content = { innerPadding ->
+    Column(modifier = Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = stringResource(id = R.string.app_name),
+            signInButtonText = signInButtonText,
+            onSignInClick = onSignInClick,
+            onSettingsClick = onSettingsClick
+        )
+        Spacer(modifier = Modifier.height(5.dp))
+        AdMobBanner()
+
+        Scaffold(
+            content = { innerPadding ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -203,10 +148,9 @@ fun MainScreen(
                     width = 260.dp
                 )
             }
-
             PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
-        }
-    )
+        })
+    }
 }
 
 @Composable
@@ -284,13 +228,71 @@ fun MainButton(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = text,
-                fontWeight = FontWeight.Normal,
-                fontSize = 14.sp
+                text = text, fontWeight = FontWeight.Normal, fontSize = 14.sp
             )
         }
     }
 }
+
+//@OptIn(ExperimentalMaterial3Api::class)
+//@Composable
+//fun MainScreenTopBar(onSettingsClick: () -> Unit) {
+//    val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
+//    val toolbarBackgroundColor = colorResource(id = R.color.teal_350)
+//    TopAppBar(title = {
+//        Text(
+//            text = stringResource(id = R.string.app_name),
+//            color = colorResource(id = R.color.teal_900)
+//        )
+//    }, modifier = Modifier.drawBehind {
+//        val paint = Paint().apply {
+//            color = toolbarOutlineColor
+//            strokeWidth = 8.dp.toPx()
+//            style = PaintingStyle.Stroke
+//        }
+//        drawIntoCanvas { canvas ->
+//            canvas.drawRoundRect(
+//                left = 0f,
+//                top = 0f,
+//                right = size.width,
+//                bottom = size.height,
+//                radiusX = 0.dp.toPx(),
+//                radiusY = 0.dp.toPx(),
+//                paint = paint
+//            )
+//        }
+//        drawRoundRect(
+//            color = toolbarBackgroundColor,
+//            topLeft = Offset(0f, 0f),
+//            size = size,
+//            style = androidx.compose.ui.graphics.drawscope.Fill,
+//            cornerRadius = androidx.compose.ui.geometry.CornerRadius(
+//                0.dp.toPx(), 0.dp.toPx()
+//            )
+//        )
+//    }, colors = TopAppBarDefaults.topAppBarColors(
+//        containerColor = Color.Transparent
+//    ), actions = {
+//        Row(
+//            modifier = Modifier
+//                .clip(CircleShape) // Clip to a circle shape
+//                .clickable(interactionSource = remember { MutableInteractionSource() },
+//                    indication = ripple(
+//                        bounded = true, radius = 24.dp
+//                    ), // Circular ripple
+//                    onClick = {
+//                        onSettingsClick()
+//                    })
+//                .padding(12.dp), verticalAlignment = Alignment.CenterVertically
+//        ) {
+//            Icon(
+//                painter = painterResource(id = R.drawable.baseline_settings_24),
+//                contentDescription = stringResource(id = R.string.settings),
+//                tint = Color.White
+//            )
+//        }
+//    })
+//}
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
@@ -314,85 +316,82 @@ fun PlayerControlViewContainer(
     }
 
     Box(modifier = modifier, contentAlignment = Alignment.BottomCenter) {
-        AndroidView(
-            factory = {
-                ConstraintLayout(context).apply {
+        AndroidView(factory = {
+            ConstraintLayout(context).apply {
+                id = View.generateViewId()
+                val playerControlView = PlayerControlView(context).apply {
                     id = View.generateViewId()
-                    val playerControlView = PlayerControlView(context).apply {
-                        id = View.generateViewId()
-                        setShowFastForwardButton(true)
-                        setShowPlayButtonIfPlaybackIsSuppressed(true)
-                        setShowRewindButton(true)
-                        isAnimationEnabled = true
-                        setTimeBarMinUpdateInterval(100)
-                        showTimeoutMs = 0
-                        hide()
-                        hideImmediately()
-                        player = mediaPlayerManager.player
-                    }
-                    mediaPlayerManager.playerControlView = playerControlView
-                    val layoutParamsIn = ConstraintLayout.LayoutParams(
-                        ConstraintLayout.LayoutParams.MATCH_PARENT,
-                        ConstraintLayout.LayoutParams.MATCH_PARENT
-                    )
-                    playerControlView.layoutParams = layoutParamsIn
-                    Log.d(
-                        "PlayerControlViewContainer",
-                        "PlayerControlView created with ID: ${playerControlView.id}"
-                    )
-                    addView(playerControlView)
-                    val closeButton = setCloseButton(playerControlView, context, mediaPlayerManager)
-                    val constraintSet = ConstraintSet().apply {
-                        clone(this) // Clone the ConstraintLayout
-                        // Constrain PlayerControlView to the bottom
-                        connect(
-                            playerControlView.id,
-                            ConstraintSet.BOTTOM,
-                            ConstraintSet.PARENT_ID,
-                            ConstraintSet.BOTTOM
-                        )
-                        // Constrain PlayerControlView to the start
-                        connect(
-                            playerControlView.id,
-                            ConstraintSet.START,
-                            ConstraintSet.PARENT_ID,
-                            ConstraintSet.START
-                        )
-                        // Constrain PlayerControlView to the end
-                        connect(
-                            playerControlView.id,
-                            ConstraintSet.END,
-                            ConstraintSet.PARENT_ID,
-                            ConstraintSet.END
-                        )
-                        // Set height to 20% of the parent
-                        constrainPercentHeight(playerControlView.id, 0.20f)
-                        // Set width to 100% of the parent
-                        constrainPercentWidth(playerControlView.id, 1.0f)
-                        // Constrain closeButton to the top
-                        connect(
-                            closeButton.id,
-                            ConstraintSet.TOP,
-                            playerControlView.id,
-                            ConstraintSet.TOP
-                        )
-                        // Constrain closeButton to the end
-                        connect(
-                            closeButton.id,
-                            ConstraintSet.END,
-                            playerControlView.id,
-                            ConstraintSet.END
-                        )
-                    }
-                    // Apply constraints
-                    constraintSet.applyTo(this@apply)
+                    setShowFastForwardButton(true)
+                    setShowPlayButtonIfPlaybackIsSuppressed(true)
+                    setShowRewindButton(true)
+                    isAnimationEnabled = true
+                    setTimeBarMinUpdateInterval(100)
+                    showTimeoutMs = 0
+                    hide()
+                    hideImmediately()
+                    player = mediaPlayerManager.player
                 }
-            },
-            update = {
-                Log.d("PlayerControlViewContainer", "AndroidView Update")
-                mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
-            },
-            modifier = Modifier.fillMaxSize()
+                mediaPlayerManager.playerControlView = playerControlView
+                val layoutParamsIn = ConstraintLayout.LayoutParams(
+                    ConstraintLayout.LayoutParams.MATCH_PARENT,
+                    ConstraintLayout.LayoutParams.MATCH_PARENT
+                )
+                playerControlView.layoutParams = layoutParamsIn
+                Log.d(
+                    "PlayerControlViewContainer",
+                    "PlayerControlView created with ID: ${playerControlView.id}"
+                )
+                addView(playerControlView)
+                val closeButton = setCloseButton(playerControlView, context, mediaPlayerManager)
+                val constraintSet = ConstraintSet().apply {
+                    clone(this) // Clone the ConstraintLayout
+                    // Constrain PlayerControlView to the bottom
+                    connect(
+                        playerControlView.id,
+                        ConstraintSet.BOTTOM,
+                        ConstraintSet.PARENT_ID,
+                        ConstraintSet.BOTTOM
+                    )
+                    // Constrain PlayerControlView to the start
+                    connect(
+                        playerControlView.id,
+                        ConstraintSet.START,
+                        ConstraintSet.PARENT_ID,
+                        ConstraintSet.START
+                    )
+                    // Constrain PlayerControlView to the end
+                    connect(
+                        playerControlView.id,
+                        ConstraintSet.END,
+                        ConstraintSet.PARENT_ID,
+                        ConstraintSet.END
+                    )
+                    // Set height to 20% of the parent
+                    constrainPercentHeight(playerControlView.id, 0.20f)
+                    // Set width to 100% of the parent
+                    constrainPercentWidth(playerControlView.id, 1.0f)
+                    // Constrain closeButton to the top
+                    connect(
+                        closeButton.id,
+                        ConstraintSet.TOP,
+                        playerControlView.id,
+                        ConstraintSet.TOP
+                    )
+                    // Constrain closeButton to the end
+                    connect(
+                        closeButton.id,
+                        ConstraintSet.END,
+                        playerControlView.id,
+                        ConstraintSet.END
+                    )
+                }
+                // Apply constraints
+                constraintSet.applyTo(this@apply)
+            }
+        }, update = {
+            Log.d("PlayerControlViewContainer", "AndroidView Update")
+            mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
+        }, modifier = Modifier.fillMaxSize()
         )
         LaunchedEffect(currentFileNameState) {
             Log.d("PlayerControlViewContainer", "LaunchedEffect currentFileNameState update")
@@ -423,10 +422,12 @@ private fun setCloseButton(
     return closeButtonContainer
 }
 
+@SuppressLint("UnrememberedMutableState")
 @Preview(showBackground = true)
 @Composable
 fun MainScreenPreview() {
     MainScreen(
+        mutableStateOf("Sign Out"),
         onStartBufferingClick = {},
         onStopBufferingClick = {},
         onResetBufferClick = {},
@@ -434,8 +435,8 @@ fun MainScreenPreview() {
         onPickAndPlayFileClick = {},
         onDonateClick = {},
         onSettingsClick = {},
-        mediaPlayerManager = MediaPlayerManager(LocalContext.current) {}
-    )
+        onSignInClick = {},
+        mediaPlayerManager = MediaPlayerManager(LocalContext.current) {})
 }
 
 @Preview(showBackground = true)

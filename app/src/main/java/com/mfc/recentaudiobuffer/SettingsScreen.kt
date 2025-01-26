@@ -75,6 +75,8 @@ import androidx.compose.ui.text.input.KeyboardType
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun SettingsScreen(
+    signInButtonText: MutableState<String>,
+    onSignInClick: () -> Unit,
     sampleRate: Int,
     bitDepth: BitDepth,
     bufferTimeLengthTemp: MutableIntState,
@@ -101,15 +103,17 @@ fun SettingsScreen(
             }
         },
         topBar = {
-            SettingsTopAppBar(onBackButtonClicked = {
-                if (isSubmitEnabled.value) {
-                    onSubmit(bufferTimeLengthTemp.intValue)
-                }
-                else
-                {
-                   justExit()
-                }
-            })
+            TopAppBar(
+                title = stringResource(id = R.string.donate),
+                signInButtonText = signInButtonText,
+                onSignInClick = onSignInClick,
+                onBackButtonClicked = {
+                    if (isSubmitEnabled.value) {
+                        onSubmit(bufferTimeLengthTemp.intValue)
+                    } else {
+                        justExit()
+                    }
+                })
         }) { innerPadding ->
         Column(
             modifier = Modifier
@@ -133,7 +137,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Sample Rate
-            SettingsButton(text = "Sample Rate: ${sampleRate} Hz",
+            SettingsButton(text = "Sample Rate: $sampleRate Hz",
                 icon = Icons.Filled.ArrowDropDown,
                 onClick = { showSampleRateMenu = true })
             DropdownMenu(
@@ -355,61 +359,61 @@ fun StyledDropdownMenuItem(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SettingsTopAppBar(
-    onBackButtonClicked: () -> Unit
-) {
-    val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
-    val toolbarBackgroundColor = colorResource(id = R.color.teal_350)
-    TopAppBar(title = {
-        Text(
-            text = stringResource(id = R.string.settings),
-            color = colorResource(id = R.color.teal_900)
-        )
-    }, modifier = Modifier.drawBehind {
-        val paint = Paint().apply {
-            color = toolbarOutlineColor
-            strokeWidth = 8.dp.toPx()
-            style = PaintingStyle.Stroke
-        }
-        drawIntoCanvas { canvas ->
-            canvas.drawRoundRect(
-                left = 0f,
-                top = 0f,
-                right = size.width,
-                bottom = size.height,
-                radiusX = 0.dp.toPx(),
-                radiusY = 0.dp.toPx(),
-                paint = paint
-            )
-        }
-        drawRoundRect(
-            color = toolbarBackgroundColor,
-            topLeft = Offset(0f, 0f),
-            size = size,
-            style = Fill,
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(
-                0.dp.toPx(), 0.dp.toPx()
-            )
-        )
-    }, navigationIcon = {
-        Row(
-            modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { onBackButtonClicked() }) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(id = R.string.back),
-                    tint = Color.White
-                )
-            }
-        }
-    }, colors = TopAppBarDefaults.topAppBarColors(
-        containerColor = Color.Transparent
-    )
-    )
-}
+//@OptIn(ExperimentalMaterial3Api::class)
+//@Composable
+//fun SettingsTopAppBar(
+//    onBackButtonClicked: () -> Unit
+//) {
+//    val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
+//    val toolbarBackgroundColor = colorResource(id = R.color.teal_350)
+//    TopAppBar(title = {
+//        Text(
+//            text = stringResource(id = R.string.settings),
+//            color = colorResource(id = R.color.teal_900)
+//        )
+//    }, modifier = Modifier.drawBehind {
+//        val paint = Paint().apply {
+//            color = toolbarOutlineColor
+//            strokeWidth = 8.dp.toPx()
+//            style = PaintingStyle.Stroke
+//        }
+//        drawIntoCanvas { canvas ->
+//            canvas.drawRoundRect(
+//                left = 0f,
+//                top = 0f,
+//                right = size.width,
+//                bottom = size.height,
+//                radiusX = 0.dp.toPx(),
+//                radiusY = 0.dp.toPx(),
+//                paint = paint
+//            )
+//        }
+//        drawRoundRect(
+//            color = toolbarBackgroundColor,
+//            topLeft = Offset(0f, 0f),
+//            size = size,
+//            style = Fill,
+//            cornerRadius = androidx.compose.ui.geometry.CornerRadius(
+//                0.dp.toPx(), 0.dp.toPx()
+//            )
+//        )
+//    }, navigationIcon = {
+//        Row(
+//            modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically
+//        ) {
+//            IconButton(onClick = { onBackButtonClicked() }) {
+//                Icon(
+//                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+//                    contentDescription = stringResource(id = R.string.back),
+//                    tint = Color.White
+//                )
+//            }
+//        }
+//    }, colors = TopAppBarDefaults.topAppBarColors(
+//        containerColor = Color.Transparent
+//    )
+//    )
+//}
 
 @SuppressLint("UnrememberedMutableState")
 @Preview(showBackground = true)
@@ -417,6 +421,8 @@ fun SettingsTopAppBar(
 fun SettingsScreenPreview() {
     RecentAudioBufferTheme {
         SettingsScreen(
+            signInButtonText = mutableStateOf("Sign In"),
+            {},
             44100,
             bitDepths["16"]!!,
             mutableIntStateOf(10),
