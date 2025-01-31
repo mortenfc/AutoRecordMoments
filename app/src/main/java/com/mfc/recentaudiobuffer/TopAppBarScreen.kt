@@ -43,6 +43,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.PaintingStyle
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -89,12 +90,14 @@ fun GoogleSignInButton(onClick: () -> Unit, signInButtonText: MutableState<Strin
     Spacer(modifier = Modifier.width(6.dp))
 }
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TopAppBar(
     title: String,
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
+    onIconClick: (() -> Unit)? = null,
     onBackButtonClicked: (() -> Unit)? = null, // Optional back button
     onSettingsClick: (() -> Unit)? = null // Optional settings button
 ) {
@@ -104,38 +107,11 @@ fun TopAppBar(
         Text(
             text = title, color = colorResource(id = R.color.teal_900)
         )
-    }, modifier = Modifier.drawBehind {
-        val paint = Paint().apply {
-            color = toolbarOutlineColor
-            style = PaintingStyle.Stroke
-            strokeWidth = 8.dp.toPx()
-        }
-        drawIntoCanvas { canvas ->
-            canvas.drawRoundRect(
-                left = 0f,
-                top = 0f,
-                right = size.width,
-                bottom = size.height,
-                radiusX = 0.dp.toPx(),
-                radiusY = 0.dp.toPx(),
-                paint = paint
-            )
-        }
-        drawRoundRect(
-            color = toolbarBackgroundColor,
-            topLeft = Offset(0f, 0f),
-            size = size,
-            style = Fill,
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(
-                0.dp.toPx(), 0.dp.toPx()
-            )
-        )
     }, navigationIcon = {
-        if (onBackButtonClicked != null) {
-            Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        Row(
+            modifier = Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (onBackButtonClicked != null) {
                 IconButton(onClick = { onBackButtonClicked() }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -144,7 +120,23 @@ fun TopAppBar(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            IconButton(onClick = {
+                if (onIconClick != null) {
+                    onIconClick()
+                }
+            }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.awesome_edit_round_foreground),
+                    contentDescription = "Cool",
+                    tint = Color.Unspecified
+                )
+            }
         }
+    }, modifier = Modifier.drawBehind {
+        drawToolbarBackground(toolbarOutlineColor, toolbarBackgroundColor)
     }, colors = TopAppBarDefaults.topAppBarColors(
         containerColor = Color.Transparent
     ), actions = {
@@ -172,11 +164,41 @@ fun TopAppBar(
     })
 }
 
+private fun DrawScope.drawToolbarBackground(
+    toolbarOutlineColor: Color, toolbarBackgroundColor: Color
+) {
+    val paint = Paint().apply {
+        color = toolbarOutlineColor
+        style = PaintingStyle.Stroke
+        strokeWidth = 8.dp.toPx()
+    }
+    drawIntoCanvas { canvas ->
+        canvas.drawRoundRect(
+            left = 0f,
+            top = 0f,
+            right = size.width,
+            bottom = size.height,
+            radiusX = 0.dp.toPx(),
+            radiusY = 0.dp.toPx(),
+            paint = paint
+        )
+    }
+    drawRoundRect(
+        color = toolbarBackgroundColor,
+        topLeft = Offset(0f, 0f),
+        size = size,
+        style = Fill,
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(
+            0.dp.toPx(), 0.dp.toPx()
+        )
+    )
+}
+
 @Preview(showBackground = true)
 @Composable
 fun TopAppBarNoBackButtonPreview() {
     val signInButtonText = remember { mutableStateOf("Sign In") }
-    TopAppBar(title = "My App",
+    TopAppBar(title = "Main",
         signInButtonText = signInButtonText,
         onSignInClick = {},
         onSettingsClick = {})
@@ -185,8 +207,8 @@ fun TopAppBarNoBackButtonPreview() {
 @Preview(showBackground = true)
 @Composable
 fun TopAppBarNoSettingsButtonPreview() {
-    val signInButtonText = remember { mutableStateOf("Sign In") }
-    TopAppBar(title = "My App",
+    val signInButtonText = remember { mutableStateOf("Sign Out") }
+    TopAppBar(title = "Settings",
         signInButtonText = signInButtonText,
         onSignInClick = {},
         onBackButtonClicked = {})

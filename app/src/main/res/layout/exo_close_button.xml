@@ -10,7 +10,7 @@
         android:layout_height="wrap_content"
         android:background="@android:color/transparent"
         android:contentDescription="@string/exo_controls_close_description"
-        android:paddingTop="56dp"
+        android:paddingTop="28dp"
         android:paddingStart="14dp"
         android:paddingEnd="14dp"
         android:src="@drawable/exo_icon_close" />

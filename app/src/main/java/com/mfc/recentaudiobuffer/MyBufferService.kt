@@ -1,35 +1,29 @@
 package com.mfc.recentaudiobuffer
 
 import android.Manifest
-import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
+import android.media.AudioRecord.READ_BLOCKING
 import android.media.MediaRecorder
 import android.os.Binder
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.ContextCompat
-import androidx.datastore.preferences.core.emptyPreferences
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.first
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.runBlocking
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.util.Arrays
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
-
-private const val MAX_BUFFER_SIZE: Int = 100_000_000
+import javax.inject.Inject
 
 interface MyBufferServiceInterface {
     fun getBuffer(): ByteArray
@@ -45,12 +39,15 @@ interface MyBufferServiceInterface {
     val time: AtomicLiveDataThrottled<String>
 }
 
+@AndroidEntryPoint
 class MyBufferService : Service(), MyBufferServiceInterface {
     private val logTag = "MyBufferService"
 
-    // Calculate the maximum total buffer size
     private lateinit var config: AudioConfig
-    private lateinit var buffer: ByteArray
+    private lateinit var audioDataStorage: ByteArray
+
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
 
     public override val isRecording: AtomicLiveDataThrottled<Boolean> =
         AtomicLiveDataThrottled(false)
@@ -66,24 +63,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     public override val time: AtomicLiveDataThrottled<String> = AtomicLiveDataThrottled("00:00:00")
 
     private var recorder: AudioRecord? = null
-    private val lock = ReentrantLock()
-
-
-    @SuppressLint("UnspecifiedRegisterReceiverFlag")
-    override fun onCreate() {
-        super.onCreate()
-        Log.i(logTag, "onCreate()")
-
-        val intentFilter = IntentFilter("com.mfc.recentaudiobuffer.SETTINGS_UPDATED")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13 or higher
-            registerReceiver(settingsUpdateReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(settingsUpdateReceiver, intentFilter)
-        }
-    }
+    private var lock: ReentrantLock = ReentrantLock()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(logTag, "onStartCommand()")
+        config = runBlocking { settingsRepository.getAudioConfig() }
+        updateTotalBufferSize(config)
 
         return if (intent != null && !isRecording.get()) {
             prepareAndStartRecording()
@@ -100,22 +85,77 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         super.onDestroy()
     }
 
+    private fun getApproximateFreeMemory(): Long {
+        val allocationSize = MAX_BUFFER_SIZE
+        try {
+            // Try to allocate a large byte array
+            ByteArray(allocationSize)
+            // If successful, return the allocation size
+            return allocationSize.toLong()
+        } catch (e: OutOfMemoryError) {
+            // If OutOfMemoryError, parse the message
+            val message = e.message ?: ""
+            val freeBytesRegex = Regex("with (\\d+) free bytes")
+            val matchResult = freeBytesRegex.find(message)
+            if (matchResult != null && matchResult.groupValues.size > 1) {
+                try {
+                    val freeBytes = matchResult.groupValues[1].toLong()
+                    Log.d(logTag, "Approximate free memory: $freeBytes bytes")
+                    return freeBytes
+                } catch (e: NumberFormatException) {
+                    Log.e(logTag, "Failed to parse free bytes from OutOfMemoryError message", e)
+                }
+            } else {
+                Log.e(logTag, "Failed to find free bytes in OutOfMemoryError message")
+            }
+        }
+        return 0
+    }
+
     private fun updateTotalBufferSize(config: AudioConfig) {
-        totalRingBufferSize.set(
-            config.SAMPLE_RATE_HZ * (config.BIT_DEPTH.bytes / 8) * config.BUFFER_TIME_LENGTH_S
-        )
-        // This shouldn't be bigger than ~100 MB, which means totalRingBufferSize < 100_000_000
-        Log.d(logTag, "updateTotalBufferSize(): totalRingBufferSize = $totalRingBufferSize")
-        if (totalRingBufferSize.get() > MAX_BUFFER_SIZE) {
-            Log.e(logTag, "totalRingBufferSize > MAX_BUFFER_SIZE")
+        // Calculate the ideal buffer size based on settings
+        var idealBufferSize =
+            config.sampleRateHz * (config.bitDepth.bytes / 8) * config.bufferTimeLengthS
+
+        Log.d(logTag, "updateTotalBufferSize(): idealBufferSize = $idealBufferSize")
+
+        // Calculate the maximum dynamic memory based on available device memory
+        val safeLimitPercentage = 0.7 // Reduce to 70%
+
+        val maxDynamicMemory = getApproximateFreeMemory()
+
+        // Check against dynamic memory limit first
+        if (idealBufferSize > maxDynamicMemory) {
+            Log.e(
+                logTag,
+                "idealBufferSize > $maxDynamicMemory, setting it to ${safeLimitPercentage * 100}% of $maxDynamicMemory"
+            )
             Toast.makeText(
-                this,
-                "ERROR: Configured settings resulted in too large of a buffer to allocate. Reduce numbers, they are multiplied.",
+                applicationContext,
+                "ERROR: Exceeded available RAM (${maxDynamicMemory}) for the buffer size... Clear RAM or reduce settings values. Limiting size.",
                 Toast.LENGTH_LONG
             ).show()
-        } else {
-            buffer = ByteArray(totalRingBufferSize.get())
+            idealBufferSize = (maxDynamicMemory.toInt() * safeLimitPercentage).toInt()
+            if (idealBufferSize < 0) {
+                idealBufferSize = 0
+            }
         }
+
+        // Check against MAX_BUFFER_SIZE
+        if (idealBufferSize > MAX_BUFFER_SIZE) {
+            Log.e(logTag, "idealBufferSize > MAX_BUFFER_SIZE, setting it to MAX_BUFFER_SIZE")
+            idealBufferSize = MAX_BUFFER_SIZE
+            Toast.makeText(
+                applicationContext,
+                "ERROR: Exceeded 100MB for the buffer size... Reduce settings values. Limiting size.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+
+        // Set the totalRingBufferSize
+        totalRingBufferSize.set(idealBufferSize)
+        Log.d(logTag, "updateTotalBufferSize(): totalRingBufferSize = ${totalRingBufferSize.get()}")
+        audioDataStorage = ByteArray(totalRingBufferSize.get())
     }
 
     private fun prepareAndStartRecording(): Int {
@@ -142,19 +182,19 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     private fun startBuffering() {
-        val audioFormat = AudioFormat.Builder().setEncoding(config.BIT_DEPTH.encodingEnum)
-            .setSampleRate(config.SAMPLE_RATE_HZ).setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-            .build()
+        val audioFormat = AudioFormat.Builder().setEncoding(config.bitDepth.encodingEnum)
+            .setSampleRate(config.sampleRateHz).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build()
 
         val minReadChunkSize = AudioRecord.getMinBufferSize(
             audioFormat.sampleRate, audioFormat.channelMask, audioFormat.encoding
         )
 
-        if (minReadChunkSize <= 0) {
-            Log.e(logTag, "Minimum buffer size <= 0 somehow")
-            Toast.makeText(
-                this, "ERROR: Minimum buffer size <= 0 somehow", Toast.LENGTH_LONG
-            ).show()
+        val bufferSizeMultiplier = 8
+        val readChunkSize = minReadChunkSize * bufferSizeMultiplier
+        Log.d(logTag, "startBuffering(): readChunkSize = $readChunkSize")
+
+        if (readChunkSize <= 0) {
+            Log.e(logTag, "Minimum audioDataStorage size <= 0 somehow")
             stopSelf()
             return
         }
@@ -164,66 +204,90 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         if (ContextCompat.checkSelfPermission(this, permission) != granted) {
             Log.e(logTag, "Audio record permission not granted, exiting the foreground service")
-            Toast.makeText(
-                this,
-                "ERROR: Audio record permission not granted before this was started, exiting the foreground service",
-                Toast.LENGTH_LONG
-            ).show()
             stopSelf()
             return
         }
 
         // Permission has been granted
         recorder = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.MIC)
-            .setAudioFormat(audioFormat).setBufferSizeInBytes(totalRingBufferSize.get()).build()
+            .setAudioFormat(audioFormat).setBufferSizeInBytes(readChunkSize).build()
 
         try {
-            isRecording.set(true)
             Thread {
-
+                isRecording.set(true)
                 recorder?.startRecording() // Start recording
                 Log.d(logTag, "Recording thread started")
                 while (isRecording.get()) {
-                    lock.lock()
-                    try {
-                        // Read in chunks of minReadChunkSize.
-                        // If next chunk will cause overflow, continue recording from beginning and overriding
-                        if (recorderIndex.get() + minReadChunkSize >= totalRingBufferSize.get()) {
-                            recorderIndex.set(0)
-                            hasOverflowed.set(true)
-                            Log.d(logTag, "Buffer overflowed. recorderIndex reset to 0")
-                        }
+                    // Blocking read in chunks of the size equal to the audio recorder's internal audioDataStorage.
+                    // Waits for readChunkSize to be available
+                    val readDataChunk = ByteArray(readChunkSize)
+                    val readResult = recorder?.read(
+                        readDataChunk, 0, readChunkSize, READ_BLOCKING
+                    ) ?: -1
 
-                        val readResult =
-                            recorder?.read(buffer, recorderIndex.get(), minReadChunkSize) ?: -1
-                        Log.d(
-                            logTag,
-                            "readResult: $readResult, recorderIndex before update: ${recorderIndex.get()}"
-                        )
-                        if (readResult > 0) {
-                            recorderIndex.set((recorderIndex.get() + readResult) % totalRingBufferSize.get())
-                            updateLengthInTime()
-                        } else if (readResult == AudioRecord.ERROR_INVALID_OPERATION) {
-                            Log.e(logTag, "AudioRecord invalid operation")
-                        } else if (readResult == AudioRecord.ERROR_BAD_VALUE) {
-                            Log.e(logTag, "AudioRecord bad value")
-                        } else if (recorder?.state == AudioRecord.RECORDSTATE_STOPPED) {
-                            Log.e(logTag, "AudioRecord stopped unexpectedly")
-                            isRecording.set(false)
-                        } else {
-                            Log.e(
-                                logTag,
-                                "AudioRecord other error state: ${recorder?.state}, result: $readResult"
-                            )
+                    Log.d(
+                        logTag,
+                        "readResult: $readResult, recorderIndex before update: ${recorderIndex.get()}"
+                    )
+                    if (readResult > 0) {
+                        // Copy to storage if data was read
+                        lock.lock()
+                        try {
+                            // Check for overflow before copying
+                            if (recorderIndex.get() + readResult > totalRingBufferSize.get() - 1) {
+                                hasOverflowed.set(true)
+                                val bytesToEnd = totalRingBufferSize.get() - recorderIndex.get()
+                                // If overflow copy what's left until the end
+                                System.arraycopy(
+                                    readDataChunk,
+                                    0,
+                                    audioDataStorage,
+                                    recorderIndex.get(),
+                                    bytesToEnd
+                                )
+                                // Then copy the remaining data to position 0
+                                System.arraycopy(
+                                    readDataChunk,
+                                    bytesToEnd,
+                                    audioDataStorage,
+                                    0,
+                                    readResult - bytesToEnd
+                                )
+                                recorderIndex.set(readResult - bytesToEnd)
+                            } else {
+                                // Typical operation, just copy entire read data to current index
+                                System.arraycopy(
+                                    readDataChunk,
+                                    0,
+                                    audioDataStorage,
+                                    recorderIndex.get(),
+                                    readResult
+                                )
+                                recorderIndex.set(recorderIndex.get() + readResult)
+                            }
+                        } finally {
+                            lock.unlock()
                         }
-                    } catch (e: Exception) {
+                        updateLengthInTime()
+                    } else if (readResult == AudioRecord.ERROR_INVALID_OPERATION) {
                         Log.e(
-                            logTag, "recorder read error: $e in state: ${recorder?.state}"
+                            logTag,
+                            "AudioRecord invalid operation. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $minReadChunkSize)"
                         )
-                    } finally {
-                        lock.unlock()
+                    } else if (readResult == AudioRecord.ERROR_BAD_VALUE) {
+                        Log.e(
+                            logTag,
+                            "AudioRecord bad value. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $minReadChunkSize)"
+                        )
+                    } else if (recorder?.state == AudioRecord.RECORDSTATE_STOPPED) {
+                        Log.e(logTag, "AudioRecord stopped unexpectedly")
+                        isRecording.set(false)
+                    } else {
+                        Log.e(
+                            logTag,
+                            "AudioRecord other error state: ${recorder?.state}, result: $readResult. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $minReadChunkSize)"
+                        )
                     }
-                    Thread.sleep(10) // Add a small delay where lock is not used
                 }
                 recorder?.stop()
                 recorder?.release()
@@ -231,10 +295,10 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             }.start()
         } catch (e: IllegalArgumentException) {
             Log.e(logTag, "startBuffering() failed: illegal argument", e)
-            stopSelf()
+            isRecording.set(false)
         } catch (e: IllegalStateException) {
             Log.e(logTag, "startBuffering() failed: illegal state", e)
-            stopSelf()
+            isRecording.set(false)
         }
     }
 
@@ -243,8 +307,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     private fun updateLengthInTime() {
-        val sampleRate = config.SAMPLE_RATE_HZ
-        val bitDepth = config.BIT_DEPTH.bytes
+        val sampleRate = config.sampleRateHz
+        val bitDepth = config.bitDepth.bytes
         val channels = 1 // Recording is in mono
 
         val lengthIndex: Int = if (hasOverflowed.get()) {
@@ -269,8 +333,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     override fun writeWavHeader(out: OutputStream, audioDataLen: Long) {
         val channels = 1.toShort() // Recording is in mono
-        val sampleRate = config.SAMPLE_RATE_HZ
-        val bitsPerSample = config.BIT_DEPTH.bytes.toShort()
+        val sampleRate = config.sampleRateHz
+        val bitsPerSample = config.bitDepth.bytes.toShort()
 
         // WAV constants
         val sampleSize = bitsPerSample / 8
@@ -330,15 +394,19 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         lock.lock()
         try {
             if (hasOverflowed.get()) {
-                // Return the entire buffer, shifted at recorderIndex
+                // Return the entire audioDataStorage, shifted at recorderIndex
                 shiftedBuffer = ByteArray(totalRingBufferSize.get())
                 val bytesToEnd = totalRingBufferSize.get() - recorderIndex.get()
-                System.arraycopy(buffer, recorderIndex.get(), shiftedBuffer, 0, bytesToEnd)
-                System.arraycopy(buffer, 0, shiftedBuffer, bytesToEnd, recorderIndex.get())
+                System.arraycopy(
+                    audioDataStorage, recorderIndex.get(), shiftedBuffer, 0, bytesToEnd
+                )
+                System.arraycopy(
+                    audioDataStorage, 0, shiftedBuffer, bytesToEnd, recorderIndex.get()
+                )
                 return shiftedBuffer
             } else {
                 // Return only the relevant portion up to recorderIndex
-                shiftedBuffer = buffer.copyOf(recorderIndex.get())
+                shiftedBuffer = audioDataStorage.copyOf(recorderIndex.get())
             }
         } finally {
             lock.unlock()
@@ -348,64 +416,33 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     private fun syncPreferences() {
-        // Access DataStore using application context
-        val dataStore = applicationContext.dataStore
-
-        // Read from DataStore synchronously (blocking call)
-        val preferences = runBlocking {
-            dataStore.data.catch { exception ->
-                // Log the error for debugging
-                Log.e("syncPreferences", "Error reading settings", exception)
-                // Emit empty preferences to avoid crashes
-                emit(emptyPreferences())
-            }.first() // Get the first (and only) value emitted by the flow
-        }
-
-        val sampleRate = preferences[SettingsRepository.SAMPLE_RATE] ?: 22050
-        val bufferTimeLengthS = preferences[SettingsRepository.BUFFER_TIME_LENGTH_S] ?: 120
-
-        val bitDepthString = preferences[SettingsRepository.BIT_DEPTH] ?: "8"
-        val bitDepth = BitDepth.fromString(bitDepthString) ?: bitDepths["8"]!!
-
-        // Initialize config directly
-        config = AudioConfig(
-            SAMPLE_RATE_HZ = sampleRate,
-            BUFFER_TIME_LENGTH_S = bufferTimeLengthS,
-            BIT_DEPTH = bitDepth
-        )
-        updateTotalBufferSize(config)
-
-        Log.i(
-            logTag,
-            "syncPreferences(): sampleRate = $sampleRate, bufferTimeLengthS = $bufferTimeLengthS, bitDepth = $bitDepth"
-        )
-    }
-
-    private val settingsUpdateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == "com.mfc.recentaudiobuffer.SETTINGS_UPDATED") {
-                syncPreferences()
+        Log.i(logTag, "syncPreferences()")
+        try {
+            val newConfig = runBlocking {
+                settingsRepository.getAudioConfig()
             }
+            if (config != newConfig) {
+                Log.d(logTag, "syncPreferences(): config != newConfig, resetting")
+                config = newConfig
+                resetBuffer()
+                updateTotalBufferSize(config)
+            }
+            Log.i(
+                logTag,
+                "syncPreferences(): sampleRate = ${config.sampleRateHz}, bufferTimeLengthS = ${config.bufferTimeLengthS}, bitDepth = ${config.bitDepth}"
+            )
+        } catch (e: Exception) {
+            Log.e(logTag, "Error syncing preferences", e)
         }
     }
 
     override fun resetBuffer() {
-        lock.lock()
         try {
             recorderIndex.set(0)
             hasOverflowed.set(false)
-            Arrays.fill(buffer, 0.toByte()) // Clear the buffer
             Log.i(logTag, "Buffer reset")
-            Toast.makeText(
-                this, "Buffer cleared!", Toast.LENGTH_LONG
-            ).show()
         } catch (e: Exception) {
-            Log.e(logTag, "ERROR: Failed to clear buffer $e")
-            Toast.makeText(
-                this, "ERROR: Failed to clear buffer $e", Toast.LENGTH_LONG
-            ).show()
-        } finally {
-            lock.unlock()
+            Log.e(logTag, "ERROR: Failed to clear audioDataStorage $e")
         }
     }
 

@@ -1,8 +1,7 @@
 package com.mfc.recentaudiobuffer
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
@@ -27,29 +26,24 @@ object AppModule {
     @Singleton
     @Provides
     fun provideFirebaseFirestore(@ApplicationContext context: Context): FirebaseFirestore {
+        Log.d("provideFirebaseFirestore", "provideFirebaseFirestore started")
         val firestore = FirebaseFirestore.getInstance()
         val cacheSizeBytes = 100 * 1024 * 1024L // 100 MB
         val settings = PersistentCacheSettings.newBuilder().setSizeBytes(cacheSizeBytes).build()
         firestore.firestoreSettings =
             FirebaseFirestoreSettings.Builder().setLocalCacheSettings(settings).build()
+        Log.d("provideFirebaseFirestore", "provideFirebaseFirestore finished")
         return firestore
-    }
-
-    @Singleton
-    @Provides
-    fun provideDataStore(@ApplicationContext context: Context): DataStore<Preferences> {
-        return context.dataStore
     }
 
     @Singleton
     @Provides
     fun provideSettingsRepository(
         @ApplicationContext context: Context,
-        dataStore: DataStore<Preferences>,
         auth: FirebaseAuth,
         firestore: FirebaseFirestore
     ): SettingsRepository {
-        return SettingsRepository(context, dataStore, auth, firestore)
+        return SettingsRepository(context, auth, firestore)
     }
 
     @Singleton

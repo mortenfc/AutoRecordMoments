@@ -88,11 +88,17 @@ fun SettingsScreen(
     onBitDepthChanged: (BitDepth) -> Unit,
     onBufferTimeLengthChanged: (Int) -> Unit,
     onSubmit: (Int) -> Unit,
-    justExit: () -> Unit
+    justExit: () -> Unit,
+    config: SettingsConfig
 ) {
     var showSampleRateMenu by remember { mutableStateOf(false) }
     var showBitDepthMenu by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+
+    // Force recomposition when config changes
+    LaunchedEffect(config) {
+        Log.d("SettingsScreen", "LaunchedEffect config: $config")
+    }
 
     Log.d("SettingsScreen", "recompose")
 
@@ -359,62 +365,6 @@ fun StyledDropdownMenuItem(
     )
 }
 
-//@OptIn(ExperimentalMaterial3Api::class)
-//@Composable
-//fun SettingsTopAppBar(
-//    onBackButtonClicked: () -> Unit
-//) {
-//    val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
-//    val toolbarBackgroundColor = colorResource(id = R.color.teal_350)
-//    TopAppBar(title = {
-//        Text(
-//            text = stringResource(id = R.string.settings),
-//            color = colorResource(id = R.color.teal_900)
-//        )
-//    }, modifier = Modifier.drawBehind {
-//        val paint = Paint().apply {
-//            color = toolbarOutlineColor
-//            strokeWidth = 8.dp.toPx()
-//            style = PaintingStyle.Stroke
-//        }
-//        drawIntoCanvas { canvas ->
-//            canvas.drawRoundRect(
-//                left = 0f,
-//                top = 0f,
-//                right = size.width,
-//                bottom = size.height,
-//                radiusX = 0.dp.toPx(),
-//                radiusY = 0.dp.toPx(),
-//                paint = paint
-//            )
-//        }
-//        drawRoundRect(
-//            color = toolbarBackgroundColor,
-//            topLeft = Offset(0f, 0f),
-//            size = size,
-//            style = Fill,
-//            cornerRadius = androidx.compose.ui.geometry.CornerRadius(
-//                0.dp.toPx(), 0.dp.toPx()
-//            )
-//        )
-//    }, navigationIcon = {
-//        Row(
-//            modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically
-//        ) {
-//            IconButton(onClick = { onBackButtonClicked() }) {
-//                Icon(
-//                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-//                    contentDescription = stringResource(id = R.string.back),
-//                    tint = Color.White
-//                )
-//            }
-//        }
-//    }, colors = TopAppBarDefaults.topAppBarColors(
-//        containerColor = Color.Transparent
-//    )
-//    )
-//}
-
 @SuppressLint("UnrememberedMutableState")
 @Preview(showBackground = true)
 @Composable
@@ -423,9 +373,9 @@ fun SettingsScreenPreview() {
         SettingsScreen(
             signInButtonText = mutableStateOf("Sign In"),
             {},
-            44100,
-            bitDepths["16"]!!,
-            mutableIntStateOf(10),
+            DEFAULT_SAMPLE_RATE,
+            bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
+            mutableIntStateOf(DEFAULT_BUFFER_TIME_LENGTH_S),
             mutableStateOf(false),
             mutableStateOf(false),
             mutableStateOf(""),
@@ -434,6 +384,7 @@ fun SettingsScreenPreview() {
             {},
             {},
             {},
-            {})
+            {},
+            SettingsConfig())
     }
 }

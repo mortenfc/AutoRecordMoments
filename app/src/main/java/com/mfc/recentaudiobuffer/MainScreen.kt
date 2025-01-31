@@ -8,8 +8,11 @@ import android.graphics.drawable.RippleDrawable
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
+import android.view.View.GONE
+import android.view.View.VISIBLE
 import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.background
@@ -79,6 +82,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
 import arte.programar.materialfile.ui.FilePickerActivity
+import okhttp3.internal.wait
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
@@ -96,7 +100,7 @@ fun MainScreen(
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
-            title = stringResource(id = R.string.app_name),
+            title = stringResource(id = R.string.main),
             signInButtonText = signInButtonText,
             onSignInClick = onSignInClick,
             onSettingsClick = onSettingsClick
@@ -104,8 +108,7 @@ fun MainScreen(
         Spacer(modifier = Modifier.height(5.dp))
         AdMobBanner()
 
-        Scaffold(
-            content = { innerPadding ->
+        Scaffold(content = { innerPadding ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -234,66 +237,6 @@ fun MainButton(
     }
 }
 
-//@OptIn(ExperimentalMaterial3Api::class)
-//@Composable
-//fun MainScreenTopBar(onSettingsClick: () -> Unit) {
-//    val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
-//    val toolbarBackgroundColor = colorResource(id = R.color.teal_350)
-//    TopAppBar(title = {
-//        Text(
-//            text = stringResource(id = R.string.app_name),
-//            color = colorResource(id = R.color.teal_900)
-//        )
-//    }, modifier = Modifier.drawBehind {
-//        val paint = Paint().apply {
-//            color = toolbarOutlineColor
-//            strokeWidth = 8.dp.toPx()
-//            style = PaintingStyle.Stroke
-//        }
-//        drawIntoCanvas { canvas ->
-//            canvas.drawRoundRect(
-//                left = 0f,
-//                top = 0f,
-//                right = size.width,
-//                bottom = size.height,
-//                radiusX = 0.dp.toPx(),
-//                radiusY = 0.dp.toPx(),
-//                paint = paint
-//            )
-//        }
-//        drawRoundRect(
-//            color = toolbarBackgroundColor,
-//            topLeft = Offset(0f, 0f),
-//            size = size,
-//            style = androidx.compose.ui.graphics.drawscope.Fill,
-//            cornerRadius = androidx.compose.ui.geometry.CornerRadius(
-//                0.dp.toPx(), 0.dp.toPx()
-//            )
-//        )
-//    }, colors = TopAppBarDefaults.topAppBarColors(
-//        containerColor = Color.Transparent
-//    ), actions = {
-//        Row(
-//            modifier = Modifier
-//                .clip(CircleShape) // Clip to a circle shape
-//                .clickable(interactionSource = remember { MutableInteractionSource() },
-//                    indication = ripple(
-//                        bounded = true, radius = 24.dp
-//                    ), // Circular ripple
-//                    onClick = {
-//                        onSettingsClick()
-//                    })
-//                .padding(12.dp), verticalAlignment = Alignment.CenterVertically
-//        ) {
-//            Icon(
-//                painter = painterResource(id = R.drawable.baseline_settings_24),
-//                contentDescription = stringResource(id = R.string.settings),
-//                tint = Color.White
-//            )
-//        }
-//    })
-//}
-
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun PlayerControlViewContainer(
@@ -302,12 +245,14 @@ fun PlayerControlViewContainer(
 ) {
     val context = LocalContext.current
     var currentFileName by remember { mutableStateOf("") }
+    var isContainerVisible by remember { mutableStateOf(false) }
     val currentFileNameState by rememberUpdatedState(newValue = currentFileName)
 
     DisposableEffect(mediaPlayerManager) {
         Log.d("PlayerControlViewContainer", "DisposableEffect mediaPlayerManager")
         mediaPlayerManager.onPlayerReady = { fileName ->
             Log.i("PlayerControlViewContainer", "Player is ready with filename: $fileName")
+            isContainerVisible = true
             currentFileName = fileName
         }
         onDispose {
@@ -319,17 +264,17 @@ fun PlayerControlViewContainer(
         AndroidView(factory = {
             ConstraintLayout(context).apply {
                 id = View.generateViewId()
+                visibility = if (isContainerVisible) VISIBLE else GONE
                 val playerControlView = PlayerControlView(context).apply {
                     id = View.generateViewId()
                     setShowFastForwardButton(true)
                     setShowPlayButtonIfPlaybackIsSuppressed(true)
                     setShowRewindButton(true)
                     isAnimationEnabled = true
-                    setTimeBarMinUpdateInterval(100)
                     showTimeoutMs = 0
-                    hide()
-                    hideImmediately()
+                    setTimeBarMinUpdateInterval(100)
                     player = mediaPlayerManager.player
+                    hide()
                 }
                 mediaPlayerManager.playerControlView = playerControlView
                 val layoutParamsIn = ConstraintLayout.LayoutParams(
@@ -390,6 +335,7 @@ fun PlayerControlViewContainer(
             }
         }, update = {
             Log.d("PlayerControlViewContainer", "AndroidView Update")
+            it.visibility = if (isContainerVisible) VISIBLE else GONE
             mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
         }, modifier = Modifier.fillMaxSize()
         )
@@ -426,8 +372,7 @@ private fun setCloseButton(
 @Preview(showBackground = true)
 @Composable
 fun MainScreenPreview() {
-    MainScreen(
-        mutableStateOf("Sign Out"),
+    MainScreen(mutableStateOf("Sign Out"),
         onStartBufferingClick = {},
         onStopBufferingClick = {},
         onResetBufferClick = {},

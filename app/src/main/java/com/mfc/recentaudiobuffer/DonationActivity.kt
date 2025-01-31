@@ -53,12 +53,6 @@ class DonationActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        authenticationManager.setGoogleSignInLauncher(registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result: ActivityResult ->
-            authenticationManager.onSignInResult(result)
-        })
-
         setupStripe()
         setContent {
             MaterialTheme {
@@ -77,6 +71,13 @@ class DonationActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart()
+    {
+        Log.i(logTag, "onStart() called")
+        super.onStart()
+        authenticationManager.registerLauncher(this)
     }
 
     private fun setupStripe() {

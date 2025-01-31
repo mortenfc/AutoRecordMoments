@@ -11,7 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.android.gms.ads.AdListener
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
@@ -20,9 +20,12 @@ import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
 
 @Composable
-fun AdMobBanner(modifier: Modifier = Modifier, settingsViewModel: SettingsViewModel = viewModel()) {
+fun AdMobBanner(
+    modifier: Modifier = Modifier, settingsViewModel: SettingsViewModel = hiltViewModel()
+) {
     val context = LocalContext.current
-    val areAdsEnabled by settingsViewModel.areAdsEnabled.collectAsState(initial = true)
+    val config by settingsViewModel.config.collectAsState()
+    val areAdsEnabled = config.areAdsEnabled
 
     LaunchedEffect(key1 = Unit) {
         MobileAds.initialize(context)
