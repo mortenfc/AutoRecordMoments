@@ -167,10 +167,12 @@ class MainActivity : AppCompatActivity() {
             it.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             startActivity(it)
         }
-        myBufferService?.stopRecording()
-        Toast.makeText(
-            this, "Stopped buffering in the background", Toast.LENGTH_SHORT
-        ).show()
+        if (myBufferService != null && myBufferService!!.isRecording.get()) {
+            myBufferService!!.stopRecording()
+            Toast.makeText(
+                this, "Stopped buffering in the background", Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     override fun onStop() {
@@ -179,8 +181,7 @@ class MainActivity : AppCompatActivity() {
         Log.i(logTag, "onStop() finished")
     }
 
-    override fun onStart()
-    {
+    override fun onStart() {
         Log.i(logTag, "onStart() called")
         super.onStart()
         authenticationManager.registerLauncher(this)
@@ -307,10 +308,12 @@ class MainActivity : AppCompatActivity() {
     private fun onClickDonate() {
         val intent = Intent(this, DonationActivity::class.java)
         startActivity(intent)
-        myBufferService?.stopRecording()
-        Toast.makeText(
-            this, "Stopped buffering in the background", Toast.LENGTH_SHORT
-        ).show()
+        if (myBufferService != null && myBufferService!!.isRecording.get()) {
+            myBufferService!!.stopRecording()
+            Toast.makeText(
+                this, "Stopped buffering in the background", Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     private fun createNotificationChannels() {
@@ -525,6 +528,7 @@ class MainActivity : AppCompatActivity() {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "audio/*"
             putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         filePickerLauncher.launch(intent)
     }

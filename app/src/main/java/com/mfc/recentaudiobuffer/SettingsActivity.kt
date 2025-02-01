@@ -41,18 +41,12 @@ class SettingsActivity : ComponentActivity() {
         authenticationManager.registerLauncher(this)
     }
 
-    private fun sendSettingsUpdatedBroadcast() {
-        val intent = Intent(this, MyBufferService::class.java)
-        intent.action = "com.mfc.recentaudiobuffer.SETTINGS_UPDATED"
-        sendBroadcast(intent)
-    }
-
     @SuppressLint("UnrememberedMutableState")
     @androidx.compose.runtime.Composable
     fun SettingsScreenView(settingsViewModel: SettingsViewModel = hiltViewModel()) {
         val config by settingsViewModel.config.collectAsState()
         val auth = FirebaseAuth.getInstance()
-        val state = remember { SettingsScreenState(config) }
+        val state = remember { mutableStateOf(SettingsScreenState(config)) }
         val isSaving by settingsViewModel.isSaving.collectAsState()
         var hasSaved by remember { mutableStateOf(false) }
 
@@ -67,7 +61,8 @@ class SettingsActivity : ComponentActivity() {
         // Sync config with state of BUFFER_TIME_LENGTH_S
         LaunchedEffect(config) {
             Log.d(logTag, "LaunchedEffect config: $config")
-            state.updateBufferTimeLengthTemp(config.bufferTimeLengthS)
+            state.value.updateBufferTimeLengthTemp(config.bufferTimeLengthS)
+            state.value.validateSettings()
         }
 
         // Observe the isSaving state and finish the activity when saving is complete
@@ -79,43 +74,32 @@ class SettingsActivity : ComponentActivity() {
         }
 
         SettingsScreen(signInButtonText = authenticationManager.signInButtonText,
+            state = state,
             onSignInClick = { authenticationManager.onSignInClick() },
-            sampleRate = config.sampleRateHz,
-            bitDepth = config.bitDepth,
-            bufferTimeLengthTemp = state.bufferTimeLengthTemp,
-            isMaxExceeded = mutableStateOf(state.isMaxExceeded),
-            isBufferTimeLengthNull = mutableStateOf(state.isBufferTimeLengthNull),
-            errorMessage = mutableStateOf(state.errorMessage),
-            isSubmitEnabled = mutableStateOf(state.isSubmitEnabled),
             onSampleRateChanged = { value ->
                 Log.d(logTag, "onSampleRateChanged to $value")
-                settingsViewModel.updateSampleRate(value)
-                state.validateSettings(config.copy(sampleRateHz = value))
-                sendSettingsUpdatedBroadcast()
+                state.value.updateSampleRateTemp(value)
+                state.value.validateSettings()
             },
             onBitDepthChanged = { value ->
                 Log.d(logTag, "onBitDepthChanged to $value")
-                settingsViewModel.updateBitDepth(value)
-                state.validateSettings(config.copy(bitDepth = value))
-                sendSettingsUpdatedBroadcast()
+                state.value.updateBitDepthTemp(value)
+                state.value.validateSettings()
             },
             onBufferTimeLengthChanged = { value ->
                 Log.d(logTag, "onBufferTimeLengthChanged to $value")
                 // Temporary value updater for error recompose
-                state.updateBufferTimeLengthTemp(value)
-                state.validateSettings(config)
+                state.value.updateBufferTimeLengthTemp(value)
+                state.value.validateSettings()
             },
-            onSubmit = { value ->
-                Log.d(logTag, "onSubmit onBufferTimeLengthChanged to $value")
-                // Only persist bufferTimeLength value on submit
-                settingsViewModel.updateBufferTimeLength(value)
-                sendSettingsUpdatedBroadcast()
+            onSubmit = {
+                // Only state settings on submit
+                state.value.updateSettings(settingsViewModel)
                 hasSaved = true
             },
             justExit = {
                 this.finish()
-            },
-            config = config
+            }
         )
     }
 }

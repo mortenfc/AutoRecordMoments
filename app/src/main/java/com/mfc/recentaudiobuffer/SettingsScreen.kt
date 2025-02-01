@@ -1,6 +1,7 @@
 package com.mfc.recentaudiobuffer
 
 import android.annotation.SuppressLint
+import android.provider.Settings
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -75,30 +76,26 @@ import androidx.compose.ui.text.input.KeyboardType
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun SettingsScreen(
+    state: MutableState<SettingsScreenState>,
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
-    sampleRate: Int,
-    bitDepth: BitDepth,
-    bufferTimeLengthTemp: MutableIntState,
-    isMaxExceeded: MutableState<Boolean>,
-    isBufferTimeLengthNull: MutableState<Boolean>,
-    errorMessage: MutableState<String?>,
-    isSubmitEnabled: MutableState<Boolean>,
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
     onBufferTimeLengthChanged: (Int) -> Unit,
     onSubmit: (Int) -> Unit,
-    justExit: () -> Unit,
-    config: SettingsConfig
+    justExit: () -> Unit
 ) {
     var showSampleRateMenu by remember { mutableStateOf(false) }
     var showBitDepthMenu by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
-    // Force recomposition when config changes
-    LaunchedEffect(config) {
-        Log.d("SettingsScreen", "LaunchedEffect config: $config")
-    }
+    val sampleRate = state.value.sampleRateTemp
+    val bitDepth = state.value.bitDepthTemp
+    val bufferTimeLengthTemp = state.value.bufferTimeLengthTemp
+    val isMaxExceeded = state.value.isMaxExceeded
+    val isBufferTimeLengthNull = state.value.isBufferTimeLengthNull
+    val errorMessage = state.value.errorMessage
+    val isSubmitEnabled = state.value.isSubmitEnabled
 
     Log.d("SettingsScreen", "recompose")
 
@@ -109,8 +106,7 @@ fun SettingsScreen(
             }
         },
         topBar = {
-            TopAppBar(
-                title = stringResource(id = R.string.donate),
+            TopAppBar(title = stringResource(id = R.string.donate),
                 signInButtonText = signInButtonText,
                 onSignInClick = onSignInClick,
                 onBackButtonClicked = {
@@ -143,7 +139,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Sample Rate
-            SettingsButton(text = "Sample Rate: $sampleRate Hz",
+            SettingsButton(text = "Sample Rate: ${sampleRate.value} Hz",
                 icon = Icons.Filled.ArrowDropDown,
                 onClick = { showSampleRateMenu = true })
             DropdownMenu(
@@ -171,7 +167,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Bit Depth
-            SettingsButton(text = "Bit Depth: ${bitDepth.bytes} bit",
+            SettingsButton(text = "Bit Depth: ${bitDepth.value.bytes} bit",
                 icon = Icons.Filled.ArrowDropDown,
                 onClick = { showBitDepthMenu = true })
             DropdownMenu(
@@ -370,21 +366,13 @@ fun StyledDropdownMenuItem(
 @Composable
 fun SettingsScreenPreview() {
     RecentAudioBufferTheme {
-        SettingsScreen(
+        SettingsScreen(mutableStateOf(SettingsScreenState(SettingsConfig())),
             signInButtonText = mutableStateOf("Sign In"),
             {},
-            DEFAULT_SAMPLE_RATE,
-            bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
-            mutableIntStateOf(DEFAULT_BUFFER_TIME_LENGTH_S),
-            mutableStateOf(false),
-            mutableStateOf(false),
-            mutableStateOf(""),
-            mutableStateOf(true),
             {},
             {},
             {},
             {},
-            {},
-            SettingsConfig())
+            {})
     }
 }
