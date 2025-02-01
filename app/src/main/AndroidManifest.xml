@@ -41,8 +41,6 @@
                 android:exported="false"
                 android:theme="@android:style/Theme.Translucent" />
 
-        <receiver android:name=".NotificationActionReceiver" />
-
         <activity
                 android:name=".SettingsActivity"
                 android:exported="false"
@@ -63,11 +61,16 @@
             </intent-filter>
         </activity>
 
+        <service android:name=".FileSavingService" />
+
         <service
                 android:name=".MyBufferService"
-                android:foregroundServiceType="microphone" />
+                android:foregroundServiceType="microphone"
+                android:exported="false" />
 
-        <service android:name=".FileSavingService" />
+        <receiver android:name=".NotificationActionReceiver"
+                android:exported="false" />
+
 
     </application>
 

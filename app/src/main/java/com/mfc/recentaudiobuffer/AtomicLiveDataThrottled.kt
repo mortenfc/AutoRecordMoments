@@ -7,7 +7,9 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.Observer
 import java.util.concurrent.atomic.AtomicReference
 
-private const val MAXIMUM_UPDATE_PERIOD_MS : Long = 1000
+private const val MAXIMUM_UPDATE_PERIOD_MS : Long = 850
+
+// For observed live data in another activity and thread
 
 class AtomicLiveDataThrottled<T>(defaultValue: T) : LiveData<T>() {
     private val atomicValue = AtomicReference(defaultValue)

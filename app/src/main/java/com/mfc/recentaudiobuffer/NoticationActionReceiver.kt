@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.core.content.ContextCompat
 
 class NotificationActionReceiver : BroadcastReceiver() {
     private val logTag = "NotificationActionReceiver"
@@ -21,23 +22,36 @@ class NotificationActionReceiver : BroadcastReceiver() {
         when (intent.action) {
             ACTION_STOP_RECORDING -> {
                 Log.d(logTag, "Received ACTION_STOP_RECORDING")
-                myBufferService?.stopRecording()
+                if (myBufferService != null) {
+                    myBufferService.stopRecording()
+                } else {
+                    val serviceIntent = Intent(context, MyBufferService::class.java)
+                    serviceIntent.action = MyBufferService.ACTION_STOP_RECORDING_SERVICE
+                    ContextCompat.startForegroundService(context, serviceIntent)
+                }
             }
 
             ACTION_START_RECORDING -> {
                 Log.d(logTag, "Received ACTION_START_RECORDING")
-                myBufferService?.startRecording()
+                if (myBufferService != null) {
+                    myBufferService.startRecording()
+                } else {
+                    val serviceIntent = Intent(context, MyBufferService::class.java)
+                    serviceIntent.action = MyBufferService.ACTION_START_RECORDING_SERVICE
+                    ContextCompat.startForegroundService(context, serviceIntent)
+                }
             }
 
             ACTION_SAVE_RECORDING -> {
-                val grantedUri = FileSavingUtils.getCachedGrantedUri(context)
-                // Null of grantedUri is handled in the file saving service
-                val saveIntent = Intent(context, FileSavingService::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    .putExtra("grantedUri", grantedUri)
-                    .putExtra("audioData", myBufferService?.getBuffer())
-                context.startService(saveIntent)
-                myBufferService?.resetBuffer()
+                Log.d(logTag, "Received ACTION_START_RECORDING")
+                if (myBufferService != null) {
+                    myBufferService.quickSaveBuffer()
+                    myBufferService.resetBuffer()
+                } else {
+                    val serviceIntent = Intent(context, MyBufferService::class.java)
+                    serviceIntent.action = MyBufferService.ACTION_START_RECORDING_SERVICE
+                    ContextCompat.startForegroundService(context, serviceIntent)
+                }
             }
         }
     }

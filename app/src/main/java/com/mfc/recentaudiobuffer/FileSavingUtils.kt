@@ -30,7 +30,8 @@ class FileSavingService : Service() {
     private val logTag = "FileSavingService"
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val grantedUri = intent?.getParcelableExtra<Uri>("grantedUri")
-        val audioData = intent?.getByteArrayExtra("audioData")
+        // Get the big buffer from the static variable. IPC has a limit of 1 MB of data to send with intents
+        val audioData = MyBufferService.sharedAudioDataToSave
         Log.d(logTag, "FileSavingService: grantedUri = $grantedUri")
 
         if (grantedUri != null && audioData != null) {
@@ -62,6 +63,8 @@ class FileSavingService : Service() {
                 .setSmallIcon(icon)
                 .build()
             notificationManager.notify(RESULT_NOTIFICATION_ID, notification)
+            // Clear the static variable after saving
+            MyBufferService.sharedAudioDataToSave = null
         } else {
             Log.e(logTag, "Failed to save file to $grantedUri, of data: $audioData")
         }

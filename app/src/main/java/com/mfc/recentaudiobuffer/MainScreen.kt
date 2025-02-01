@@ -162,7 +162,7 @@ fun MainButton(
     icon: Int,
     onClick: () -> Unit,
     iconTint: Color = Color.White,
-    width: Dp = 180.dp,
+    width: Dp = 200.dp,
     enabled: Boolean = true
 ) {
     Button(
