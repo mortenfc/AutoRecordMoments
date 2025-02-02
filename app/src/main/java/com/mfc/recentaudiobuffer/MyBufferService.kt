@@ -148,13 +148,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         stopRecording()
     }
 
-    private fun getApproximateFreeMemory(): Long {
-        val allocationSize = MAX_BUFFER_SIZE
+    private fun getApproximateFreeMemory(idealBufferSize: Int): Long {
         try {
             // Try to allocate a large byte array
-            ByteArray(allocationSize)
+            ByteArray(idealBufferSize)
             // If successful, return the allocation size
-            return allocationSize.toLong()
+            return idealBufferSize.toLong()
         } catch (e: OutOfMemoryError) {
             // If OutOfMemoryError, parse the message
             val message = e.message ?: ""
@@ -182,13 +181,13 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         Log.d(logTag, "updateTotalBufferSize(): idealBufferSize = $idealBufferSize")
 
-        // Calculate the maximum dynamic memory based on available device memory
-        val safeLimitPercentage = 0.7 // Reduce to 70%
 
-        val maxDynamicMemory = getApproximateFreeMemory()
+        val maxDynamicMemory = getApproximateFreeMemory(idealBufferSize)
 
         // Check against dynamic memory limit first
         if (idealBufferSize > maxDynamicMemory) {
+            // Calculate the maximum dynamic memory based on available device memory
+            val safeLimitPercentage = 0.7 // Reduce to 70%
             Log.e(
                 logTag,
                 "idealBufferSize > $maxDynamicMemory, setting it to ${safeLimitPercentage * 100}% of $maxDynamicMemory"

@@ -104,7 +104,7 @@ data class SettingsConfig(
     var areAdsEnabled: Boolean = true,
 )
 
-public const val MAX_BUFFER_SIZE: Int = 100_000_000
+public const val MAX_BUFFER_SIZE: Int = 200_000_000
 
 // DataStore setup
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
