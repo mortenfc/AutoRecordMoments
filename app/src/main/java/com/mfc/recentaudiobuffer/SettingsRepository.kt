@@ -90,7 +90,6 @@ public val sampleRates = mapOf(
     "192000" to 192000
 )
 
-
 public data class AudioConfig(
     var sampleRateHz: Int = DEFAULT_SAMPLE_RATE,
     var bufferTimeLengthS: Int = DEFAULT_BUFFER_TIME_LENGTH_S,

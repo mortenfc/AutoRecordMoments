@@ -24,6 +24,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 Log.d(logTag, "Received ACTION_STOP_RECORDING")
                 if (myBufferService != null) {
                     myBufferService.stopRecording()
+                    myBufferService.updateNotification()
                 } else {
                     val serviceIntent = Intent(context, MyBufferService::class.java)
                     serviceIntent.action = MyBufferService.ACTION_STOP_RECORDING_SERVICE
@@ -35,6 +36,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 Log.d(logTag, "Received ACTION_START_RECORDING")
                 if (myBufferService != null) {
                     myBufferService.startRecording()
+                    myBufferService.updateNotification()
                 } else {
                     val serviceIntent = Intent(context, MyBufferService::class.java)
                     serviceIntent.action = MyBufferService.ACTION_START_RECORDING_SERVICE
@@ -47,6 +49,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 if (myBufferService != null) {
                     myBufferService.quickSaveBuffer()
                     myBufferService.resetBuffer()
+                    myBufferService.updateNotification()
                 } else {
                     val serviceIntent = Intent(context, MyBufferService::class.java)
                     serviceIntent.action = MyBufferService.ACTION_START_RECORDING_SERVICE

@@ -66,7 +66,7 @@ class FileSavingService : Service() {
             val notificationBuilder =
                 NotificationCompat.Builder(this, RESULT_NOTIFICATION_CHANNEL_ID)
                     .setContentTitle(title).setContentText(text).setSmallIcon(icon)
-                    .setAutoCancel(true)
+                    .setAutoCancel(true).setTimeoutAfter(1000 * 60) // 1 minute
 
             if (savedFileUri != null) {
                 // Launch MainActivity with the saved file URI
@@ -80,6 +80,11 @@ class FileSavingService : Service() {
                     mainActivityIntent,
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                 )
+                Log.d(
+                    logTag,
+                    "PendingIntent $mainActivityPendingIntent \n to launch MainActivity to open file URI: $savedFileUri"
+                )
+
                 notificationBuilder.setContentIntent(mainActivityPendingIntent)
             } else {
                 Log.e(logTag, "Failed to create PendingIntent to open file")

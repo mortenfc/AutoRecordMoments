@@ -23,6 +23,7 @@ import android.provider.DocumentsContract
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
@@ -44,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     private val sharedViewModel: SharedViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
     private var myBufferService: MyBufferServiceInterface? = null
+    private var isPickAndPlayFileRunning = false
 
     private val requiredPermissions = if (Build.VERSION.SDK_INT >= 33) {
         mutableListOf(
@@ -68,7 +70,7 @@ class MainActivity : AppCompatActivity() {
     private var mediaPlayerManager: MediaPlayerManager? = null
 
     private lateinit var foregroundServiceAudioBuffer: Intent
-    private val foregroundServiceAudioBufferConnection = object : ServiceConnection {
+    private val foregroundBufferServiceConn = object : ServiceConnection {
         var isBound: Boolean = false
         private lateinit var service: MyBufferServiceInterface
 
@@ -85,11 +87,21 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceDisconnected(arg0: ComponentName) {
             Log.e(logTag, "onServiceDisconnected unexpectedly called")
             isBound = false
+            // Try to rebind the service
+            this@MainActivity.startForegroundService(foregroundServiceAudioBuffer)
+            bindService(
+                Intent(this@MainActivity, MyBufferService::class.java), this, BIND_AUTO_CREATE
+            )
         }
 
         override fun onBindingDied(name: ComponentName?) {
             Log.e(logTag, "onBindingDied unexpectedly called")
             isBound = false
+            // Try to rebind the service
+            this@MainActivity.startForegroundService(foregroundServiceAudioBuffer)
+            bindService(
+                Intent(this@MainActivity, MyBufferService::class.java), this, BIND_AUTO_CREATE
+            )
             super.onBindingDied(name)
         }
     }
@@ -161,17 +173,6 @@ class MainActivity : AppCompatActivity() {
             Log.i(logTag, "Player is ready")
         })
 
-        // Check if the activity was launched from the notification
-        if (intent.action == FileSavingService.ACTION_OPEN_FILE) {
-            val savedFileUri =
-                intent.getParcelableExtra<Uri>(FileSavingService.EXTRA_SAVED_FILE_URI)
-            if (savedFileUri != null) {
-                pickAndPlayFile(savedFileUri)
-            } else {
-                Log.e(logTag, "savedFileUri is null")
-            }
-        }
-
         setContent {
             MaterialTheme {
                 MainScreen(
@@ -213,25 +214,84 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        Log.i(
+            logTag,
+            "onStart() called with isPickAndPlayFileRunning: $isPickAndPlayFileRunning \nIntent.action: ${intent.action}"
+        )
+        authenticationManager.registerLauncher(this)
+        if (isMyBufferServiceRunning(this)) {
+            // Rebind to the existing service
+            Log.i(logTag, "Rebinding to existing service")
+            Intent(this, MyBufferService::class.java).also { intent ->
+                bindService(intent, foregroundBufferServiceConn, Context.BIND_AUTO_CREATE)
+            }
+        } else {
+            // Start and bind to a new service
+            Log.i(logTag, "Starting and binding to a new service")
+            val serviceIntent = Intent(this, MyBufferService::class.java)
+            ContextCompat.startForegroundService(this, serviceIntent)
+            bindService(serviceIntent, foregroundBufferServiceConn, Context.BIND_AUTO_CREATE)
+        }
+
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        Log.i(logTag, "onNewIntent() called")
+        handleIntent(intent)
+    }
+
     override fun onStop() {
         super.onStop()
         closeMediaPlayer()
         Log.i(logTag, "onStop() finished")
     }
 
-    override fun onStart() {
-        Log.i(logTag, "onStart() called")
-        super.onStart()
-        authenticationManager.registerLauncher(this)
+    override fun onDestroy() {
+        super.onDestroy()
+        if (foregroundBufferServiceConn.isBound) {
+            unbindService(foregroundBufferServiceConn)
+            foregroundBufferServiceConn.isBound = false
+        }
+        Log.i(logTag, "onDestroy() finished")
+    }
+
+    private fun handleIntent(intent: Intent) {
+        // Check if the activity was launched from the notification
+        if (intent.action == FileSavingService.ACTION_OPEN_FILE && !isPickAndPlayFileRunning) {
+            Log.d(logTag, "Got external intent to open file")
+            val savedFileUri =
+                intent.getParcelableExtra<Uri>(FileSavingService.EXTRA_SAVED_FILE_URI)
+            if (savedFileUri != null) {
+                isPickAndPlayFileRunning = true
+                pickAndPlayFile(savedFileUri)
+            } else {
+                Log.e(logTag, "savedFileUri is null")
+            }
+        }
+    }
+
+    private fun isMyBufferServiceRunning(context: Context): Boolean {
+        val manager =
+            context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        for (service in manager.getRunningServices(Int.MAX_VALUE)) {
+            if (MyBufferService::class.java.name == service.service.className) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun onClickStartRecording() {
         if (haveAllPermissions(requiredPermissions)) {
-            if (!foregroundServiceAudioBufferConnection.isBound) {
+            if (!foregroundBufferServiceConn.isBound) {
                 this.startForegroundService(foregroundServiceAudioBuffer)
                 bindService(
                     Intent(this, MyBufferService::class.java),
-                    foregroundServiceAudioBufferConnection,
+                    foregroundBufferServiceConn,
                     BIND_AUTO_CREATE
                 )
                 Log.i(logTag, "Buffer service started and bound")
@@ -254,7 +314,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onClickStopRecording() {
-        if (foregroundServiceAudioBufferConnection.isBound) {
+        if (foregroundBufferServiceConn.isBound) {
             if (myBufferService!!.isRecording.get()) {
                 Log.i(logTag, "Stopping recording in MyBufferService")
                 myBufferService!!.stopRecording()
@@ -275,7 +335,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onClickResetBuffer() {
-        if (foregroundServiceAudioBufferConnection.isBound) {
+        if (foregroundBufferServiceConn.isBound) {
             myBufferService!!.resetBuffer()
         } else {
             Toast.makeText(this, "ERROR: Buffer service is not running. ", Toast.LENGTH_SHORT)
@@ -284,7 +344,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onClickSaveBuffer() {
-        if (foregroundServiceAudioBufferConnection.isBound) {
+        if (foregroundBufferServiceConn.isBound) {
             lifecycleScope.launch {
                 onClickStopRecording()
                 val prevGrantedUri = FileSavingUtils.getCachedGrantedUri()
@@ -398,6 +458,8 @@ class MainActivity : AppCompatActivity() {
 
     private val filePickerLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            // Prevent duplicate file pickers simultaneously from external intents
+            isPickAndPlayFileRunning = false
             if (result.resultCode == RESULT_OK) {
                 Log.d(logTag, "RESULT_OK with data: ${result.data}")
                 result.data?.data?.let { selectedMediaToPlayUri ->

@@ -45,7 +45,6 @@ class SettingsActivity : ComponentActivity() {
     @SuppressLint("UnrememberedMutableState")
     @androidx.compose.runtime.Composable
     fun SettingsScreenInitializer(settingsViewModel: SettingsViewModel = hiltViewModel()) {
-//        runBlocking { settingsViewModel.refreshSettings() }
         val config by settingsViewModel.config.collectAsState()
         val auth = FirebaseAuth.getInstance()
         val state = remember { mutableStateOf(SettingsScreenState(config)) }

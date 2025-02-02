@@ -38,6 +38,7 @@ interface MyBufferServiceInterface {
     fun startRecording()
     fun resetBuffer()
     fun quickSaveBuffer()
+    fun updateNotification()
 
     val isRecording: AtomicLiveDataThrottled<Boolean>
 }
@@ -85,31 +86,11 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     private var recorder: AudioRecord? = null
     private var lock: ReentrantLock = ReentrantLock()
-    private lateinit var stopIntent: PendingIntent
-    private lateinit var startIntent: PendingIntent
-    private lateinit var saveIntent: PendingIntent
     private lateinit var notificationManager: NotificationManager
 
     override fun onCreate() {
         super.onCreate()
         Log.i(logTag, "onCreate()")
-        stopIntent = PendingIntent.getBroadcast(
-            this, REQUEST_CODE_STOP, Intent(this, NotificationActionReceiver::class.java).apply {
-                action = NotificationActionReceiver.ACTION_STOP_RECORDING
-            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        startIntent = PendingIntent.getBroadcast(
-            this, REQUEST_CODE_START, Intent(this, NotificationActionReceiver::class.java).apply {
-                action = NotificationActionReceiver.ACTION_START_RECORDING
-            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        saveIntent = PendingIntent.getBroadcast(
-            this, REQUEST_CODE_SAVE, Intent(this, NotificationActionReceiver::class.java).apply {
-                action = NotificationActionReceiver.ACTION_SAVE_RECORDING
-            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
 
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -118,10 +99,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(logTag, "onStartCommand()")
+
         config = runBlocking { settingsRepository.getAudioConfig() }
         updateTotalBufferSize(config)
-
-        startForeground(CHRONIC_NOTIFICATION_ID, createNotification())
 
         when (intent?.action) {
             ACTION_STOP_RECORDING_SERVICE -> {
@@ -139,6 +119,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             }
         }
 
+        startForeground(CHRONIC_NOTIFICATION_ID, createNotification())
+
         return START_STICKY
     }
 
@@ -146,6 +128,14 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         super.onDestroy()
         Log.i(logTag, "onDestroy()")
         stopRecording()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.i(logTag, "onTaskRemoved() called with intent: $rootIntent")
+        super.onTaskRemoved(rootIntent)
+//        isRecording.set(false)
+//        this.startRecording()
+//        updateNotification()
     }
 
     private fun getApproximateFreeMemory(idealBufferSize: Int): Long {
@@ -496,10 +486,10 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         sharedAudioDataToSave = getBuffer()
         val grantedUri = FileSavingUtils.getCachedGrantedUri()
         // Null of grantedUri is handled in the file saving service
-        val saveIntent =
+        val quickSaveIntent =
             Intent(this, FileSavingService::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra("grantedUri", grantedUri)
-        this.startService(saveIntent)
+        this.startService(quickSaveIntent)
     }
 
     override fun startRecording() {
@@ -519,7 +509,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        stopRecording()
+        // Continue recording after unbinding from MainActivity
         return super.onUnbind(intent)
     }
 
@@ -539,6 +529,24 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     private fun createNotification(): Notification {
+        val stopIntent = PendingIntent.getBroadcast(
+            this, REQUEST_CODE_STOP, Intent(this, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_STOP_RECORDING
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val startIntent = PendingIntent.getBroadcast(
+            this, REQUEST_CODE_START, Intent(this, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_START_RECORDING
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val saveIntent = PendingIntent.getBroadcast(
+            this, REQUEST_CODE_SAVE, Intent(this, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_SAVE_RECORDING
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val recordingNotification =
             NotificationCompat.Builder(this, CHRONIC_NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("Recording Recent Audio")
@@ -576,7 +584,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         return recordingNotification
     }
 
-    private fun updateNotification() {
+    override fun updateNotification() {
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastNotificationUpdateTime >= NOTIFICATION_UPDATE_INTERVAL_MS) {
             val notification = createNotification()
