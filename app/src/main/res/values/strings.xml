@@ -51,5 +51,10 @@
     <string name="submit">Submit</string>
     <string name="back">Return</string>
     <string name="donate">Donate</string>
+    <string name="enter_filename">Select Filename</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="select_directory">This app requires a default saving directory for quick saves through the notification.
+        You will be prompted to pick one. </string>
 
 </resources>

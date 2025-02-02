@@ -16,6 +16,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.firebase.auth.FirebaseAuth
 import com.mfc.recentaudiobuffer.ui.theme.RecentAudioBufferTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -30,7 +31,7 @@ class SettingsActivity : ComponentActivity() {
 
         setContent {
             RecentAudioBufferTheme {
-                SettingsScreenView()
+                SettingsScreenInitializer()
             }
         }
     }
@@ -43,7 +44,8 @@ class SettingsActivity : ComponentActivity() {
 
     @SuppressLint("UnrememberedMutableState")
     @androidx.compose.runtime.Composable
-    fun SettingsScreenView(settingsViewModel: SettingsViewModel = hiltViewModel()) {
+    fun SettingsScreenInitializer(settingsViewModel: SettingsViewModel = hiltViewModel()) {
+//        runBlocking { settingsViewModel.refreshSettings() }
         val config by settingsViewModel.config.collectAsState()
         val auth = FirebaseAuth.getInstance()
         val state = remember { mutableStateOf(SettingsScreenState(config)) }

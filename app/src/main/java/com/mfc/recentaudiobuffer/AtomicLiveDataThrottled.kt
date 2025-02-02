@@ -7,7 +7,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.Observer
 import java.util.concurrent.atomic.AtomicReference
 
-private const val MAXIMUM_UPDATE_PERIOD_MS : Long = 850
+const val MAXIMUM_UPDATE_PERIOD_MS : Long = 850
 
 // For observed live data in another activity and thread
 

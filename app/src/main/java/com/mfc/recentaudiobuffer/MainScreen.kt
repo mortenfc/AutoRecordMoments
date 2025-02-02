@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.DisposableEffect
@@ -69,6 +70,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.constraintlayout.compose.Dimension
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -96,6 +99,7 @@ fun MainScreen(
     onPickAndPlayFileClick: () -> Unit,
     onDonateClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onDirectoryAlertDismiss: () -> Unit,
     mediaPlayerManager: MediaPlayerManager
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -154,6 +158,25 @@ fun MainScreen(
             PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
         })
     }
+
+    if (FileSavingUtils.showSavingDialog) {
+        val context = LocalContext.current
+        FileSavingUtils.currentGrantedDirectoryUri?.let { grantedDirectoryUri ->
+            FileSavingUtils.currentData?.let { data ->
+                FileSaveDialog(onDismiss = { FileSavingUtils.showSavingDialog = false },
+                    onSave = { filename ->
+                        FileSavingUtils.fixBaseNameToSave(
+                            context, grantedDirectoryUri, data, filename
+                        )
+                        FileSavingUtils.showSavingDialog = false
+                    })
+            }
+        }
+    }
+
+    if (FileSavingUtils.showDirectoryPermissionDialog) {
+        DirectoryPickerDialog(onDismiss = onDirectoryAlertDismiss)
+    }
 }
 
 @Composable
@@ -162,8 +185,9 @@ fun MainButton(
     icon: Int,
     onClick: () -> Unit,
     iconTint: Color = Color.White,
-    width: Dp = 200.dp,
-    enabled: Boolean = true
+    width: Dp = 180.dp,
+    enabled: Boolean = true,
+    contentPadding: Dp = 16.dp
 ) {
     Button(
         onClick = onClick,
@@ -179,14 +203,12 @@ fun MainButton(
                 val paint = Paint().apply {
                     this.color = transparentColor
                     this.isAntiAlias = true
-                    this
-                        .asFrameworkPaint()
-                        .setShadowLayer(
-                            shadowRadius, // Half of height
-                            0f, // No horizontal offset
-                            offset, // Vertical offset
-                            shadowColor.toArgb()
-                        )
+                    this.asFrameworkPaint().setShadowLayer(
+                        shadowRadius, // Half of height
+                        0f, // No horizontal offset
+                        offset, // Vertical offset
+                        shadowColor.toArgb()
+                    )
                 }
                 drawIntoCanvas { canvas ->
                     canvas.drawRoundRect(
@@ -204,11 +226,11 @@ fun MainButton(
         colors = ButtonDefaults.buttonColors(
             containerColor = colorResource(id = R.color.teal_350),
             contentColor = colorResource(id = R.color.teal_900),
-            disabledContainerColor = colorResource(id = R.color.grey),
-            disabledContentColor = colorResource(id = R.color.teal_100)
+            disabledContainerColor = colorResource(id = R.color.light_grey),
+            disabledContentColor = colorResource(id = R.color.black)
         ),
         shape = RoundedCornerShape(8.dp),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(contentPadding),
         border = ButtonDefaults.outlinedButtonBorder.copy(
             brush = androidx.compose.ui.graphics.SolidColor(
                 colorResource(id = R.color.purple_accent)
@@ -217,12 +239,11 @@ fun MainButton(
         enabled = enabled
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(end = 16.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start
         ) {
+            Spacer(modifier = Modifier.width(8.dp))
             Icon(
                 painter = painterResource(id = icon),
                 contentDescription = text,
@@ -231,7 +252,12 @@ fun MainButton(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = text, fontWeight = FontWeight.Normal, fontSize = 14.sp
+                text = if (enabled) text else "Disabled",
+                fontWeight = FontWeight.Normal,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
         }
     }
@@ -381,6 +407,7 @@ fun MainScreenPreview() {
         onDonateClick = {},
         onSettingsClick = {},
         onSignInClick = {},
+        onDirectoryAlertDismiss = {},
         mediaPlayerManager = MediaPlayerManager(LocalContext.current) {})
 }
 

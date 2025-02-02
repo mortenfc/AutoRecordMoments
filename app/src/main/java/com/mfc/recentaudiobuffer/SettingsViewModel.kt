@@ -10,18 +10,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository,
-    application: Application
+    private val settingsRepository: SettingsRepository, application: Application
 ) : AndroidViewModel(application) {
     private val logTag = "SettingsViewModel"
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
 
-    private val _config = MutableStateFlow(SettingsConfig())
+    private val _config = MutableStateFlow(runBlocking {
+        Log.d(logTag, "Recreated _config from getSettingsConfig()")
+        settingsRepository.getSettingsConfig()
+    })
     val config: StateFlow<SettingsConfig> = _config.asStateFlow()
 
     init {

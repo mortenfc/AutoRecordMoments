@@ -61,9 +61,13 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         private const val REQUEST_CODE_STOP = 1
         private const val REQUEST_CODE_START = 2
         private const val REQUEST_CODE_SAVE = 3
+        private const val NOTIFICATION_UPDATE_INTERVAL_MS = 850L
+
         // Static variable to hold the buffer
         var sharedAudioDataToSave: ByteArray? = null
     }
+
+    private var lastNotificationUpdateTime: Long = 0
 
     @Inject
     lateinit var settingsRepository: SettingsRepository
@@ -81,10 +85,34 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     private var recorder: AudioRecord? = null
     private var lock: ReentrantLock = ReentrantLock()
+    private lateinit var stopIntent: PendingIntent
+    private lateinit var startIntent: PendingIntent
+    private lateinit var saveIntent: PendingIntent
+    private lateinit var notificationManager: NotificationManager
 
     override fun onCreate() {
         super.onCreate()
         Log.i(logTag, "onCreate()")
+        stopIntent = PendingIntent.getBroadcast(
+            this, REQUEST_CODE_STOP, Intent(this, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_STOP_RECORDING
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        startIntent = PendingIntent.getBroadcast(
+            this, REQUEST_CODE_START, Intent(this, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_START_RECORDING
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        saveIntent = PendingIntent.getBroadcast(
+            this, REQUEST_CODE_SAVE, Intent(this, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_SAVE_RECORDING
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
         createNotificationChannels()
     }
 
@@ -467,7 +495,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         Log.d(logTag, "quickSaveBuffer()")
         // Store the buffer in the static variable
         sharedAudioDataToSave = getBuffer()
-        val grantedUri = FileSavingUtils.getCachedGrantedUri(this)
+        val grantedUri = FileSavingUtils.getCachedGrantedUri()
         // Null of grantedUri is handled in the file saving service
         val saveIntent =
             Intent(this, FileSavingService::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -501,7 +529,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             val channel = NotificationChannel(
                 CHRONIC_NOTIFICATION_CHANNEL_ID,
                 CHRONIC_NOTIFICATION_CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = CHRONIC_NOTIFICATION_CHANNEL_DESCRIPTION
             }
@@ -512,24 +540,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     private fun createNotification(): Notification {
-        val stopIntent = PendingIntent.getBroadcast(
-            this, REQUEST_CODE_STOP, Intent(this, NotificationActionReceiver::class.java).apply {
-                action = NotificationActionReceiver.ACTION_STOP_RECORDING
-            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val startIntent = PendingIntent.getBroadcast(
-            this, REQUEST_CODE_START, Intent(this, NotificationActionReceiver::class.java).apply {
-                action = NotificationActionReceiver.ACTION_START_RECORDING
-            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val saveIntent = PendingIntent.getBroadcast(
-            this, REQUEST_CODE_SAVE, Intent(this, NotificationActionReceiver::class.java).apply {
-                action = NotificationActionReceiver.ACTION_SAVE_RECORDING
-            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
         val recordingNotification =
             NotificationCompat.Builder(this, CHRONIC_NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("Recording Recent Audio")
@@ -552,7 +562,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                     if (isRecording.get()) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24,
                     if (isRecording.get()) "Pause" else "Continue", // Update action text
                     if (isRecording.get()) stopIntent else startIntent // Update PendingIntent
-                ).setAutoCancel(false).addAction(
+                ).addAction(
                     if (isRecording.get()) R.drawable.baseline_save_alt_24 else 0,
                     if (isRecording.get()) "Save and clear" else null,
                     if (isRecording.get()) saveIntent else null
@@ -560,15 +570,19 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 .setSmallIcon(R.drawable.baseline_record_voice_over_24) // Set the small icon
                 .setOngoing(true) // Make it a chronic notification
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setCategory(NotificationCompat.CATEGORY_STATUS).build()
+                .setOnlyAlertOnce(true) // IMPORTANCE_DEFAULT otherwise notifies on each update
+                .setSilent(true) // Don't make sounds
+                .setCategory(NotificationCompat.CATEGORY_SERVICE).build()
 
         return recordingNotification
     }
 
     private fun updateNotification() {
-        val notificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val notification = createNotification()
-        notificationManager.notify(CHRONIC_NOTIFICATION_ID, notification)
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastNotificationUpdateTime >= NOTIFICATION_UPDATE_INTERVAL_MS) {
+            val notification = createNotification()
+            notificationManager.notify(CHRONIC_NOTIFICATION_ID, notification)
+            lastNotificationUpdateTime = currentTime
+        }
     }
 }

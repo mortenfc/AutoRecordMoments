@@ -9,25 +9,34 @@ import android.content.Intent
 import android.net.Uri
 import android.os.IBinder
 import android.util.Log
-import android.widget.EditText
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.app.PendingIntent
+import androidx.annotation.OptIn
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.media3.common.util.UnstableApi
 
 class FileSavingService : Service() {
-    companion object{
+    companion object {
         private const val RESULT_NOTIFICATION_ID = 2
-        public const val RESULT_NOTIFICATION_CHANNEL_ID = "result_channel"
-        public const val RESULT_NOTIFICATION_CHANNEL_NAME = "Result of an operation"
-        public const val RESULT_NOTIFICATION_CHANNEL_DESCRIPTION =
-            "A user message as a notification"
+        const val RESULT_NOTIFICATION_CHANNEL_ID = "result_channel"
+        const val RESULT_NOTIFICATION_CHANNEL_NAME = "Result of an operation"
+        const val RESULT_NOTIFICATION_CHANNEL_DESCRIPTION = "A user message as a notification"
+        const val ACTION_OPEN_FILE = "com.mfc.recentaudiobuffer.ACTION_OPEN_FILE"
+        const val ACTION_DELETE_NOTIFICATION =
+            "com.mfc.recentaudiobuffer.ACTION_DELETE_NOTIFICATION"
+        const val EXTRA_SAVED_FILE_URI = "com.mfc.recentaudiobuffer.EXTRA_SAVED_FILE_URI"
     }
 
     private val logTag = "FileSavingService"
+
+    @OptIn(UnstableApi::class)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val grantedUri = intent?.getParcelableExtra<Uri>("grantedUri")
         // Get the big buffer from the static variable. IPC has a limit of 1 MB of data to send with intents
@@ -37,13 +46,10 @@ class FileSavingService : Service() {
         if (grantedUri != null && audioData != null) {
             val notificationManager =
                 getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val (title, text, icon) = if (FileSavingUtils.fixBaseNameToSave(
-                    this,
-                    grantedUri,
-                    audioData,
-                    "quick_save"
-                )
-            ) {
+            val savedFileUri = FileSavingUtils.fixBaseNameToSave(
+                this, grantedUri, audioData, "quick_save"
+            )
+            var (title, text, icon) = if (savedFileUri != null) {
                 Triple(
                     "Audio Saved and Cleared",
                     "The recent audio buffer has been saved and cleared.",
@@ -57,11 +63,34 @@ class FileSavingService : Service() {
                 )
             }
 
-            val notification = NotificationCompat.Builder(this, RESULT_NOTIFICATION_CHANNEL_ID)
-                .setContentTitle(title)
-                .setContentText(text)
-                .setSmallIcon(icon)
-                .build()
+            val notificationBuilder =
+                NotificationCompat.Builder(this, RESULT_NOTIFICATION_CHANNEL_ID)
+                    .setContentTitle(title).setContentText(text).setSmallIcon(icon)
+                    .setAutoCancel(true)
+
+            if (savedFileUri != null) {
+                // Launch MainActivity with the saved file URI
+                val mainActivityIntent = Intent(this, MainActivity::class.java).apply {
+                    action = ACTION_OPEN_FILE
+                    putExtra(EXTRA_SAVED_FILE_URI, savedFileUri)
+                }
+                val mainActivityPendingIntent = PendingIntent.getActivity(
+                    this,
+                    0,
+                    mainActivityIntent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                notificationBuilder.setContentIntent(mainActivityPendingIntent)
+            } else {
+                Log.e(logTag, "Failed to create PendingIntent to open file")
+                // Update the notification text on failure
+                if (savedFileUri != null) {
+                    text = "ERROR: Failed to open saved file..."
+                    notificationBuilder.setContentText(text)
+                }
+            }
+
+            val notification = notificationBuilder.build()
             notificationManager.notify(RESULT_NOTIFICATION_ID, notification)
             // Clear the static variable after saving
             MyBufferService.sharedAudioDataToSave = null
@@ -79,7 +108,12 @@ class FileSavingService : Service() {
 }
 
 object FileSavingUtils {
+    var showSavingDialog by mutableStateOf(false)
+    var showDirectoryPermissionDialog by mutableStateOf(false)
     private const val logTag = "FileSavingUtils"
+    var currentGrantedDirectoryUri: Uri? = null
+    var currentData: ByteArray? = null
+
     private fun saveFile(
         context: Context, myBufferService: MyBufferServiceInterface, data: ByteArray, fileUri: Uri
     ): Boolean {
@@ -113,13 +147,44 @@ object FileSavingUtils {
         return success
     }
 
-    public fun cacheGrantedUri(context: Context, uri: Uri) {
-        val sharedPrefs = context.getSharedPreferences("MyPrefs", Context.MODE_PRIVATE)
+    fun isUriValidAndAccessible(context: Context, uri: Uri?): Boolean {
+        if (uri == null) {
+            Log.e(logTag, "isUriValidAndAccessible: URI is null")
+            return false
+        }
+
+        if (!isUriSaf(uri)) {
+            Log.e(logTag, "isUriValidAndAccessible: URI is not a SAF URI: $uri")
+            return false
+        }
+
+        val documentFile = DocumentFile.fromTreeUri(context, uri)
+        if (documentFile == null || !documentFile.exists() || !documentFile.isDirectory) {
+            Log.e(
+                logTag,
+                "isUriValidAndAccessible: DocumentFile is null, does not exist, or is not a directory: $uri"
+            )
+            return false
+        }
+
+        return true
+    }
+
+    private fun isUriSaf(uri: Uri): Boolean {
+        return uri.scheme == "content" && uri.authority != null
+    }
+
+    public fun cacheGrantedUri(uri: Uri) {
+        val sharedPrefs = RecentAudioBufferApplication.instance.getSharedPreferences(
+            "MyPrefs", Context.MODE_PRIVATE
+        )
         sharedPrefs.edit().putString("grantedUri", uri.toString()).apply()
     }
 
-    public fun getCachedGrantedUri(context: Context): Uri? {
-        val sharedPrefs = context.getSharedPreferences("MyPrefs", Context.MODE_PRIVATE)
+    public fun getCachedGrantedUri(): Uri? {
+        val sharedPrefs = RecentAudioBufferApplication.instance.getSharedPreferences(
+            "MyPrefs", Context.MODE_PRIVATE
+        )
         val uriString = sharedPrefs.getString("grantedUri", null)
         return if (uriString != null) Uri.parse(uriString) else null
     }
@@ -127,7 +192,7 @@ object FileSavingUtils {
     @SuppressLint("RestrictedApi")
     fun fixBaseNameToSave(
         context: Context, grantedDirectoryUri: Uri, data: ByteArray, baseNameInput: String
-    ): Boolean {
+    ): Uri? {
         var filename = if (baseNameInput.endsWith(".wav", ignoreCase = true)) {
             baseNameInput // Already ends with .wav, no change needed
         } else {
@@ -141,55 +206,40 @@ object FileSavingUtils {
         val directory = DocumentFile.fromTreeUri(context, grantedDirectoryUri)
         if (directory == null || !directory.exists() || !directory.isDirectory) {
             Log.e(logTag, "Invalid directory URI or directory does not exist: $grantedDirectoryUri")
-            return false
+            return null
         }
 
         var file = directory.findFile(filename)
         if (file != null) {
             // File exists, prompt for overwrite
             var overwrite = false
-            val dialog = AlertDialog.Builder(context)
-                .setTitle("File Exists")
+            val dialog = AlertDialog.Builder(context).setTitle("File Exists")
                 .setMessage("A file with the name '$filename' already exists. Do you want to overwrite it?")
                 .setPositiveButton("Overwrite") { _, _ -> overwrite = true }
-                .setNegativeButton("Cancel") { dialog, _ -> dialog.cancel() }
-                .create()
+                .setNegativeButton("Cancel") { dialog, _ -> dialog.cancel() }.create()
             dialog.show()
             if (!overwrite) {
                 Log.i(logTag, "File not overwritten: $filename")
-                return false
+                return null
             }
             file.delete()
         }
         file = directory.createFile("audio/wav", filename)
         if (file == null) {
             Log.e(logTag, "Failed to create file: $filename")
-            return false
+            return null
         }
-
-        return saveFile(
+        val success = saveFile(
             context, ViewModelHolder.getSharedViewModel().myBufferService!!, data, file.uri
         )
+        return if (success) file.uri else null
     }
 
-    @SuppressLint("RestrictedApi")
     public fun promptSaveFileName(
         context: Context, grantedDirectoryUri: Uri, data: ByteArray
-    ): Boolean {
-        var success = false
-        Log.i(logTag, "saveBufferToFile()")
-        // 1. Prompt for filename here
-        val builder = AlertDialog.Builder(context)
-        builder.setTitle("Enter Filename")
-        val input = EditText(context)
-        input.setText(context.getString(R.string.DefaultRecordingName))
-        builder.setView(input)
-        builder.setPositiveButton("OK") { _, _ ->
-            success = fixBaseNameToSave(context, grantedDirectoryUri, data, input.text.toString())
-        }
-        builder.setNegativeButton("Cancel") { dialog, _ -> dialog.cancel() }
-        builder.show()
-
-        return success
+    ) {
+        currentGrantedDirectoryUri = grantedDirectoryUri
+        currentData = data
+        showSavingDialog = true
     }
 }

@@ -12,7 +12,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
-import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -95,6 +94,53 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val directoryPickerLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { selectedDir: Uri? ->
+            selectedDir?.let {
+                Log.i("MainActivity", "directoryPickerLauncher: $it")
+                contentResolver.takePersistableUriPermission(
+                    it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+                FileSavingUtils.cacheGrantedUri(it)
+                // If we have a buffer, prompt to save it
+                if (myBufferService != null) {
+                    FileSavingUtils.promptSaveFileName(
+                        this@MainActivity, it, myBufferService!!.getBuffer()
+                    )
+                }
+            }
+        }
+
+    // Function to trigger the directory picker
+    private fun pickDirectory() {
+        val recordingsDirFile =
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS)
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            // The key is to use EXTRA_INITIAL_URI with a content:// URI if possible
+            // Try to convert the file:// URI to a content:// URI
+            val contentUri = getDocumentUriFromPath(recordingsDirFile.absolutePath)
+            if (contentUri != null) {
+                putExtra(DocumentsContract.EXTRA_INITIAL_URI, contentUri)
+            }
+        }
+        //directoryPickerLauncher.launch(recordingsDirUrl) // This was wrong
+        directoryPickerLauncher.launch(intent.getParcelableExtra(DocumentsContract.EXTRA_INITIAL_URI))
+    }
+
+    // Helper function to convert a file path to a content:// URI (if possible)
+    private fun getDocumentUriFromPath(path: String): Uri? {
+        val externalStorageVolume = Environment.getExternalStorageDirectory()
+        if (path.startsWith(externalStorageVolume.absolutePath)) {
+            val relativePath = path.substring(externalStorageVolume.absolutePath.length + 1)
+            return DocumentsContract.buildDocumentUri(
+                "com.android.externalstorage.documents", "primary:$relativePath"
+            )
+        }
+        return null
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(logTag, "onCreate(): Build.VERSION.SDK_INT: ${Build.VERSION.SDK_INT}")
@@ -107,8 +153,6 @@ class MainActivity : AppCompatActivity() {
 
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
 
-        getPermissions()
-
         createNotificationChannels()
 
         ViewModelHolder.setSharedViewModel(sharedViewModel)
@@ -116,6 +160,17 @@ class MainActivity : AppCompatActivity() {
         mediaPlayerManager = MediaPlayerManager(context = this, onPlayerReady = {
             Log.i(logTag, "Player is ready")
         })
+
+        // Check if the activity was launched from the notification
+        if (intent.action == FileSavingService.ACTION_OPEN_FILE) {
+            val savedFileUri =
+                intent.getParcelableExtra<Uri>(FileSavingService.EXTRA_SAVED_FILE_URI)
+            if (savedFileUri != null) {
+                pickAndPlayFile(savedFileUri)
+            } else {
+                Log.e(logTag, "savedFileUri is null")
+            }
+        }
 
         setContent {
             MaterialTheme {
@@ -129,9 +184,19 @@ class MainActivity : AppCompatActivity() {
                     onPickAndPlayFileClick = { onClickPickAndPlayFile() },
                     onDonateClick = { onClickDonate() },
                     onSettingsClick = { onClickSettings() },
+                    onDirectoryAlertDismiss = {
+                        FileSavingUtils.showDirectoryPermissionDialog = false
+                        pickDirectory()
+                    },
                     mediaPlayerManager = mediaPlayerManager!!
                 )
             }
+        }
+
+        // Check if a directory has been cached, otherwise prompt the user
+        val grantedDirectoryUri = FileSavingUtils.getCachedGrantedUri()
+        if (grantedDirectoryUri == null) {
+            FileSavingUtils.showDirectoryPermissionDialog = true
         }
     }
 
@@ -218,43 +283,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val saveStorageUriPermission =
-        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { grantedDirectoryUri: Uri? ->
-            if (grantedDirectoryUri != null) {
-                contentResolver.takePersistableUriPermission(
-                    grantedDirectoryUri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-                Log.d(
-                    logTag,
-                    "takePersistableUriPermission called for grantedDirectoryUri: $grantedDirectoryUri"
-                )
-                FileSavingUtils.cacheGrantedUri(
-                    this@MainActivity, grantedDirectoryUri
-                )
-                FileSavingUtils.promptSaveFileName(
-                    this@MainActivity, grantedDirectoryUri, myBufferService!!.getBuffer()
-                )
-            } else {
-                // Handle case where grantedUri is null
-                Toast.makeText(this, "Error getting granted URI", Toast.LENGTH_SHORT).show()
-            }
-        }
-
     private fun onClickSaveBuffer() {
         if (foregroundServiceAudioBufferConnection.isBound) {
             lifecycleScope.launch {
                 onClickStopRecording()
-                val grantedUri = FileSavingUtils.getCachedGrantedUri(this@MainActivity)
-                Log.d(logTag, "MainActivity: grantedUri = $grantedUri")
-                if (grantedUri != null) {
+                val prevGrantedUri = FileSavingUtils.getCachedGrantedUri()
+                Log.d(logTag, "MainActivity: prevGrantedUri = $prevGrantedUri")
+                if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, prevGrantedUri)) {
                     // Use previously permitted cached uri
                     FileSavingUtils.promptSaveFileName(
-                        this@MainActivity, grantedUri, myBufferService!!.getBuffer()
+                        this@MainActivity, prevGrantedUri!!, myBufferService!!.getBuffer()
                     )
                 } else {
-                    // Otherwise get file saving location permission
-                    saveStorageUriPermission.launch(null)
+                    // Otherwise get and store file saving location permission
+                    pickDirectory()
                 }
             }
         } else {
@@ -314,22 +356,6 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    private val settingsLauncher: ActivityResultLauncher<Intent> = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {}
-
-    private fun goToAndroidAppSettings() {
-        Log.i(logTag, "goToAndroidAppSettings()")
-        val thisAppSettings = Intent(
-            Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse(
-                "package:$packageName"
-            )
-        )
-        thisAppSettings.addCategory(Intent.CATEGORY_DEFAULT)
-        thisAppSettings.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-
-        settingsLauncher.launch(thisAppSettings)
-    }
 
     private lateinit var permissionIn: String
 
@@ -341,11 +367,6 @@ class MainActivity : AppCompatActivity() {
                 this, "$permissionIn permission granted!", Toast.LENGTH_SHORT
             ).show()
         } else {
-//            AlertDialog.Builder(this).setTitle("$permissionIn permission required")
-//                .setMessage("This permission is needed for this app to work")
-//                .setPositiveButton("Open settings") { _, _ ->
-//                    goToAndroidAppSettings()
-//                }.create().show()
             Toast.makeText(
                 this, "$permissionIn required for app to work", Toast.LENGTH_LONG
             ).show()
@@ -389,16 +410,25 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-    private fun pickAndPlayFile() {
-        Log.i(logTag, "pickAndPlayFile()")
-        val recordingsDir =
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS)
-        val initialUri = Uri.fromFile(recordingsDir)
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "audio/*"
-            putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    private fun pickAndPlayFile(initialUri: Uri? = null) {
+        Log.i(logTag, "pickAndPlayFile() with initialUri: $initialUri")
+        val intent = if (initialUri != null) {
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "audio/*"
+                putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        } else {
+            val recordingsDirFile =
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS)
+            val recordingsDirUrl = Uri.fromFile(recordingsDirFile)
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "audio/*"
+                putExtra(DocumentsContract.EXTRA_INITIAL_URI, recordingsDirUrl)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
         }
         filePickerLauncher.launch(intent)
     }
