@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private val settingsViewModel: SettingsViewModel by viewModels()
     private var myBufferService: MyBufferServiceInterface? = null
     private var isPickAndPlayFileRunning = false
+    private var wasStartRecordingButtonPress = false
 
     private val requiredPermissions = if (Build.VERSION.SDK_INT >= 33) {
         mutableListOf(
@@ -80,7 +81,11 @@ class MainActivity : AppCompatActivity() {
             myBufferService = this.service
             this.isBound = true
             sharedViewModel.myBufferService = this.service
-            myBufferService?.startRecording()
+            if (wasStartRecordingButtonPress)
+            {
+                myBufferService?.startRecording()
+                wasStartRecordingButtonPress = false
+            }
             Log.d(logTag, "onServiceConnect()")
         }
 
@@ -103,6 +108,7 @@ class MainActivity : AppCompatActivity() {
                 Intent(this@MainActivity, MyBufferService::class.java), this, BIND_AUTO_CREATE
             )
             super.onBindingDied(name)
+            wasStartRecordingButtonPress = false
         }
     }
 
@@ -288,6 +294,7 @@ class MainActivity : AppCompatActivity() {
     private fun onClickStartRecording() {
         if (haveAllPermissions(requiredPermissions)) {
             if (!foregroundBufferServiceConn.isBound) {
+                wasStartRecordingButtonPress = true
                 this.startForegroundService(foregroundServiceAudioBuffer)
                 bindService(
                     Intent(this, MyBufferService::class.java),
