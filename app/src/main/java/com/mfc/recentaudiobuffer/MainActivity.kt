@@ -2,6 +2,7 @@ package com.mfc.recentaudiobuffer
 
 import MediaPlayerManager
 import android.Manifest
+import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ComponentName
@@ -24,16 +25,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import dagger.hilt.android.AndroidEntryPoint
-
-class SharedViewModel : ViewModel() {
-    var myBufferService: MyBufferServiceInterface? = null
-}
 
 @AndroidEntryPoint
 @UnstableApi
@@ -42,7 +38,6 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var authenticationManager: AuthenticationManager
-    private val sharedViewModel: SharedViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
     private var myBufferService: MyBufferServiceInterface? = null
     private var isPickAndPlayFileRunning = false
@@ -80,9 +75,9 @@ class MainActivity : AppCompatActivity() {
             this.service = binder.getService()
             myBufferService = this.service
             this.isBound = true
-            sharedViewModel.myBufferService = this.service
-            if (wasStartRecordingButtonPress)
-            {
+            RecentAudioBufferApplication.getSharedViewModel(this@MainActivity.applicationContext as Application).myBufferService =
+                this.service
+            if (wasStartRecordingButtonPress) {
                 myBufferService?.startRecording()
                 wasStartRecordingButtonPress = false
             }
@@ -130,20 +125,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-    // Function to trigger the directory picker
     private fun pickDirectory() {
         val recordingsDirFile =
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS)
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            // The key is to use EXTRA_INITIAL_URI with a content:// URI if possible
-            // Try to convert the file:// URI to a content:// URI
             val contentUri = getDocumentUriFromPath(recordingsDirFile.absolutePath)
             if (contentUri != null) {
                 putExtra(DocumentsContract.EXTRA_INITIAL_URI, contentUri)
             }
         }
-        //directoryPickerLauncher.launch(recordingsDirUrl) // This was wrong
         directoryPickerLauncher.launch(intent.getParcelableExtra(DocumentsContract.EXTRA_INITIAL_URI))
     }
 
@@ -172,8 +163,6 @@ class MainActivity : AppCompatActivity() {
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
 
         createNotificationChannels()
-
-        ViewModelHolder.setSharedViewModel(sharedViewModel)
 
         mediaPlayerManager = MediaPlayerManager(context = this, onPlayerReady = {
             Log.i(logTag, "Player is ready")
@@ -205,18 +194,14 @@ class MainActivity : AppCompatActivity() {
         if (grantedDirectoryUri == null) {
             FileSavingUtils.showDirectoryPermissionDialog = true
         }
+
+        handleIntent(intent)
     }
 
     private fun onClickSettings() {
         Intent(this, SettingsActivity::class.java).also {
             it.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             startActivity(it)
-        }
-        if (myBufferService != null && myBufferService!!.isRecording.get()) {
-            myBufferService!!.stopRecording()
-            Toast.makeText(
-                this, "Stopped buffering in the background", Toast.LENGTH_SHORT
-            ).show()
         }
     }
 
@@ -240,8 +225,6 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.startForegroundService(this, serviceIntent)
             bindService(serviceIntent, foregroundBufferServiceConn, Context.BIND_AUTO_CREATE)
         }
-
-        handleIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -389,12 +372,6 @@ class MainActivity : AppCompatActivity() {
     private fun onClickDonate() {
         val intent = Intent(this, DonationActivity::class.java)
         startActivity(intent)
-        if (myBufferService != null && myBufferService!!.isRecording.get()) {
-            myBufferService!!.stopRecording()
-            Toast.makeText(
-                this, "Stopped buffering in the background", Toast.LENGTH_SHORT
-            ).show()
-        }
     }
 
     private fun createNotificationChannels() {

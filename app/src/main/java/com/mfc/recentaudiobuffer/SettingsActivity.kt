@@ -1,6 +1,7 @@
 package com.mfc.recentaudiobuffer
 
 import android.annotation.SuppressLint
+import android.app.Application
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
@@ -94,13 +95,17 @@ class SettingsActivity : ComponentActivity() {
                 state.value.validateSettings()
             },
             onSubmit = {
-                // Only state settings on submit
+                val configBeforeUpdate = settingsViewModel.config.value
                 state.value.updateSettings(settingsViewModel)
+                val configAfterUpdate = settingsViewModel.config.value
+                if (configBeforeUpdate != configAfterUpdate) {
+                    Log.d(logTag, "onSubmit(): Settings updated, stopping recording")
+                    RecentAudioBufferApplication.getSharedViewModel(this.applicationContext as Application).myBufferService?.stopRecording()
+                }
                 hasSaved = true
             },
             justExit = {
                 this.finish()
-            }
-        )
+            })
     }
 }

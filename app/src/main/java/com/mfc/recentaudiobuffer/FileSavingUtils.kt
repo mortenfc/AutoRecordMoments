@@ -2,6 +2,7 @@ package com.mfc.recentaudiobuffer
 
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.app.Application
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
@@ -128,7 +129,7 @@ object FileSavingUtils {
             outputStream?.let { stream ->
                 try {
                     myBufferService.writeWavHeader(
-                        stream, data.size.toLong()
+                        stream, data.size
                     )
                     stream.write(data)
                     stream.flush()
@@ -235,7 +236,10 @@ object FileSavingUtils {
             return null
         }
         val success = saveFile(
-            context, ViewModelHolder.getSharedViewModel().myBufferService!!, data, file.uri
+            context,
+            RecentAudioBufferApplication.getSharedViewModel(context.applicationContext as Application).myBufferService!!,
+            data,
+            file.uri
         )
         return if (success) file.uri else null
     }

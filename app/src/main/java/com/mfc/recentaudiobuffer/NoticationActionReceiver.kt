@@ -1,5 +1,6 @@
 package com.mfc.recentaudiobuffer
 
+import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -16,15 +17,14 @@ class NotificationActionReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        val sharedViewModel = ViewModelHolder.getSharedViewModel()
-        val myBufferService = sharedViewModel.myBufferService
+        val myBufferService =
+            RecentAudioBufferApplication.getSharedViewModel(context.applicationContext as Application).myBufferService
 
         when (intent.action) {
             ACTION_STOP_RECORDING -> {
                 Log.d(logTag, "Received ACTION_STOP_RECORDING")
                 if (myBufferService != null) {
                     myBufferService.stopRecording()
-                    myBufferService.updateNotification()
                 } else {
                     val serviceIntent = Intent(context, MyBufferService::class.java)
                     serviceIntent.action = MyBufferService.ACTION_STOP_RECORDING_SERVICE
@@ -36,7 +36,6 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 Log.d(logTag, "Received ACTION_START_RECORDING")
                 if (myBufferService != null) {
                     myBufferService.startRecording()
-                    myBufferService.updateNotification()
                 } else {
                     val serviceIntent = Intent(context, MyBufferService::class.java)
                     serviceIntent.action = MyBufferService.ACTION_START_RECORDING_SERVICE
@@ -49,7 +48,6 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 if (myBufferService != null) {
                     myBufferService.quickSaveBuffer()
                     myBufferService.resetBuffer()
-                    myBufferService.updateNotification()
                 } else {
                     val serviceIntent = Intent(context, MyBufferService::class.java)
                     serviceIntent.action = MyBufferService.ACTION_START_RECORDING_SERVICE

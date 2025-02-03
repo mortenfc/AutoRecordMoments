@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioRecord.READ_BLOCKING
 import android.media.MediaRecorder
@@ -22,25 +23,26 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.runBlocking
+import java.io.DataOutputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
 import kotlin.math.roundToInt
 
 interface MyBufferServiceInterface {
     fun getBuffer(): ByteArray
-    fun writeWavHeader(out: OutputStream, audioDataLen: Long)
+    fun writeWavHeader(out: OutputStream, audioDataLen: Int)
     fun stopRecording()
     fun startRecording()
     fun resetBuffer()
     fun quickSaveBuffer()
-    fun updateNotification()
 
-    val isRecording: AtomicLiveDataThrottled<Boolean>
+    val isRecording: AtomicReference<Boolean>
 }
 
 @AndroidEntryPoint
@@ -73,28 +75,31 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
-    public override val isRecording: AtomicLiveDataThrottled<Boolean> =
-        AtomicLiveDataThrottled(false)
+    public override val isRecording: AtomicReference<Boolean> = AtomicReference(false)
 
-    private val hasOverflowed: AtomicLiveDataThrottled<Boolean> = AtomicLiveDataThrottled(false)
+    private val hasOverflowed: AtomicReference<Boolean> = AtomicReference(false)
 
-    private val recorderIndex: AtomicLiveDataThrottled<Int> = AtomicLiveDataThrottled(0)
+    private val recorderIndex: AtomicReference<Int> = AtomicReference(0)
 
-    private val totalRingBufferSize: AtomicLiveDataThrottled<Int> = AtomicLiveDataThrottled(100)
+    private val totalRingBufferSize: AtomicReference<Int> = AtomicReference(100)
 
-    private val time: AtomicLiveDataThrottled<String> = AtomicLiveDataThrottled("00:00:00")
+    private val time: AtomicReference<String> = AtomicReference("00:00:00")
 
     private var recorder: AudioRecord? = null
     private var lock: ReentrantLock = ReentrantLock()
+
     private lateinit var notificationManager: NotificationManager
+    private lateinit var audioManager: AudioManager
 
     override fun onCreate() {
         super.onCreate()
         Log.i(logTag, "onCreate()")
 
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
         createNotificationChannels()
+        requestAudioFocus()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -128,17 +133,59 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         super.onDestroy()
         Log.i(logTag, "onDestroy()")
         stopRecording()
+        abandonAudioFocus()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         Log.i(logTag, "onTaskRemoved() called with intent: $rootIntent")
         super.onTaskRemoved(rootIntent)
-//        isRecording.set(false)
-//        this.startRecording()
-//        updateNotification()
     }
 
-    private fun getApproximateFreeMemory(idealBufferSize: Int): Long {
+    private var isRecordingCallAudio = false
+
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        Log.d(logTag, "OnAudioFocusChangeListener() focusChange: $focusChange")
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // Stop or pause recording
+                Log.d(logTag, "Audio focus lost")
+                if (isRecording.get()) {
+                    stopRecording()
+                    isRecordingCallAudio = true
+                    startRecording()
+                }
+            }
+
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // Start or resume recording
+                Log.d(logTag, "Audio focus gained")
+                if (isRecordingCallAudio) {
+                    stopRecording()
+                    isRecordingCallAudio = false
+                    startRecording()
+                }
+            }
+        }
+    }
+
+    private fun requestAudioFocus() {
+        Log.d(logTag, "requestAudioFocus()")
+        val result = audioManager.requestAudioFocus(
+            audioFocusChangeListener, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN
+        )
+        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            Log.d(logTag, "Audio focus granted")
+        } else {
+            Log.e(logTag, "Audio focus request failed")
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        Log.d(logTag, "abandonAudioFocus()")
+        audioManager.abandonAudioFocus(audioFocusChangeListener)
+    }
+
+    private fun tryAllocating(idealBufferSize: Int): Long {
         try {
             // Try to allocate a large byte array
             ByteArray(idealBufferSize)
@@ -171,8 +218,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         Log.d(logTag, "updateTotalBufferSize(): idealBufferSize = $idealBufferSize")
 
-
-        val maxDynamicMemory = getApproximateFreeMemory(idealBufferSize)
+        val maxDynamicMemory = tryAllocating((idealBufferSize * 1.1).roundToInt())
 
         // Check against dynamic memory limit first
         if (idealBufferSize > maxDynamicMemory) {
@@ -219,6 +265,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             return
         }
 
+        val audioSource = if (isRecordingCallAudio) {
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION
+        } else {
+            MediaRecorder.AudioSource.MIC
+        }
+
         val audioFormat = AudioFormat.Builder().setEncoding(config.bitDepth.encodingEnum)
             .setSampleRate(config.sampleRateHz).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build()
 
@@ -239,13 +291,15 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         val granted = PackageManager.PERMISSION_GRANTED
 
         if (ContextCompat.checkSelfPermission(this, permission) != granted) {
-            Log.e(logTag, "Audio record permission not granted, exiting the foreground service")
+            Log.e(
+                logTag, "Audio record permission not granted, exiting the foreground service"
+            )
             return
         }
 
         // Permission has been granted
-        recorder = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.MIC)
-            .setAudioFormat(audioFormat).setBufferSizeInBytes(readChunkSize).build()
+        recorder = AudioRecord.Builder().setAudioSource(audioSource).setAudioFormat(audioFormat)
+            .setBufferSizeInBytes(readChunkSize).build()
 
         try {
             Thread {
@@ -341,7 +395,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     override fun stopRecording() {
         Log.i(logTag, "stopRecording()")
         isRecording.set(false)
-        updateNotification()
+        updateNotification(checkTime = false)
     }
 
     private fun updateLengthInTime() {
@@ -362,14 +416,18 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             Locale.getDefault(),
             "%02d:%02d:%02d",
             TimeUnit.SECONDS.toHours(durationInSeconds.toLong()),
-            TimeUnit.SECONDS.toMinutes(durationInSeconds.toLong()) % TimeUnit.HOURS.toMinutes(1),
-            TimeUnit.SECONDS.toSeconds(durationInSeconds.toLong()) % TimeUnit.MINUTES.toSeconds(1)
+            TimeUnit.SECONDS.toMinutes(durationInSeconds.toLong()) % TimeUnit.HOURS.toMinutes(
+                1
+            ),
+            TimeUnit.SECONDS.toSeconds(durationInSeconds.toLong()) % TimeUnit.MINUTES.toSeconds(
+                1
+            )
         )
 
         time.set(durationFormatted)
     }
 
-    override fun writeWavHeader(out: OutputStream, audioDataLen: Long) {
+    override fun writeWavHeader(out: OutputStream, audioDataLen: Int) {
         val channels = 1.toShort() // Recording is in mono
         val sampleRate = config.sampleRateHz
         val bitsPerSample = config.bitDepth.bytes.toShort()
@@ -388,7 +446,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 'R'.code.toByte(), 'I'.code.toByte(), 'F'.code.toByte(), 'F'.code.toByte()
             )
         )
-        out.write(intToBytes(totalDataLen.toInt()), 0, 4)
+        out.write(intToBytes(totalDataLen), 0, 4)
         out.write(
             byteArrayOf(
                 'W'.code.toByte(), 'A'.code.toByte(), 'V'.code.toByte(), 'E'.code.toByte()
@@ -403,7 +461,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         out.write(shortToBytes(1.toShort()), 0, 2)  // AudioFormat, 1 for PCM
         out.write(shortToBytes(channels), 0, 2)
         out.write(intToBytes(sampleRate), 0, 4)
-        out.write(intToBytes(byteRate.toInt()), 0, 4)
+        out.write(intToBytes(byteRate), 0, 4)
         out.write(shortToBytes((channels * sampleSize).toShort()), 0, 2)  // Block align
         out.write(shortToBytes(bitsPerSample), 0, 2)
         out.write(
@@ -411,7 +469,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 'd'.code.toByte(), 'a'.code.toByte(), 't'.code.toByte(), 'a'.code.toByte()
             )
         )
-        out.write(intToBytes(audioDataLen.toInt()), 0, 4)
+        out.write(intToBytes(audioDataLen), 0, 4)
     }
 
     private fun intToBytes(i: Int): ByteArray {
@@ -428,7 +486,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     override fun getBuffer(): ByteArray {
-        var shiftedBuffer: ByteArray? = null
+        val shiftedBuffer: ByteArray
         lock.lock()
         try {
             if (hasOverflowed.get()) {
@@ -450,7 +508,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             lock.unlock()
         }
 
-        return shiftedBuffer!!
+        return shiftedBuffer
     }
 
     private fun syncPreferences() {
@@ -475,9 +533,10 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     override fun resetBuffer() {
+        Log.d(logTag, "resetBuffer()")
         recorderIndex.set(0)
         hasOverflowed.set(false)
-        Log.i(logTag, "Buffer reset")
+        updateNotification(checkTime = false)
     }
 
     override fun quickSaveBuffer() {
@@ -486,15 +545,16 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         sharedAudioDataToSave = getBuffer()
         val grantedUri = FileSavingUtils.getCachedGrantedUri()
         // Null of grantedUri is handled in the file saving service
-        val quickSaveIntent =
-            Intent(this, FileSavingService::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra("grantedUri", grantedUri)
+        val quickSaveIntent = Intent(
+            this, FileSavingService::class.java
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("grantedUri", grantedUri)
         this.startService(quickSaveIntent)
     }
 
     override fun startRecording() {
         if (!isRecording.get()) {
             startBuffering()
+            updateNotification(checkTime = false)
         }
     }
 
@@ -584,9 +644,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         return recordingNotification
     }
 
-    override fun updateNotification() {
+    private fun updateNotification(checkTime: Boolean = true) {
         val currentTime = System.currentTimeMillis()
-        if (currentTime - lastNotificationUpdateTime >= NOTIFICATION_UPDATE_INTERVAL_MS) {
+        if (!checkTime || (currentTime - lastNotificationUpdateTime >= NOTIFICATION_UPDATE_INTERVAL_MS)) {
             val notification = createNotification()
             notificationManager.notify(CHRONIC_NOTIFICATION_ID, notification)
             lastNotificationUpdateTime = currentTime
