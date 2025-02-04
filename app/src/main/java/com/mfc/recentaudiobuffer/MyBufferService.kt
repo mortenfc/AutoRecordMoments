@@ -13,6 +13,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioRecord.READ_BLOCKING
+import android.media.AudioRecord.READ_NON_BLOCKING
 import android.media.MediaRecorder
 import android.os.Binder
 import android.os.Build
@@ -33,6 +34,7 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 interface MyBufferServiceInterface {
     fun getBuffer(): ByteArray
@@ -64,7 +66,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         private const val REQUEST_CODE_STOP = 1
         private const val REQUEST_CODE_START = 2
         private const val REQUEST_CODE_SAVE = 3
-        private const val NOTIFICATION_UPDATE_INTERVAL_MS = 850L
+        private const val READ_SLEEP_DURATION = 300L
+        private val NOTIFICATION_UPDATE_INTERVAL_MS = 1000L - (READ_SLEEP_DURATION / 2.0).roundToLong()
 
         // Static variable to hold the buffer
         var sharedAudioDataToSave: ByteArray? = null
@@ -266,9 +269,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         }
 
         val audioSource = if (isRecordingCallAudio) {
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            MediaRecorder.AudioSource.VOICE_CALL
         } else {
-            MediaRecorder.AudioSource.MIC
+            MediaRecorder.AudioSource.VOICE_RECOGNITION
         }
 
         val audioFormat = AudioFormat.Builder().setEncoding(config.bitDepth.encodingEnum)
@@ -307,11 +310,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 recorder?.startRecording() // Start recording
                 Log.d(logTag, "Recording thread started")
                 while (isRecording.get()) {
+                    Thread.sleep(READ_SLEEP_DURATION)
                     // Blocking read in chunks of the size equal to the audio recorder's internal audioDataStorage.
                     // Waits for readChunkSize to be available
                     val readDataChunk = ByteArray(readChunkSize)
                     val readResult = recorder?.read(
-                        readDataChunk, 0, readChunkSize, READ_BLOCKING
+                        readDataChunk, 0, readChunkSize, READ_NON_BLOCKING
                     ) ?: -1
 
                     Log.d(
@@ -609,7 +613,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         val recordingNotification =
             NotificationCompat.Builder(this, CHRONIC_NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("Recording Recent Audio")
+                .setContentTitle("Buffered Recent Audio")
                 .setContentText(if (isRecording.get()) "Running...\n" else "Stopped.\n")
                 .setContentText(
                     "${

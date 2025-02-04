@@ -52,7 +52,7 @@ class FileSavingService : Service() {
             )
             var (title, text, icon) = if (savedFileUri != null) {
                 Triple(
-                    "Audio Saved and Cleared",
+                    "Audio saved to file",
                     "The recent audio buffer has been saved and cleared.",
                     R.drawable.file_save_success
                 )

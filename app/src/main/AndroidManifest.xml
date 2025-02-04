@@ -3,6 +3,10 @@
         xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+<!--    <uses-permission android:name="android.permission.CAPTURE_AUDIO_OUTPUT"-->
+<!--            tools:ignore="ProtectedPermissions" />-->
+    <!--    Ignore reasoning: This permission is required to record phone calls.
+            People can already do this with phone call apps, it shouldn't be restricted to those. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
