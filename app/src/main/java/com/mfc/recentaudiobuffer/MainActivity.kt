@@ -209,7 +209,9 @@ class MainActivity : AppCompatActivity() {
                 composable("call_screen") {
                     CallScreen(
                         onNavigateToMain = { navController.navigate("main_screen") },
-                        telecomManager = telecomManager
+                        telecomManager = telecomManager,
+                        signInButtonText = authenticationManager.signInButtonText,
+                        onSignInClick = { authenticationManager.onSignInClick() },
                     )
                 }
             }

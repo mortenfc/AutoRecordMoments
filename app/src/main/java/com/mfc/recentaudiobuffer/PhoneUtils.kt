@@ -20,19 +20,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
 object PhoneUtils {
-    fun getPhoneAccountHandle(context: Context, telecomManager: TelecomManager?): PhoneAccountHandle? {
+    fun getPhoneAccountHandle(
+        context: Context, telecomManager: TelecomManager?
+    ): PhoneAccountHandle? {
         if (telecomManager == null) {
             Log.e("PhoneUtils", "TelecomManager is null")
             return null
         }
 
         if (ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_PHONE_STATE
+                context, Manifest.permission.READ_PHONE_STATE
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             Log.e("PhoneUtils", "READ_PHONE_STATE permission not granted")
@@ -48,7 +51,12 @@ object PhoneUtils {
         return null
     }
 
-    fun placeCall(context: Context, telecomManager: TelecomManager?, phoneNumber: String, phoneAccountHandle: PhoneAccountHandle?) {
+    fun placeCall(
+        context: Context,
+        telecomManager: TelecomManager?,
+        phoneNumber: String,
+        phoneAccountHandle: PhoneAccountHandle?
+    ) {
         if (telecomManager == null) {
             Log.e("PhoneUtils", "TelecomManager is null, cannot make a call")
             return
@@ -119,25 +127,30 @@ object PhoneUtils {
                 }
             }
 
-        Button(onClick = {
-            callAttempted = true
-            if (telecomManager != null) {
-                if (ContextCompat.checkSelfPermission(
-                        context, Manifest.permission.CALL_PHONE
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
-                    placeCall(context, telecomManager, phoneNumber, phoneAccountHandle)
-                } else {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        requestPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
+        CallScreenButton(
+            text = stringResource(id = R.string.make_a_call),
+            onClick = {
+                callAttempted = true
+                if (telecomManager != null) {
+                    if (ContextCompat.checkSelfPermission(
+                            context, Manifest.permission.CALL_PHONE
+                        ) == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        placeCall(context, telecomManager, phoneNumber, phoneAccountHandle)
+                    } else {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            requestPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
+                        }
                     }
+                } else {
+                    Log.e("PhoneUtils", "TelecomManager is null, cannot make a call in preview")
                 }
-            } else {
-                Log.e("PhoneUtils", "TelecomManager is null, cannot make a call in preview")
-            }
-        }) {
-            Text(text = stringResource(id = R.string.make_a_call))
-        }
+            },
+            icon = R.drawable.baseline_call_24,
+            iconTint = colorResource(id = R.color.black),
+            fillMaxWidth = true,
+            roundedCornerRadius = 20.dp
+        )
     }
 
     @Composable
@@ -150,7 +163,7 @@ object PhoneUtils {
             Log.i("PhoneUtils", "Result: ${result.resultCode}")
         }
 
-        Button(onClick = {
+        CallScreenButton(text = stringResource(id = R.string.set_as_default_dialer), onClick = {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
                 if (roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
@@ -166,13 +179,10 @@ object PhoneUtils {
             } else {
                 val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
                 intent.putExtra(
-                    TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME,
-                    context.packageName
+                    TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName
                 )
                 context.startActivity(intent)
             }
-        }) {
-            Text(text = stringResource(id = R.string.set_as_default_dialer))
-        }
+        })
     }
 }

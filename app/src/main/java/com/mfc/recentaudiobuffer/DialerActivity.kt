@@ -1,12 +1,10 @@
 package com.mfc.recentaudiobuffer
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.telecom.TelecomManager
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -121,6 +119,17 @@ class DialerActivity : ComponentActivity() {
                     }
                     PhoneUtils.MakeCallButton(telecomManager, phoneNumberState.value.text)
                 }
+                val isDefaultDialer =
+                    telecomManager?.let { PhoneUtils.isDefaultDialer(context, it) } ?: false
+
+                Log.d("CallScreen", "telecomManager = $telecomManager")
+                if (telecomManager != null && !isDefaultDialer) {
+                    PhoneUtils.SetDefaultDialerButton()
+                } else {
+                    if (isDefaultDialer) {
+                        Text(text = "Is the default dialer")
+                    }
+                }
             }
         }
     }
@@ -169,7 +178,7 @@ class DialerActivity : ComponentActivity() {
 
     @Composable
     fun DialButton(digit: String, onDigitClick: (String) -> Unit) {
-        Button(onClick = { onDigitClick(digit) }) {
+        Button(onClick = { onDigitClick(digit) }, modifier = Modifier.padding(8.dp)) {
             Text(text = digit)
         }
     }
