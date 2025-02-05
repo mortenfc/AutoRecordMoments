@@ -19,11 +19,6 @@
     <string name="reply_title">Default reply action</string>
 
     <!-- Sync Preferences -->
-    <string name="sync_title">Sync email periodically</string>
-    <string name="attachment_title">Download incoming attachments</string>
-    <string name="attachment_summary_on">Automatically download attachments for incoming emails
-    </string>
-    <string name="attachment_summary_off">Only download attachments when manually requested</string>
     <string name="settings">Configuration</string>
 
     <!-- Media -->
@@ -56,5 +51,12 @@
     <string name="ok">OK</string>
     <string name="select_directory">This app requires a default saving directory for quick saves through the notification.
         You will be prompted to pick one. </string>
+    <string name="call_screen">Recordable Calling Control Panel</string>
+    <string name="go_back_to_main">Return</string>
+    <string name="make_a_call">Call</string>
+    <string name="phone_number">Phone Number</string>
+    <string name="go_to_call_screen">To Recordable Calling</string>
+    <string name="call">Call\n</string>
+    <string name="set_as_default_dialer">Set as default call app\n</string>
 
 </resources>

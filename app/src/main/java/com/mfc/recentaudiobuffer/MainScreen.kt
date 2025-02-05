@@ -2,9 +2,6 @@ package com.mfc.recentaudiobuffer
 
 import MediaPlayerManager
 import android.annotation.SuppressLint
-import android.content.Intent
-import android.content.res.ColorStateList
-import android.graphics.drawable.RippleDrawable
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -12,11 +9,8 @@ import android.view.View.GONE
 import android.view.View.VISIBLE
 import android.widget.FrameLayout
 import android.widget.ImageButton
-import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,20 +25,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.colorResource
@@ -55,11 +44,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -68,28 +53,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.constraintlayout.compose.Dimension
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.ConstraintSet
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
-import arte.programar.materialfile.ui.FilePickerActivity
-import okhttp3.internal.wait
+import androidx.navigation.NavController
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun MainScreen(
+    navController: NavController,
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
     onStartBufferingClick: () -> Unit,
@@ -145,6 +121,14 @@ fun MainScreen(
                     text = stringResource(id = R.string.play_a_recording),
                     icon = R.drawable.baseline_play_circle_outline_24,
                     onClick = onPickAndPlayFileClick
+                )
+                Spacer(modifier = Modifier.height(30.dp))
+                MainButton(
+                    text = stringResource(id = R.string.go_to_call_screen),
+                    icon = R.drawable.baseline_call_24,
+                    onClick = { navController.navigate("call_screen") },
+                    iconTint = colorResource(id = R.color.teal_900),
+                    width = 240.dp
                 )
                 Spacer(modifier = Modifier.height(60.dp))
                 MainButton(
@@ -398,7 +382,8 @@ private fun setCloseButton(
 @Preview(showBackground = true)
 @Composable
 fun MainScreenPreview() {
-    MainScreen(mutableStateOf("Sign Out"),
+    MainScreen(navController = NavController(LocalContext.current),
+        mutableStateOf("Sign Out"),
         onStartBufferingClick = {},
         onStopBufferingClick = {},
         onResetBufferClick = {},

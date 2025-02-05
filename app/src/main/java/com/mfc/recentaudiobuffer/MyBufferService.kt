@@ -12,7 +12,6 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
-import android.media.AudioRecord.READ_BLOCKING
 import android.media.AudioRecord.READ_NON_BLOCKING
 import android.media.MediaRecorder
 import android.os.Binder
@@ -24,12 +23,12 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.runBlocking
-import java.io.DataOutputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
@@ -41,6 +40,8 @@ interface MyBufferServiceInterface {
     fun writeWavHeader(out: OutputStream, audioDataLen: Int)
     fun stopRecording()
     fun startRecording()
+    fun startCallRecording()
+    fun stopCallRecording()
     fun resetBuffer()
     fun quickSaveBuffer()
 
@@ -53,6 +54,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     private lateinit var config: AudioConfig
     private lateinit var audioDataStorage: ByteArray
+    private var myRecordingThread: Thread? = null
 
     companion object {
         const val CHRONIC_NOTIFICATION_ID = 1
@@ -67,7 +69,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         private const val REQUEST_CODE_START = 2
         private const val REQUEST_CODE_SAVE = 3
         private const val READ_SLEEP_DURATION = 300L
-        private val NOTIFICATION_UPDATE_INTERVAL_MS = 1000L - (READ_SLEEP_DURATION / 2.0).roundToLong()
+        private val NOTIFICATION_UPDATE_INTERVAL_MS =
+            1000L - (READ_SLEEP_DURATION / 2.0).roundToLong()
 
         // Static variable to hold the buffer
         var sharedAudioDataToSave: ByteArray? = null
@@ -89,7 +92,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     private val time: AtomicReference<String> = AtomicReference("00:00:00")
 
     private var recorder: AudioRecord? = null
-    private var lock: ReentrantLock = ReentrantLock()
+    private val lock: ReentrantLock = ReentrantLock()
 
     private lateinit var notificationManager: NotificationManager
     private lateinit var audioManager: AudioManager
@@ -144,28 +147,42 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         super.onTaskRemoved(rootIntent)
     }
 
+    // Flag to indicate if we are currently recording a call
     private var isRecordingCallAudio = false
+
+    // Flag to remember if we were recording before a call
+    private val wasRecordingBeforeCall = AtomicBoolean(false)
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         Log.d(logTag, "OnAudioFocusChangeListener() focusChange: $focusChange")
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // Stop or pause recording
-                Log.d(logTag, "Audio focus lost")
+                Log.d(logTag, "Audio focus lost, trying to capture VOICE_COMMUNICATION")
                 if (isRecording.get()) {
-                    stopRecording()
-                    isRecordingCallAudio = true
-                    startRecording()
+                    wasRecordingBeforeCall.set(true)
+                    if (Thread.currentThread() != myRecordingThread) {
+                        stopRecording()
+                    }
+                } else {
+                    wasRecordingBeforeCall.set(false)
                 }
+                isRecordingCallAudio = true
+                startRecording()
             }
 
             AudioManager.AUDIOFOCUS_GAIN -> {
-                // Start or resume recording
-                Log.d(logTag, "Audio focus gained")
+                Log.d(
+                    logTag,
+                    "Audio focus gained, recording normal mic with focus on VOICE_RECOGNITION"
+                )
                 if (isRecordingCallAudio) {
-                    stopRecording()
+                    if (Thread.currentThread() != myRecordingThread) {
+                        stopRecording()
+                    }
                     isRecordingCallAudio = false
-                    startRecording()
+                    if (wasRecordingBeforeCall.get()) {
+                        startRecording()
+                    }
                 }
             }
         }
@@ -259,17 +276,29 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         audioDataStorage = ByteArray(totalRingBufferSize.get())
     }
 
+    private fun stopBuffering() {
+        Log.d(logTag, "stopBuffering()")
+        isRecording.set(false)
+        if (myRecordingThread != null && myRecordingThread!!.isAlive) {
+            myRecordingThread?.join()
+        }
+    }
+
     private fun startBuffering() {
         this.syncPreferences()
 
         val micPermission =
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
         if (micPermission == PackageManager.PERMISSION_DENIED) {
+            Log.e(
+                logTag, "Audio record permission not granted, can't record..."
+            )
+            resetBuffer()
             return
         }
 
         val audioSource = if (isRecordingCallAudio) {
-            MediaRecorder.AudioSource.VOICE_CALL
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION
         } else {
             MediaRecorder.AudioSource.VOICE_RECOGNITION
         }
@@ -290,25 +319,19 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             return
         }
 
-        val permission = Manifest.permission.RECORD_AUDIO
-        val granted = PackageManager.PERMISSION_GRANTED
-
-        if (ContextCompat.checkSelfPermission(this, permission) != granted) {
-            Log.e(
-                logTag, "Audio record permission not granted, exiting the foreground service"
-            )
-            return
-        }
-
         // Permission has been granted
         recorder = AudioRecord.Builder().setAudioSource(audioSource).setAudioFormat(audioFormat)
             .setBufferSizeInBytes(readChunkSize).build()
 
         try {
-            Thread {
-                isRecording.set(true)
+            isRecording.set(true)
+            myRecordingThread = Thread {
                 recorder?.startRecording() // Start recording
-                Log.d(logTag, "Recording thread started")
+                if (recorder?.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                    Log.e(logTag, "AudioRecord failed to start recording")
+                    isRecording.set(false)
+                }
+                Log.d(logTag, "Recording thread started with source: $audioSource")
                 while (isRecording.get()) {
                     Thread.sleep(READ_SLEEP_DURATION)
                     // Blocking read in chunks of the size equal to the audio recorder's internal audioDataStorage.
@@ -386,7 +409,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 recorder?.stop()
                 recorder?.release()
                 recorder = null
-            }.start()
+            }.also { myRecordingThread = it }
+
+            myRecordingThread?.start()
         } catch (e: IllegalArgumentException) {
             Log.e(logTag, "startBuffering() failed: illegal argument", e)
             isRecording.set(false)
@@ -399,6 +424,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     override fun stopRecording() {
         Log.i(logTag, "stopRecording()")
         isRecording.set(false)
+        stopBuffering()
         updateNotification(checkTime = false)
     }
 
@@ -534,6 +560,20 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         } catch (e: Exception) {
             Log.e(logTag, "Error syncing preferences", e)
         }
+    }
+
+    override fun startCallRecording() {
+        Log.d(logTag, "startCallRecording()")
+        isRecordingCallAudio = true
+        stopRecording()
+        startRecording()
+    }
+
+    override fun stopCallRecording() {
+        Log.d(logTag, "stopCallRecording()")
+        isRecordingCallAudio = false
+        stopRecording()
+        startRecording()
     }
 
     override fun resetBuffer() {

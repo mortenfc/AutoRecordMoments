@@ -21,12 +21,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.telecom.TelecomManager
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import dagger.hilt.android.AndroidEntryPoint
@@ -48,6 +52,11 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.POST_NOTIFICATIONS,
             Manifest.permission.READ_MEDIA_AUDIO,
             Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.MANAGE_OWN_CALLS,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_CALL_LOG,
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.FOREGROUND_SERVICE,
             Manifest.permission.INTERNET,
             Manifest.permission.ACCESS_NETWORK_STATE
@@ -57,6 +66,11 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.ACCESS_NOTIFICATION_POLICY,
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.MANAGE_OWN_CALLS,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_CALL_LOG,
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.FOREGROUND_SERVICE,
             Manifest.permission.INTERNET,
             Manifest.permission.ACCESS_NETWORK_STATE
@@ -168,24 +182,36 @@ class MainActivity : AppCompatActivity() {
             Log.i(logTag, "Player is ready")
         })
 
+        val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
+
         setContent {
-            MaterialTheme {
-                MainScreen(
-                    signInButtonText = authenticationManager.signInButtonText,
-                    onSignInClick = { authenticationManager.onSignInClick() },
-                    onStartBufferingClick = { onClickStartRecording() },
-                    onStopBufferingClick = { onClickStopRecording() },
-                    onResetBufferClick = { onClickResetBuffer() },
-                    onSaveBufferClick = { onClickSaveBuffer() },
-                    onPickAndPlayFileClick = { onClickPickAndPlayFile() },
-                    onDonateClick = { onClickDonate() },
-                    onSettingsClick = { onClickSettings() },
-                    onDirectoryAlertDismiss = {
-                        FileSavingUtils.showDirectoryPermissionDialog = false
-                        pickDirectory()
-                    },
-                    mediaPlayerManager = mediaPlayerManager!!
-                )
+            val navController = rememberNavController()
+            NavHost(navController = navController, startDestination = "main_screen") {
+                composable("main_screen") {
+                    MainScreen(
+                        navController = navController,
+                        signInButtonText = authenticationManager.signInButtonText,
+                        onSignInClick = { authenticationManager.onSignInClick() },
+                        onStartBufferingClick = { onClickStartRecording() },
+                        onStopBufferingClick = { onClickStopRecording() },
+                        onResetBufferClick = { onClickResetBuffer() },
+                        onSaveBufferClick = { onClickSaveBuffer() },
+                        onPickAndPlayFileClick = { onClickPickAndPlayFile() },
+                        onDonateClick = { onClickDonate() },
+                        onSettingsClick = { onClickSettings() },
+                        onDirectoryAlertDismiss = {
+                            FileSavingUtils.showDirectoryPermissionDialog = false
+                            pickDirectory()
+                        },
+                        mediaPlayerManager = mediaPlayerManager!!
+                    )
+                }
+                composable("call_screen") {
+                    CallScreen(
+                        onNavigateToMain = { navController.navigate("main_screen") },
+                        telecomManager = telecomManager
+                    )
+                }
             }
         }
 
