@@ -1,5 +1,6 @@
 package com.mfc.recentaudiobuffer
 
+import android.os.Bundle
 import android.telecom.Call
 import android.telecom.InCallService
 import android.util.Log
@@ -17,6 +18,11 @@ class MyInCallService : InCallService() {
         super.onCallRemoved(call)
         Log.d(TAG, "onCallRemoved: $call")
         call.unregisterCallback(callCallback)
+    }
+
+    override fun onConnectionEvent(call: Call, event: String, extras: Bundle?) {
+        super.onConnectionEvent(call, event, extras)
+        Log.d(TAG, "onConnectionEvent: $event")
     }
 
     private val callCallback = object : Call.Callback() {

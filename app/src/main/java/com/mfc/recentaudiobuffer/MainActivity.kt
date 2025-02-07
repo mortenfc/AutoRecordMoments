@@ -182,39 +182,27 @@ class MainActivity : AppCompatActivity() {
             Log.i(logTag, "Player is ready")
         })
 
-        val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
-
         setContent {
-            val navController = rememberNavController()
-            NavHost(navController = navController, startDestination = "main_screen") {
-                composable("main_screen") {
-                    MainScreen(
-                        navController = navController,
-                        signInButtonText = authenticationManager.signInButtonText,
-                        onSignInClick = { authenticationManager.onSignInClick() },
-                        onStartBufferingClick = { onClickStartRecording() },
-                        onStopBufferingClick = { onClickStopRecording() },
-                        onResetBufferClick = { onClickResetBuffer() },
-                        onSaveBufferClick = { onClickSaveBuffer() },
-                        onPickAndPlayFileClick = { onClickPickAndPlayFile() },
-                        onDonateClick = { onClickDonate() },
-                        onSettingsClick = { onClickSettings() },
-                        onDirectoryAlertDismiss = {
-                            FileSavingUtils.showDirectoryPermissionDialog = false
-                            pickDirectory()
-                        },
-                        mediaPlayerManager = mediaPlayerManager!!
-                    )
-                }
-                composable("call_screen") {
-                    CallScreen(
-                        onNavigateToMain = { navController.navigate("main_screen") },
-                        telecomManager = telecomManager,
-                        signInButtonText = authenticationManager.signInButtonText,
-                        onSignInClick = { authenticationManager.onSignInClick() },
-                    )
-                }
-            }
+            MainScreen(
+                signInButtonText = authenticationManager.signInButtonText,
+                onSignInClick = { authenticationManager.onSignInClick() },
+                onStartBufferingClick = { onClickStartRecording() },
+                onStopBufferingClick = { onClickStopRecording() },
+                onResetBufferClick = { onClickResetBuffer() },
+                onSaveBufferClick = { onClickSaveBuffer() },
+                onPickAndPlayFileClick = { onClickPickAndPlayFile() },
+                onDonateClick = { onClickDonate() },
+                onSettingsClick = { onClickSettings() },
+                onCallScreenClick = {
+                    val intent = Intent(this@MainActivity, CallScreenActivity::class.java)
+                    startActivity(intent)
+                },
+                onDirectoryAlertDismiss = {
+                    FileSavingUtils.showDirectoryPermissionDialog = false
+                    pickDirectory()
+                },
+                mediaPlayerManager = mediaPlayerManager!!
+            )
         }
 
         // Check if a directory has been cached, otherwise prompt the user
@@ -246,12 +234,6 @@ class MainActivity : AppCompatActivity() {
             Intent(this, MyBufferService::class.java).also { intent ->
                 bindService(intent, foregroundBufferServiceConn, Context.BIND_AUTO_CREATE)
             }
-        } else {
-            // Start and bind to a new service
-            Log.i(logTag, "Starting and binding to a new service")
-            val serviceIntent = Intent(this, MyBufferService::class.java)
-            ContextCompat.startForegroundService(this, serviceIntent)
-            bindService(serviceIntent, foregroundBufferServiceConn, Context.BIND_AUTO_CREATE)
         }
     }
 

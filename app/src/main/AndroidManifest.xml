@@ -85,58 +85,6 @@
             </intent-filter>
         </activity>
 
-        <activity
-                android:name=".DialerActivity"
-                android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.DIAL" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <action android:name="android.intent.action.VIEW" />
-
-                <data android:scheme="tel" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.CALL" />
-                <action android:name="android.intent.action.CALL_PRIVILEGED" />
-                <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.RESPOND_VIA_MESSAGE" />
-                <category android:name="android.intent.category.DEFAULT" />
-
-                <data android:scheme="sms" />
-                <data android:scheme="smsto" />
-                <data android:scheme="mms" />
-                <data android:scheme="mmsto" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SENDTO" />
-                <category android:name="android.intent.category.DEFAULT" />
-
-                <data android:scheme="sms" />
-                <data android:scheme="smsto" />
-                <data android:scheme="mms" />
-                <data android:scheme="mmsto" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND_MULTIPLE" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity>
-
         <service android:name=".FileSavingService" />
 
         <service
@@ -147,6 +95,21 @@
         <receiver
                 android:name=".NotificationActionReceiver"
                 android:exported="false" />
+
+        <activity
+                android:name=".CallScreenActivity"
+                android:exported="true"
+                android:launchMode="singleTop">
+            <intent-filter>
+              <action android:name="android.intent.action.DIAL" />
+              <category android:name="android.intent.category.DEFAULT" />
+              <category android:name="android.intent.category.BROWSABLE" />
+              <data android:scheme="tel" />
+              <data android:scheme="sip" />
+              <data android:scheme="http" />
+              <data android:scheme="https" />
+            </intent-filter>
+        </activity>
 
         <service
                 android:name=".MyInCallService"

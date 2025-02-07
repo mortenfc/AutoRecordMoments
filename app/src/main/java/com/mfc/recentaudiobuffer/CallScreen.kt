@@ -1,7 +1,12 @@
 package com.mfc.recentaudiobuffer
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.app.role.RoleManager
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
@@ -12,7 +17,6 @@ import android.telecom.TelecomManager
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,6 +29,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -39,9 +44,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -53,19 +56,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -75,6 +76,7 @@ data class CallLogEntry(
     val number: String, val name: String?, val date: String, val type: String, val duration: String
 )
 
+@SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun CallScreen(
     onNavigateToMain: () -> Unit,
@@ -83,7 +85,9 @@ fun CallScreen(
     telecomManager: TelecomManager? = null
 ) {
     val context = LocalContext.current
-    var phoneNumber by remember { mutableStateOf("") }
+    var phoneNumberTextFieldValue by remember {
+        mutableStateOf(TextFieldValue("")) // Initialize with an empty TextFieldValue
+    }
     val recentCalls = remember { mutableStateListOf<CallLogEntry>() }
     var showCallLogDialog by remember { mutableStateOf(false) }
     val isDefaultDialer = telecomManager?.let { PhoneUtils.isDefaultDialer(context, it) } ?: false
@@ -104,65 +108,77 @@ fun CallScreen(
             title = stringResource(id = R.string.call_screen),
             signInButtonText = signInButtonText,
             onSignInClick = onSignInClick,
-            onBackButtonClicked = onNavigateToMain
+            onIconClick = onNavigateToMain
         )
-    }) { innerPadding ->
-        Column(
+    }) { paddingValues ->
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(paddingValues)
+                .padding(start = 40.dp, end = 40.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center // Center content initially
         ) {
-            Spacer(modifier = Modifier.height(5.dp))
+            item {
+                Spacer(modifier = Modifier.height(5.dp))
 
-            OutlinedTextField(value = phoneNumber,
-                onValueChange = { phoneNumber = it },
-                label = { Text("Enter Phone Number") },
-                modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = colorResource(id = R.color.purple_accent),
-                    unfocusedBorderColor = colorResource(id = R.color.purple_accent),
+                OutlinedTextField(
+                    value = phoneNumberTextFieldValue,
+                    onValueChange = { phoneNumberTextFieldValue = it },
+                    label = { Text("Enter Phone Number") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = colorResource(id = R.color.purple_accent),
+                        unfocusedBorderColor = colorResource(id = R.color.purple_accent),
+                        focusedLabelColor = colorResource(id = R.color.teal_700),
+                        unfocusedLabelColor = colorResource(id = R.color.teal_900),
+                        cursorColor = colorResource(id = R.color.black)
+                    ),
                 )
-            )
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            DigitSelector(onDigitClick = { digit ->
-                phoneNumber += digit
-            })
+                DigitSelector(onDigitClick = { digit ->
+                    val newText = phoneNumberTextFieldValue.text + digit
+                    phoneNumberTextFieldValue = TextFieldValue(
+                        text = newText,
+                        selection = TextRange(newText.length) // Set cursor to the end
+                    )
+                })
 
-            Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            PhoneUtils.MakeCallButton(telecomManager = telecomManager, phoneNumber = phoneNumber)
+                MakeCallButton(
+                    telecomManager = telecomManager, phoneNumber = phoneNumberTextFieldValue.text
+                )
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(26.dp))
 
-            CallScreenButton(text = "Load Recent Calls", onClick = {
-                showCallLogDialog = true
-                if (ContextCompat.checkSelfPermission(
-                        context, Manifest.permission.READ_CALL_LOG
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
-                    recentCalls.clear()
-                    recentCalls.addAll(getCallLog(context))
-                } else {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        requestCallLogPermissionLauncher.launch(Manifest.permission.READ_CALL_LOG)
+                CallScreenButton(text = "Load Recent Calls", onClick = {
+                    showCallLogDialog = true
+                    if (ContextCompat.checkSelfPermission(
+                            context, Manifest.permission.READ_CALL_LOG
+                        ) == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        recentCalls.clear()
+                        recentCalls.addAll(getCallLog(context))
+                    } else {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            requestCallLogPermissionLauncher.launch(Manifest.permission.READ_CALL_LOG)
+                        }
                     }
-                }
-            })
+                }, icon = R.drawable.baseline_checklist_24, iconTint = Color.White)
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            Log.d("CallScreen", "telecomManager = $telecomManager")
-            if (telecomManager != null && !isDefaultDialer) {
-                PhoneUtils.SetDefaultDialerButton()
-            } else {
-                if (isDefaultDialer) {
+                Log.d("CallScreen", "telecomManager = $telecomManager")
+                if (!isDefaultDialer) {
+                    SetDefaultDialerButton()
+                } else {
                     Text(text = "Is the default dialer")
                 }
-            }
+                Spacer(modifier = Modifier.height(8.dp))
+            } // End of the "item" block
         }
     }
 
@@ -173,7 +189,10 @@ fun CallScreen(
             LazyColumn(modifier = Modifier.fillMaxWidth()) {
                 items(recentCalls) { call ->
                     CallLogItem(call = call, onCallClick = { selectedNumber ->
-                        phoneNumber = selectedNumber
+                        phoneNumberTextFieldValue = TextFieldValue(
+                            text = selectedNumber,
+                            selection = TextRange(selectedNumber.length) // Cursor at the end
+                        )
                         showCallLogDialog = false
                     })
                 }
@@ -209,17 +228,20 @@ fun DigitSelector(onDigitClick: (String) -> Unit) {
     )
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(bottom = 10.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(270.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+        contentPadding = PaddingValues(top = 0.dp, bottom = 0.dp),
     ) {
         items(digits) { digit ->
             CallScreenButton(
                 text = digit,
                 onClick = { onDigitClick(digit) },
-                fillMaxWidth = true,
-                roundedCornerRadius = 14.dp
+                widthModifier = Modifier.fillMaxWidth(),
+                roundedCornerRadius = 18.dp,
+                bottomPadding = 10.dp,
             )
         }
     }
@@ -283,6 +305,102 @@ fun getContactName(context: Context, phoneNumber: String): String? {
     return contactName
 }
 
+
+@Composable
+fun MakeCallButton(telecomManager: TelecomManager?, phoneNumber: String) {
+    val context = LocalContext.current
+    var callAttempted by remember { mutableStateOf(false) }
+
+    val phoneAccountHandle = PhoneUtils.getPhoneAccountHandle(context, telecomManager)
+
+    val requestPermissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
+            if (isGranted) {
+                Log.i("CallScreen", "Permission granted")
+                if (callAttempted) {
+                    PhoneUtils.placeCall(context, telecomManager, phoneNumber, phoneAccountHandle)
+                }
+            } else {
+                Log.i("CallScreen", "Permission denied")
+            }
+        }
+
+    CallScreenButton(
+        text = stringResource(id = R.string.make_a_call),
+        onClick = {
+            callAttempted = true
+            if (telecomManager != null) {
+                if (ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.CALL_PHONE
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
+                    PhoneUtils.placeCall(context, telecomManager, phoneNumber, phoneAccountHandle)
+                } else {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        requestPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
+                    }
+                }
+            } else {
+                Log.e("CallScreen", "TelecomManager is null, cannot make a call in preview")
+            }
+        },
+        icon = R.drawable.baseline_call_24,
+        iconTint = colorResource(id = R.color.black),
+        width = 100.dp,
+        roundedCornerRadius = 60.dp,
+        contentPadding = 18.dp
+    )
+}
+
+@Composable
+fun SetDefaultDialerButton() {
+    val context = LocalContext.current
+    val requestRoleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            Log.i("CallScreen", "Successfully set as default dialer")
+        } else if (result.resultCode == Activity.RESULT_CANCELED) {
+            Log.i("CallScreen", "User canceled setting as default dialer")
+        } else {
+            Log.e("CallScreen", "Failed to set as default dialer")
+        }
+    }
+
+    CallScreenButton(
+        text = stringResource(id = R.string.set_as_default_dialer),
+        onClick = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
+                if (roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
+                    if (!roleManager.isRoleHeld(RoleManager.ROLE_DIALER)) {
+                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+                        requestRoleLauncher.launch(intent)
+                    } else {
+                        Log.i("CallScreen", "Already default dialer")
+                    }
+                } else {
+                    Log.e("CallScreen", "Dialer role not available")
+                }
+            } else {
+                val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
+                intent.putExtra(
+                    TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName
+                )
+                try {
+                    context.startActivity(intent)
+                } catch (e: ActivityNotFoundException) {
+                    Log.e("CallScreen", "No activity found to handle ACTION_CHANGE_DEFAULT_DIALER")
+                }
+            }
+        },
+        widthModifier = Modifier.wrapContentWidth(),
+        contentPadding = 16.dp,
+        icon = R.drawable.baseline_check_circle_24,
+        iconTint = Color.Green
+    )
+}
+
 @Composable
 fun CallScreenButton(
     text: String,
@@ -290,23 +408,24 @@ fun CallScreenButton(
     icon: Int? = null,
     iconTint: Color = colorResource(id = R.color.teal_900),
     width: Dp = 180.dp,
-    fillMaxWidth: Boolean = false,
+    widthModifier: Modifier? = null,
     enabled: Boolean = true,
     contentPadding: Dp = 16.dp,
-    roundedCornerRadius: Dp = 8.dp
+    roundedCornerRadius: Dp = 8.dp,
+    bottomPadding: Dp = 30.dp
 ) {
     Button(
         onClick = onClick,
         modifier = Modifier
             .then(
-                if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier.width(width)
+                widthModifier ?: Modifier.width(width)
             )
-            .padding(bottom = 30.dp)
+            .padding(bottom = bottomPadding, top = 0.dp)
             .drawBehind {
                 val shadowColor = Color.Black
                 val transparentColor = Color.Transparent
-                val shadowRadius = 6.dp.toPx()
-                val offset = 3.dp.toPx() // Offset downwards
+                val shadowRadius = 8.dp.toPx()
+                val offset = shadowRadius / 2 // Offset downwards
 
                 val paint = Paint().apply {
                     this.color = transparentColor
@@ -324,8 +443,8 @@ fun CallScreenButton(
                         top = offset, // Anchor is 0
                         right = size.width,
                         bottom = size.height, // Draw to the bottom of the button
-                        radiusX = 4.dp.toPx(),
-                        radiusY = 4.dp.toPx(),
+                        radiusX = roundedCornerRadius.toPx(),
+                        radiusY = roundedCornerRadius.toPx(),
                         paint = paint
 
                     )
@@ -353,7 +472,20 @@ fun CallScreenButton(
                 tint = iconTint,
                 modifier = Modifier.size(24.dp)
             )
+            Spacer(modifier = Modifier.width(6.dp))
         }
         Text(text = text)
     }
+}
+
+@SuppressLint("UnrememberedMutableState")
+@Composable
+@Preview
+fun CallScreenPreview() {
+    CallScreen(
+        onNavigateToMain = { },
+        telecomManager = null,
+        signInButtonText = mutableStateOf("Sign In"),
+        onSignInClick = {},
+    )
 }

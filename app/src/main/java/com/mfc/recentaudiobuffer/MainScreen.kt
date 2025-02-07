@@ -65,7 +65,6 @@ import androidx.navigation.NavController
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun MainScreen(
-    navController: NavController,
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
     onStartBufferingClick: () -> Unit,
@@ -75,8 +74,10 @@ fun MainScreen(
     onPickAndPlayFileClick: () -> Unit,
     onDonateClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onCallScreenClick: () -> Unit,
     onDirectoryAlertDismiss: () -> Unit,
-    mediaPlayerManager: MediaPlayerManager
+    mediaPlayerManager: MediaPlayerManager,
+    isPreview: Boolean = false
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
@@ -122,15 +123,15 @@ fun MainScreen(
                     icon = R.drawable.baseline_play_circle_outline_24,
                     onClick = onPickAndPlayFileClick
                 )
-                Spacer(modifier = Modifier.height(30.dp))
+                Spacer(modifier = Modifier.height(15.dp))
                 MainButton(
                     text = stringResource(id = R.string.go_to_call_screen),
                     icon = R.drawable.baseline_call_24,
-                    onClick = { navController.navigate("call_screen") },
-                    iconTint = colorResource(id = R.color.teal_900),
+                    onClick = onCallScreenClick,
+                    iconTint = colorResource(id = R.color.black),
                     width = 240.dp
                 )
-                Spacer(modifier = Modifier.height(60.dp))
+                Spacer(modifier = Modifier.height(15.dp))
                 MainButton(
                     text = stringResource(id = R.string.donate_and_remove_ads),
                     icon = R.drawable.dollar,
@@ -139,7 +140,10 @@ fun MainScreen(
                     width = 260.dp
                 )
             }
-            PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
+            if (!isPreview)
+            {
+               PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
+            }
         })
     }
 
@@ -382,7 +386,7 @@ private fun setCloseButton(
 @Preview(showBackground = true)
 @Composable
 fun MainScreenPreview() {
-    MainScreen(navController = NavController(LocalContext.current),
+    MainScreen(
         mutableStateOf("Sign Out"),
         onStartBufferingClick = {},
         onStopBufferingClick = {},
@@ -392,8 +396,10 @@ fun MainScreenPreview() {
         onDonateClick = {},
         onSettingsClick = {},
         onSignInClick = {},
+        onCallScreenClick = {},
         onDirectoryAlertDismiss = {},
-        mediaPlayerManager = MediaPlayerManager(LocalContext.current) {})
+        mediaPlayerManager = MediaPlayerManager(LocalContext.current) {},
+        isPreview = true)
 }
 
 @Preview(showBackground = true)

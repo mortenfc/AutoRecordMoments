@@ -1,7 +1,9 @@
 package com.mfc.recentaudiobuffer
 
 import android.Manifest
+import android.app.Activity
 import android.app.role.RoleManager
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,6 +14,8 @@ import android.telecom.TelecomManager
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
@@ -79,14 +84,6 @@ object PhoneUtils {
         }
     }
 
-    fun getTelecomManager(context: Context): TelecomManager? {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-        } else {
-            null
-        }
-    }
-
     fun isDefaultDialer(context: Context, telecomManager: TelecomManager): Boolean {
         val isDefault = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val result = telecomManager.defaultDialerPackage == context.packageName
@@ -106,83 +103,5 @@ object PhoneUtils {
             result
         }
         return isDefault
-    }
-
-    @Composable
-    fun MakeCallButton(telecomManager: TelecomManager?, phoneNumber: String) {
-        val context = LocalContext.current
-        var callAttempted by remember { mutableStateOf(false) }
-
-        val phoneAccountHandle = getPhoneAccountHandle(context, telecomManager)
-
-        val requestPermissionLauncher =
-            rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-                if (isGranted) {
-                    Log.i("PhoneUtils", "Permission granted")
-                    if (callAttempted) {
-                        placeCall(context, telecomManager, phoneNumber, phoneAccountHandle)
-                    }
-                } else {
-                    Log.i("PhoneUtils", "Permission denied")
-                }
-            }
-
-        CallScreenButton(
-            text = stringResource(id = R.string.make_a_call),
-            onClick = {
-                callAttempted = true
-                if (telecomManager != null) {
-                    if (ContextCompat.checkSelfPermission(
-                            context, Manifest.permission.CALL_PHONE
-                        ) == PackageManager.PERMISSION_GRANTED
-                    ) {
-                        placeCall(context, telecomManager, phoneNumber, phoneAccountHandle)
-                    } else {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            requestPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
-                        }
-                    }
-                } else {
-                    Log.e("PhoneUtils", "TelecomManager is null, cannot make a call in preview")
-                }
-            },
-            icon = R.drawable.baseline_call_24,
-            iconTint = colorResource(id = R.color.black),
-            fillMaxWidth = true,
-            roundedCornerRadius = 20.dp
-        )
-    }
-
-    @Composable
-    fun SetDefaultDialerButton() {
-        val context = LocalContext.current
-        val requestRoleLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
-            // Handle the result if needed
-            Log.i("PhoneUtils", "Result: ${result.resultCode}")
-        }
-
-        CallScreenButton(text = stringResource(id = R.string.set_as_default_dialer), onClick = {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
-                if (roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
-                    if (!roleManager.isRoleHeld(RoleManager.ROLE_DIALER)) {
-                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
-                        requestRoleLauncher.launch(intent)
-                    } else {
-                        Log.i("PhoneUtils", "Already default dialer")
-                    }
-                } else {
-                    Log.e("PhoneUtils", "Dialer role not available")
-                }
-            } else {
-                val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
-                intent.putExtra(
-                    TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName
-                )
-                context.startActivity(intent)
-            }
-        })
     }
 }
