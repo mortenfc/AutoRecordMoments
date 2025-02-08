@@ -2,6 +2,7 @@ package com.mfc.recentaudiobuffer
 
 import MediaPlayerManager
 import android.Manifest
+import android.app.AlertDialog
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -21,16 +22,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
-import android.telecom.TelecomManager
+import android.provider.Settings
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.material3.MaterialTheme
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import dagger.hilt.android.AndroidEntryPoint
@@ -47,35 +45,38 @@ class MainActivity : AppCompatActivity() {
     private var isPickAndPlayFileRunning = false
     private var wasStartRecordingButtonPress = false
 
-    private val requiredPermissions = if (Build.VERSION.SDK_INT >= 33) {
-        mutableListOf(
-            Manifest.permission.POST_NOTIFICATIONS,
-            Manifest.permission.READ_MEDIA_AUDIO,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.MANAGE_OWN_CALLS,
-            Manifest.permission.READ_CONTACTS,
-            Manifest.permission.READ_CALL_LOG,
-            Manifest.permission.CALL_PHONE,
-            Manifest.permission.READ_PHONE_STATE,
-            Manifest.permission.FOREGROUND_SERVICE,
-            Manifest.permission.INTERNET,
-            Manifest.permission.ACCESS_NETWORK_STATE
-        )
+    private val basePermissions = mutableListOf(
+        Manifest.permission.RECORD_AUDIO,
+        Manifest.permission.FOREGROUND_SERVICE,
+        Manifest.permission.INTERNET,
+        Manifest.permission.ACCESS_NETWORK_STATE
+    )
+
+    private val requiredPermissions = basePermissions + if (Build.VERSION.SDK_INT >= 33) {
+        if (Build.VERSION.SDK_INT >= 34) {
+            mutableListOf(
+                Manifest.permission.POST_NOTIFICATIONS,
+                Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
+            )
+        } else {
+            mutableListOf(
+                Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.READ_MEDIA_AUDIO
+            )
+        }
     } else {
         mutableListOf(
             Manifest.permission.ACCESS_NOTIFICATION_POLICY,
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.MANAGE_OWN_CALLS,
-            Manifest.permission.READ_CONTACTS,
-            Manifest.permission.READ_CALL_LOG,
-            Manifest.permission.CALL_PHONE,
-            Manifest.permission.READ_PHONE_STATE,
-            Manifest.permission.FOREGROUND_SERVICE,
-            Manifest.permission.INTERNET,
-            Manifest.permission.ACCESS_NETWORK_STATE
+            Manifest.permission.READ_EXTERNAL_STORAGE
         )
     }
+
+    private val callingPermissions = requiredPermissions + mutableListOf(
+        Manifest.permission.MANAGE_OWN_CALLS,
+        Manifest.permission.READ_CONTACTS,
+        Manifest.permission.READ_CALL_LOG,
+        Manifest.permission.CALL_PHONE,
+        Manifest.permission.READ_PHONE_STATE,
+    )
 
     private var mediaPlayerManager: MediaPlayerManager? = null
 
@@ -167,12 +168,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(logTag, "onCreate(): Build.VERSION.SDK_INT: ${Build.VERSION.SDK_INT}")
-        if (Build.VERSION.SDK_INT >= 34) {
-            requiredPermissions.add(Manifest.permission.FOREGROUND_SERVICE_MICROPHONE)
-        }
-        if (Build.VERSION.SDK_INT < 33) {
-            requiredPermissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
 
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
 
@@ -194,8 +189,10 @@ class MainActivity : AppCompatActivity() {
                 onDonateClick = { onClickDonate() },
                 onSettingsClick = { onClickSettings() },
                 onCallScreenClick = {
-                    val intent = Intent(this@MainActivity, CallScreenActivity::class.java)
-                    startActivity(intent)
+                    getPermissionsAndThen(callingPermissions) {
+                        val intent = Intent(this@MainActivity, CallScreenActivity::class.java)
+                        startActivity(intent)
+                    }
                 },
                 onDirectoryAlertDismiss = {
                     FileSavingUtils.showDirectoryPermissionDialog = false
@@ -285,7 +282,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onClickStartRecording() {
-        if (haveAllPermissions(requiredPermissions)) {
+        getPermissionsAndThen(requiredPermissions) {
             if (!foregroundBufferServiceConn.isBound) {
                 wasStartRecordingButtonPress = true
                 this.startForegroundService(foregroundServiceAudioBuffer)
@@ -305,11 +302,6 @@ class MainActivity : AppCompatActivity() {
                     this, "Restarted buffering in the background", Toast.LENGTH_LONG
                 ).show()
             }
-        } else {
-            getPermissions()
-            Toast.makeText(
-                this, "Accept the permissions and then start again", Toast.LENGTH_LONG
-            ).show()
         }
     }
 
@@ -369,19 +361,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onClickPickAndPlayFile() {
-        if (haveAllPermissions(requiredPermissions)) {
-            pickAndPlayFile()
-        } else {
-            getPermissions()
-            Toast.makeText(
-                this, "Accept the permissions and then try again", Toast.LENGTH_LONG
-            ).show()
-        }
+        getPermissionsAndThen(requiredPermissions) { pickAndPlayFile() }
     }
 
     private fun onClickDonate() {
-        val intent = Intent(this, DonationActivity::class.java)
-        startActivity(intent)
+        getPermissionsAndThen(requiredPermissions) {
+            val intent = Intent(this, DonationActivity::class.java)
+            startActivity(intent)
+        }
     }
 
     private fun createNotificationChannels() {
@@ -398,48 +385,80 @@ class MainActivity : AppCompatActivity() {
         notificationManager.createNotificationChannels(listOf(resultChannel))
     }
 
-    private fun haveAllPermissions(permissions: MutableList<String>): Boolean {
-        for (permission in permissions) {
-            if (PackageManager.PERMISSION_GRANTED != checkSelfPermission(permission)) {
-                Log.i(logTag, "FALSE haveAllPermissions()")
-                return false
+    private var pendingPermissions: Array<String>? = null // Store pending permissions
+
+    private val multiplePermissionsLauncher: ActivityResultLauncher<Array<String>> =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            val deniedPermissions = permissions.entries.filter { !it.value }.map { it.key }
+
+            if (deniedPermissions.isEmpty()) {
+                // All permissions granted
+                onPermissionsGrantedCallback?.invoke()
+            } else {
+                val wasTemporarilyDenied = deniedPermissions.any {
+                    ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+                }
+
+                if (wasTemporarilyDenied) {
+                    pendingPermissions = deniedPermissions.toTypedArray()
+
+                    AlertDialog.Builder(this).setTitle("Permissions Required")
+                        .setMessage("These permissions are needed. Please grant them.")
+                        .setPositiveButton("OK") { _, _ ->
+                            pendingPermissions?.let {
+                                requestPermissionsAgain(it) // Call a separate function
+                                pendingPermissions = null
+                            }
+                        }.setNegativeButton("Cancel") { dialog, _ ->
+                            dialog.dismiss()
+                            pendingPermissions = null
+                        }.show()
+
+                } else {
+                    // "Don't ask again" was checked and permission denied
+                    Toast.makeText(
+                        this,
+                        "Permissions are required. Please grant them in app settings.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    val intent = Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", packageName, null)
+                    )
+                    startActivity(intent)
+                    pendingPermissions = null // Clear pending permissions
+                }
             }
+            onPermissionsGrantedCallback = null // Reset the callback after it's been used.
         }
 
-        Log.i(logTag, "TRUE haveAllPermissions()")
-        return true
+    private fun requestPermissionsAgain(permissions: Array<String>) {
+        multiplePermissionsLauncher.launch(permissions)
     }
 
+    private var onPermissionsGrantedCallback: (() -> Unit)? = null // Store the callback
 
-    private lateinit var permissionIn: String
+    private fun getPermissionsAndThen(
+        permissions: List<String>, onPermissionsGranted: () -> Unit
+    ) {
+        Log.i(logTag, "getPermissionsAndThen()")
+        onPermissionsGrantedCallback = onPermissionsGranted // Store the callback
 
-    private val permissionLauncher: ActivityResultLauncher<String> = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
-            Toast.makeText(
-                this, "$permissionIn permission granted!", Toast.LENGTH_SHORT
-            ).show()
+        val permissionsToRequest = permissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }.toTypedArray()
+
+        if (permissionsToRequest.isNotEmpty()) {
+            multiplePermissionsLauncher.launch(permissionsToRequest)
         } else {
-            Toast.makeText(
-                this, "$permissionIn required for app to work", Toast.LENGTH_LONG
-            ).show()
-        }
-    }
-
-    private fun getPermissions() {
-        Log.i(logTag, "getPermissions()")
-        for (permission in requiredPermissions) {
-            if (PackageManager.PERMISSION_GRANTED != checkSelfPermission(permission)) {
-                permissionIn = permission
-                permissionLauncher.launch(
-                    permissionIn
-                )
-            }
+            Log.i(logTag, "All permissions already granted.")
+            onPermissionsGrantedCallback?.invoke() // Call the callback immediately
+            onPermissionsGrantedCallback = null // Reset the callback
         }
 
-        Log.i(logTag, "done getPermissions()")
+        Log.i(logTag, "done getPermissionsAndThen()")
     }
+
 
     private fun closeMediaPlayer() {
         mediaPlayerManager?.closeMediaPlayer()
