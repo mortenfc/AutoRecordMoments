@@ -305,7 +305,6 @@ fun getContactName(context: Context, phoneNumber: String): String? {
     return contactName
 }
 
-
 @Composable
 fun MakeCallButton(telecomManager: TelecomManager?, phoneNumber: String) {
     val context = LocalContext.current
@@ -318,6 +317,13 @@ fun MakeCallButton(telecomManager: TelecomManager?, phoneNumber: String) {
             if (isGranted) {
                 Log.i("CallScreen", "Permission granted")
                 if (callAttempted) {
+                    // Launch the Outgoing Call Screen
+                    val intent = Intent(context, IncomingCallFullScreenActivity::class.java).apply {
+                        putExtra("phoneNumber", phoneNumber)
+                        putExtra("isIncomingCall", false)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
                     PhoneUtils.placeCall(context, telecomManager, phoneNumber, phoneAccountHandle)
                 }
             } else {
@@ -331,9 +337,17 @@ fun MakeCallButton(telecomManager: TelecomManager?, phoneNumber: String) {
             callAttempted = true
             if (telecomManager != null) {
                 if (ContextCompat.checkSelfPermission(
-                        context, Manifest.permission.CALL_PHONE
+                        context,
+                        Manifest.permission.CALL_PHONE
                     ) == PackageManager.PERMISSION_GRANTED
                 ) {
+                    // Launch the Outgoing Call Screen
+                    val intent = Intent(context, IncomingCallFullScreenActivity::class.java).apply {
+                        putExtra("phoneNumber", phoneNumber)
+                        putExtra("isIncomingCall", false)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
                     PhoneUtils.placeCall(context, telecomManager, phoneNumber, phoneAccountHandle)
                 } else {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

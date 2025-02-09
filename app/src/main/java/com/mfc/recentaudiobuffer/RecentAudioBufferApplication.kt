@@ -6,6 +6,7 @@ import dagger.hilt.android.HiltAndroidApp
 
 class SharedViewModel : ViewModel() {
     var myBufferService: MyBufferServiceInterface? = null
+    var myInCallService: MyInCallServiceInterface? = null
 }
 
 @HiltAndroidApp
@@ -16,8 +17,8 @@ class RecentAudioBufferApplication : Application() {
         lateinit var instance: RecentAudioBufferApplication
             private set
 
-        fun getSharedViewModel(application: Application): SharedViewModel {
-            return (application as RecentAudioBufferApplication).sharedViewModel
+        fun getSharedViewModel(): SharedViewModel {
+            return instance.sharedViewModel
         }
     }
 

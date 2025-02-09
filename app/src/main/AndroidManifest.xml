@@ -70,6 +70,15 @@
          App won't be used by chromeOS -->
 
         <activity
+                android:name=".IncomingCallFullScreenActivity"
+                android:exported="false"
+                android:launchMode="singleTop"
+                android:screenOrientation="portrait"
+                tools:ignore="DiscouragedApi,LockedOrientationActivity" />
+        <!-- ignore reasoning: UI breaks when rotated to landscape mode.
+         App won't be used by chromeOS -->
+
+        <activity
                 android:name=".MainActivity"
                 android:exported="true"
                 android:launchMode="singleTop"
@@ -99,25 +108,28 @@
         <activity
                 android:name=".CallScreenActivity"
                 android:exported="true"
-                android:launchMode="singleTop">
-            <intent-filter>
-              <action android:name="android.intent.action.DIAL" />
-              <category android:name="android.intent.category.DEFAULT" />
-              <category android:name="android.intent.category.BROWSABLE" />
-              <data android:scheme="tel" />
-              <data android:scheme="sip" />
-              <data android:scheme="http" />
-              <data android:scheme="https" />
-            </intent-filter>
+                android:launchMode="singleTop"
+                android:theme="@style/Theme.RecentAudioBuffer"
+                android:screenOrientation="portrait"
+                tools:ignore="DiscouragedApi,LockedOrientationActivity">
+          <intent-filter>
+               <action android:name="android.intent.action.DIAL" />
+               <category android:name="android.intent.category.DEFAULT" />
+          </intent-filter>
+          <intent-filter>
+               <action android:name="android.intent.action.DIAL" />
+               <category android:name="android.intent.category.DEFAULT" />
+               <data android:scheme="tel" />
+          </intent-filter>
         </activity>
 
         <service
                 android:name=".MyInCallService"
-                android:exported="true"
-                android:permission="android.permission.BIND_INCALL_SERVICE">
+                android:permission="android.permission.BIND_INCALL_SERVICE"
+                android:exported="true">
             <meta-data
                     android:name="android.telecom.IN_CALL_SERVICE_UI"
-                    android:value="false" /> <!--  Use system UI for calls-->
+                    android:value="true" /> <!-- Custom UI required to be default call app -->
             <meta-data
                     android:name="android.telecom.IN_CALL_SERVICE_RINGING"
                     android:value="true" />

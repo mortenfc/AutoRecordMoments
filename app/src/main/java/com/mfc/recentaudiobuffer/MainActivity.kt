@@ -40,10 +40,12 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var authenticationManager: AuthenticationManager
+
     private val settingsViewModel: SettingsViewModel by viewModels()
     private var myBufferService: MyBufferServiceInterface? = null
     private var isPickAndPlayFileRunning = false
     private var wasStartRecordingButtonPress = false
+    private var wasCallScreenButtonPress = false
 
     private val basePermissions = mutableListOf(
         Manifest.permission.RECORD_AUDIO,
@@ -90,11 +92,18 @@ class MainActivity : AppCompatActivity() {
             this.service = binder.getService()
             myBufferService = this.service
             this.isBound = true
-            RecentAudioBufferApplication.getSharedViewModel(this@MainActivity.applicationContext as Application).myBufferService =
+            RecentAudioBufferApplication.getSharedViewModel().myBufferService =
                 this.service
             if (wasStartRecordingButtonPress) {
-                myBufferService?.startRecording()
+                myBufferService!!.startRecording()
                 wasStartRecordingButtonPress = false
+            }
+            if (wasCallScreenButtonPress) {
+                getPermissionsAndThen(callingPermissions) {
+                    val intent = Intent(this@MainActivity, CallScreenActivity::class.java)
+                    startActivity(intent)
+                    wasCallScreenButtonPress = false
+                }
             }
             Log.d(logTag, "onServiceConnect()")
         }
@@ -134,7 +143,7 @@ class MainActivity : AppCompatActivity() {
                 // If we have a buffer, prompt to save it
                 if (myBufferService != null) {
                     FileSavingUtils.promptSaveFileName(
-                        this@MainActivity, it, myBufferService!!.getBuffer()
+                        it, myBufferService!!.getBuffer()
                     )
                 }
             }
@@ -188,12 +197,7 @@ class MainActivity : AppCompatActivity() {
                 onPickAndPlayFileClick = { onClickPickAndPlayFile() },
                 onDonateClick = { onClickDonate() },
                 onSettingsClick = { onClickSettings() },
-                onCallScreenClick = {
-                    getPermissionsAndThen(callingPermissions) {
-                        val intent = Intent(this@MainActivity, CallScreenActivity::class.java)
-                        startActivity(intent)
-                    }
-                },
+                onCallScreenClick = { onClickCallScreen() },
                 onDirectoryAlertDismiss = {
                     FileSavingUtils.showDirectoryPermissionDialog = false
                     pickDirectory()
@@ -344,7 +348,7 @@ class MainActivity : AppCompatActivity() {
                 if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, prevGrantedUri)) {
                     // Use previously permitted cached uri
                     FileSavingUtils.promptSaveFileName(
-                        this@MainActivity, prevGrantedUri!!, myBufferService!!.getBuffer()
+                        prevGrantedUri!!, myBufferService!!.getBuffer()
                     )
                 } else {
                     // Otherwise get and store file saving location permission
@@ -368,6 +372,25 @@ class MainActivity : AppCompatActivity() {
         getPermissionsAndThen(requiredPermissions) {
             val intent = Intent(this, DonationActivity::class.java)
             startActivity(intent)
+        }
+    }
+
+    private fun onClickCallScreen() {
+        if (!foregroundBufferServiceConn.isBound) {
+            wasCallScreenButtonPress = true
+            this.startForegroundService(foregroundServiceAudioBuffer)
+            bindService(
+                Intent(this, MyBufferService::class.java),
+                foregroundBufferServiceConn,
+                BIND_AUTO_CREATE
+            )
+            Log.d(logTag, "Buffer service started and bound")
+        } else {
+            getPermissionsAndThen(callingPermissions) {
+                val intent = Intent(this@MainActivity, CallScreenActivity::class.java)
+                startActivity(intent)
+                wasCallScreenButtonPress = false
+            }
         }
     }
 

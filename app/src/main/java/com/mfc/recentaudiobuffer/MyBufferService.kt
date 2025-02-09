@@ -397,8 +397,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                             "AudioRecord bad value. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $minReadChunkSize)"
                         )
                     } else if (recorder?.state == AudioRecord.RECORDSTATE_STOPPED) {
-                        Log.e(logTag, "AudioRecord stopped unexpectedly")
-                        isRecording.set(false)
+                        Log.w(logTag, "AudioRecord stopped unexpectedly")
                     } else {
                         Log.e(
                             logTag,

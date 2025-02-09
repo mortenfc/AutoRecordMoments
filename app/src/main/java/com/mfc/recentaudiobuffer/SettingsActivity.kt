@@ -100,7 +100,7 @@ class SettingsActivity : ComponentActivity() {
                 val configAfterUpdate = settingsViewModel.config.value
                 if (configBeforeUpdate != configAfterUpdate) {
                     Log.d(logTag, "onSubmit(): Settings updated, stopping recording")
-                    RecentAudioBufferApplication.getSharedViewModel(this.applicationContext as Application).myBufferService?.stopRecording()
+                    RecentAudioBufferApplication.getSharedViewModel().myBufferService?.stopRecording()
                 }
                 hasSaved = true
             },

@@ -140,9 +140,8 @@ fun MainScreen(
                     width = 260.dp
                 )
             }
-            if (!isPreview)
-            {
-               PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
+            if (!isPreview) {
+                PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
             }
         })
     }
@@ -399,7 +398,8 @@ fun MainScreenPreview() {
         onCallScreenClick = {},
         onDirectoryAlertDismiss = {},
         mediaPlayerManager = MediaPlayerManager(LocalContext.current) {},
-        isPreview = true)
+        isPreview = true
+    )
 }
 
 @Preview(showBackground = true)

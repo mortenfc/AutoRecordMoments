@@ -30,8 +30,6 @@ class FileSavingService : Service() {
         const val RESULT_NOTIFICATION_CHANNEL_NAME = "Result of an operation"
         const val RESULT_NOTIFICATION_CHANNEL_DESCRIPTION = "A user message as a notification"
         const val ACTION_OPEN_FILE = "com.mfc.recentaudiobuffer.ACTION_OPEN_FILE"
-        const val ACTION_DELETE_NOTIFICATION =
-            "com.mfc.recentaudiobuffer.ACTION_DELETE_NOTIFICATION"
         const val EXTRA_SAVED_FILE_URI = "com.mfc.recentaudiobuffer.EXTRA_SAVED_FILE_URI"
     }
 
@@ -90,10 +88,8 @@ class FileSavingService : Service() {
             } else {
                 Log.e(logTag, "Failed to create PendingIntent to open file")
                 // Update the notification text on failure
-                if (savedFileUri != null) {
-                    text = "ERROR: Failed to open saved file..."
-                    notificationBuilder.setContentText(text)
-                }
+                text = "ERROR: Failed to open saved file..."
+                notificationBuilder.setContentText(text)
             }
 
             val notification = notificationBuilder.build()
@@ -180,14 +176,14 @@ object FileSavingUtils {
         return uri.scheme == "content" && uri.authority != null
     }
 
-    public fun cacheGrantedUri(uri: Uri) {
+    fun cacheGrantedUri(uri: Uri) {
         val sharedPrefs = RecentAudioBufferApplication.instance.getSharedPreferences(
             "MyPrefs", Context.MODE_PRIVATE
         )
         sharedPrefs.edit().putString("grantedUri", uri.toString()).apply()
     }
 
-    public fun getCachedGrantedUri(): Uri? {
+    fun getCachedGrantedUri(): Uri? {
         val sharedPrefs = RecentAudioBufferApplication.instance.getSharedPreferences(
             "MyPrefs", Context.MODE_PRIVATE
         )
@@ -237,15 +233,15 @@ object FileSavingUtils {
         }
         val success = saveFile(
             context,
-            RecentAudioBufferApplication.getSharedViewModel(context.applicationContext as Application).myBufferService!!,
+            RecentAudioBufferApplication.getSharedViewModel().myBufferService!!,
             data,
             file.uri
         )
         return if (success) file.uri else null
     }
 
-    public fun promptSaveFileName(
-        context: Context, grantedDirectoryUri: Uri, data: ByteArray
+    fun promptSaveFileName(
+        grantedDirectoryUri: Uri, data: ByteArray
     ) {
         currentGrantedDirectoryUri = grantedDirectoryUri
         currentData = data
