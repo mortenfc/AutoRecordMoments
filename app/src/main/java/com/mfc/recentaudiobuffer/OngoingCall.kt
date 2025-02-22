@@ -1,8 +1,5 @@
 package com.mfc.recentaudiobuffer
 
-import android.content.Context
-import android.media.AudioManager
-import android.net.Uri
 import android.telecom.Call
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +12,12 @@ object OngoingCall {
 
     private var _callStartTime: Long = 0L
     private val callStartTime: Long get() = _callStartTime
+
+    private var myInCallService: MyInCallService? = null
+
+    fun setMyInCallService(service: MyInCallService) {
+        myInCallService = service
+    }
 
     var name: String? = null
         private set
@@ -37,18 +40,17 @@ object OngoingCall {
             }
         }
 
-    private lateinit var audioManager: AudioManager
-
-    fun initAudioManager(context: Context) {
-        audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    }
-
     private val callback = object : Call.Callback() {
         override fun onStateChanged(call: Call, newState: Int) {
             Timber.d("Call state changed: ${PhoneUtils.getCallStateString(newState)}")
             _state.value = newState
             if (newState == Call.STATE_ACTIVE || newState == Call.STATE_DIALING || newState == Call.STATE_CONNECTING || newState == Call.STATE_RINGING) {
                 restartCallDurationTracking()
+            }
+            if (newState == Call.STATE_ACTIVE) {
+                startCallRecording()
+            } else if (newState == Call.STATE_DISCONNECTED) {
+                stopCallRecording()
             }
         }
 
@@ -67,18 +69,23 @@ object OngoingCall {
         call?.disconnect()
     }
 
-    fun hold() {
-        call?.hold()
+    fun toggleHold(on: Boolean) {
+        Timber.d("toggleHold(): $on")
+        if (on) {
+            call?.hold()
+        } else {
+            call?.unhold()
+        }
     }
 
-    fun mute() {
-        val isCurrentlyMuted = audioManager.isMicrophoneMute
-        audioManager.isMicrophoneMute = !isCurrentlyMuted
+    fun toggleMute(on: Boolean) {
+        Timber.d("toggleMute(): $on")
+        myInCallService?.toggleMute(on)
     }
 
-    fun speakerphone() {
-        val isSpeakerPhoneOn = audioManager.isSpeakerphoneOn
-        audioManager.isSpeakerphoneOn = !isSpeakerPhoneOn
+    fun toggleSpeaker(on: Boolean) {
+        Timber.d("toggleSpeaker(): $on")
+        myInCallService?.toggleSpeaker(on)
     }
 
     fun getCallDuration(): Long {
@@ -94,5 +101,15 @@ object OngoingCall {
         _callStartTime = 0L
         name = null
         phoneNumber = null
+    }
+
+    private fun startCallRecording() {
+        Timber.d("startCallRecording()")
+        RecentAudioBufferApplication.getSharedViewModel().myBufferService?.startCallRecording()
+    }
+
+    private fun stopCallRecording() {
+        Timber.d("stopCallRecording()")
+        RecentAudioBufferApplication.getSharedViewModel().myBufferService?.stopCallRecording()
     }
 }

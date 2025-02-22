@@ -29,7 +29,7 @@ class CallActivity : ComponentActivity() {
     private var connectionState by mutableIntStateOf(Call.STATE_NEW)
     private var callDuration by mutableLongStateOf(0L)
 
-    private var connectionStateJob: Job? = null // Job for the connection state updates
+    private var connectionStateJob: Job? = null
     private var ongoingCallStateJob: Job? = null
     private var callDurationJob: Job? = null
 
@@ -51,7 +51,6 @@ class CallActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         createNotificationChannel()
         handleIntent(intent)
-        OngoingCall.initAudioManager(this)
 
         setContent {
             // React on connection changes
@@ -89,15 +88,13 @@ class CallActivity : ComponentActivity() {
 
             when (connectionState) {
                 Call.STATE_ACTIVE -> {
-                    InCallScreen(
-                        name = callerName ?: "Unknown",
+                    InCallScreen(name = callerName ?: "Unknown",
                         phoneNumber = phoneNumber ?: "Unknown",
                         callDuration = callDuration,
-                        onMute = { OngoingCall.mute() },
-                        onSpeakerphone = { OngoingCall.speakerphone() },
-                        onHold = { OngoingCall.hold() },
-                        onEndCall = { OngoingCall.hangup() }
-                    )
+                        onMute = { value -> OngoingCall.toggleMute(value) },
+                        onSpeakerphone = { value -> OngoingCall.toggleSpeaker(value) },
+                        onHold = { value -> OngoingCall.toggleHold(value) },
+                        onEndCall = { OngoingCall.hangup() })
                 }
 
                 Call.STATE_RINGING -> {
@@ -107,25 +104,20 @@ class CallActivity : ComponentActivity() {
                         callDuration = callDuration,
                         onAnswer = {
                             OngoingCall.answer()
-                            super.finishAfterTransition()
                         },
                         onReject = {
                             OngoingCall.hangup()
-                            super.finishAfterTransition()
-                        }
+                        },
                     )
                 }
 
                 Call.STATE_DIALING, Call.STATE_CONNECTING -> {
-                    OutgoingCallScreen(
-                        name = callerName ?: "Unknown",
+                    OutgoingCallScreen(name = callerName ?: "Unknown",
                         phoneNumber = phoneNumber ?: "Unknown",
                         callDuration = callDuration,
                         onEndCall = {
                             OngoingCall.hangup()
-                            super.finishAfterTransition()
-                        }
-                    )
+                        })
                 }
 
                 else -> {
@@ -143,7 +135,6 @@ class CallActivity : ComponentActivity() {
         ongoingCallStateJob = lifecycleScope.launch {
             OngoingCall.state.collectLatest { state ->
                 Timber.d("OngoingCall state changed: $state")
-                // No need to call updateUi directly, Compose will recompose based on state changes
                 if (state == Call.STATE_DISCONNECTED) {
                     finish()
                 }
@@ -153,7 +144,7 @@ class CallActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        connectionStateJob?.cancel() // Important: Cancel the job when the activity is destroyed
+        connectionStateJob?.cancel()
         ongoingCallStateJob?.cancel()
         callDurationJob?.cancel()
     }
@@ -165,14 +156,22 @@ class CallActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent) {
-        if (intent.hasExtra("phoneNumber")) {
-            callerName = intent.getStringExtra("callerName")
-            phoneNumber = intent.getStringExtra("phoneNumber")
-            callHandle = Uri.fromParts("tel", phoneNumber, null)
+        callerName = if (intent.hasExtra("callerName")) {
+            intent.getStringExtra("callerName")
         } else {
-            callerName = OngoingCall.name
-            phoneNumber = OngoingCall.phoneNumber
-            callHandle = OngoingCall.call?.details?.handle
+            OngoingCall.name
+        }
+
+        phoneNumber = if (intent.hasExtra("phoneNumber")) {
+            intent.getStringExtra("phoneNumber")
+        } else {
+            OngoingCall.phoneNumber
+        }
+
+        callHandle = if (phoneNumber != null) {
+            Uri.fromParts("tel", phoneNumber, null)
+        } else {
+            OngoingCall.call?.details?.handle
         }
     }
 }

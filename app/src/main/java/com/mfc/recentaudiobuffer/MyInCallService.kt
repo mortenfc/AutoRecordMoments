@@ -2,10 +2,18 @@ package com.mfc.recentaudiobuffer
 
 import android.content.Intent
 import android.telecom.Call
+import android.telecom.CallAudioState.ROUTE_EARPIECE
+import android.telecom.CallAudioState.ROUTE_SPEAKER
 import android.telecom.InCallService
 import timber.log.Timber
 
 class MyInCallService : InCallService() {
+    override fun onCreate() {
+        super.onCreate()
+        Timber.d("onCreate")
+        OngoingCall.setMyInCallService(this)
+    }
+
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
         Timber.d("onCallAdded: $call")
@@ -24,5 +32,19 @@ class MyInCallService : InCallService() {
         if (OngoingCall.call == call) {
             OngoingCall.clear()
         }
+    }
+
+    fun toggleSpeaker(on: Boolean) {
+        Timber.d("toggleSpeaker: $on")
+        if (on) {
+            setAudioRoute(ROUTE_SPEAKER)
+        } else {
+            setAudioRoute(ROUTE_EARPIECE)
+        }
+    }
+
+    fun toggleMute(on: Boolean) {
+        Timber.d("toggleMute: $on")
+        setMuted(on)
     }
 }

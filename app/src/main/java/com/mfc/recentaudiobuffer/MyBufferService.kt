@@ -158,9 +158,11 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 // Completely lost focus, likely due to an incoming or outgoing call
                 Log.d(
-                    logTag, "AUDIOFOCUS_LOSS_TRANSIENT, restarting recording for VOICE_COMMUNICATION"
+                    logTag,
+                    "AUDIOFOCUS_LOSS_TRANSIENT, restarting recording for VOICE_COMMUNICATION, isRecordingCallAudio: $isRecordingCallAudio"
                 )
                 if (!isRecordingCallAudio) {
+                    Log.d(logTag, "Setting isRecordingCallAudio to true")
                     isRecordingCallAudio = true
                     // Restart recording with the new audio source
                     stopRecording()  // Stop recording with the previous source
@@ -173,8 +175,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             }
 
             AudioManager.AUDIOFOCUS_GAIN -> {
-                Log.d(logTag, "AUDIOFOCUS_GAIN, restarting recording for VOICE_RECOGNITION")
+                Log.d(
+                    logTag,
+                    "AUDIOFOCUS_GAIN, restarting recording for VOICE_RECOGNITION, isRecordingCallAudio: $isRecordingCallAudio"
+                )
                 if (isRecordingCallAudio) {
+                    Log.d(logTag, "Setting isRecordingCallAudio to false")
                     isRecordingCallAudio = false
                     // Restart recording with the original audio source
                     stopRecording()  // Stop recording with VOICE_COMMUNICATION

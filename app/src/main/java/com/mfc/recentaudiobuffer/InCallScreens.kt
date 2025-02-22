@@ -1,15 +1,5 @@
 package com.mfc.recentaudiobuffer
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.content.Intent
-import android.net.Uri
-import android.os.Bundle
-import android.telecom.Call
-import android.util.Log
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,11 +9,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -35,10 +24,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -150,9 +135,9 @@ fun InCallScreen(
     name: String?,
     phoneNumber: String,
     callDuration: Long,
-    onMute: () -> Unit,
-    onSpeakerphone: () -> Unit,
-    onHold: () -> Unit,
+    onMute: (Boolean) -> Unit, // Updated callback
+    onSpeakerphone: (Boolean) -> Unit, // Updated callback
+    onHold: (Boolean) -> Unit, // Updated callback
     onEndCall: () -> Unit
 ) {
     var isMuted by remember { mutableStateOf(false) }
@@ -186,42 +171,59 @@ fun InCallScreen(
         Spacer(modifier = Modifier.height(6.dp))
         Text(text = phoneNumber, fontSize = 18.sp, color = colorResource(id = R.color.teal_900))
         Spacer(modifier = Modifier.height(24.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            if (isMuted) {
-                CallScreenButton(text = "Unmute", onClick = {
-                    onMute()
-                    isMuted = false
-                })
-            } else {
-                CallScreenButton(text = "Mute", onClick = {
-                    onMute()
-                    isMuted = true
-                })
-            }
-            if (isSpeakerOn) {
-                CallScreenButton(text = "Earpiece", onClick = {
-                    onSpeakerphone()
-                    isSpeakerOn = false
-                })
-            } else {
-                CallScreenButton(text = "Speaker", onClick = {
-                    onSpeakerphone()
-                    isSpeakerOn = true
-                })
-            }
-            if (isHolding) {
-                CallScreenButton(text = "Unhold", onClick = {
-                    onHold()
-                    isHolding = false
-                })
-            } else {
-                CallScreenButton(text = "Hold", onClick = {
-                    onHold()
-                    isHolding = true
-                })
-            }
-            CallScreenButton(text = "End Call", onClick = onEndCall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            CallScreenButton(
+                text = if (isMuted) "Unmute" else "Mute",
+                onClick = {
+                    isMuted = !isMuted
+                    onMute(isMuted) // Pass the updated state
+                },
+                icon = if (isMuted) R.drawable.baseline_mic_off_24 else R.drawable.baseline_mic_24,
+                iconTint = Color.White,
+                width = 120.dp,
+                roundedCornerRadius = 60.dp,
+                contentPadding = 18.dp
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            CallScreenButton(
+                text = if (isSpeakerOn) "Earpiece" else "Speaker",
+                onClick = {
+                    isSpeakerOn = !isSpeakerOn
+                    onSpeakerphone(isSpeakerOn) // Pass the updated state
+                },
+                icon = if (isSpeakerOn) R.drawable.twotone_hearing_24 else R.drawable.outline_speaker,
+                iconTint = Color.White,
+                width = 120.dp,
+                roundedCornerRadius = 60.dp,
+                contentPadding = 18.dp
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            CallScreenButton(
+                text = if (isHolding) "Unhold" else "Hold",
+                onClick = {
+                    isHolding = !isHolding
+                    onHold(isHolding) // Pass the updated state
+                },
+                icon = if (isHolding) R.drawable.baseline_play_circle_outline_24 else R.drawable.baseline_stop_circle_24,
+                iconTint = Color.White,
+                width = 80.dp,
+                roundedCornerRadius = 40.dp,
+                contentPadding = 12.dp
+            )
         }
+        Spacer(modifier = Modifier.height(24.dp))
+        CallScreenButton(
+            text = "End Call",
+            onClick = onEndCall,
+            icon = R.drawable.exo_icon_close,
+            iconTint = Color.White,
+            width = 120.dp,
+            roundedCornerRadius = 60.dp,
+            contentPadding = 18.dp
+        )
     }
 }
 
