@@ -1,10 +1,15 @@
 package com.mfc.recentaudiobuffer
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.telecom.Call
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,7 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -30,90 +35,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-class IncomingCallFullScreenActivity : ComponentActivity() {
-    private var callerName by mutableStateOf<String?>(null)
-    private var phoneNumber by mutableStateOf<String?>(null)
-    private var callHandle by mutableStateOf<Uri?>(null)
-    private var isIncomingCall by mutableStateOf(false)
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        handleIntent(intent)
-
-        setContent {
-            var callDuration by remember { mutableLongStateOf(0L) }
-            val callStartTime =
-                if (callHandle != null) RecentAudioBufferApplication.getSharedViewModel().myInCallService?.getCallStartTime(
-                    callHandle!!
-                ) else null
-            LaunchedEffect(key1 = callStartTime) {
-                if (callStartTime != null) {
-                    while (true) {
-                        delay(1000L)
-                        callDuration = System.currentTimeMillis() - callStartTime
-                    }
-                }
-            }
-            if (isIncomingCall) {
-                IncomingCallScreen(callerName = callerName ?: "Unknown",
-                    phoneNumber = phoneNumber ?: "Unknown",
-                    callDuration = callDuration,
-                    onAnswer = {
-                        // Handle answer action here
-                        if (callHandle != null) {
-                            RecentAudioBufferApplication.getSharedViewModel().myInCallService?.answerCall(
-                                callHandle!!
-                            )
-                        }
-                        finish()
-                    },
-                    onReject = {
-                        // Handle reject action here
-                        if (callHandle != null) {
-                            RecentAudioBufferApplication.getSharedViewModel().myInCallService?.rejectCall(
-                                callHandle!!
-                            )
-                        }
-                        finish()
-                    })
-            } else {
-                OutgoingCallScreen(name = callerName ?: "Unknown",
-                    phoneNumber = phoneNumber ?: "Unknown",
-                    callDuration = callDuration,
-                    onEndCall = {
-                        if (callHandle != null) {
-                            RecentAudioBufferApplication.getSharedViewModel().myInCallService?.rejectCall(
-                                callHandle!!
-                            )
-                        }
-                        // Handle end call action here
-                        finish()
-                    })
-            }
-        }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        handleIntent(intent)
-    }
-
-    private fun handleIntent(intent: Intent) {
-        callerName = intent.getStringExtra("callerName")
-        phoneNumber = intent.getStringExtra("phoneNumber")
-        val callHandleString = intent.getStringExtra(NotificationActionReceiver.EXTRA_CALL_HANDLE)
-        callHandle = if (callHandleString != null) Uri.parse(callHandleString) else null
-        isIncomingCall = intent.getBooleanExtra("isIncomingCall", false)
-    }
-}
-
 @Composable
 fun IncomingCallScreen(
-    callerName: String?, phoneNumber: String, callDuration: Long, onAnswer: () -> Unit, onReject: () -> Unit
+    callerName: String?,
+    phoneNumber: String,
+    callDuration: Long,
+    onAnswer: () -> Unit,
+    onReject: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -143,7 +78,7 @@ fun IncomingCallScreen(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(text = phoneNumber, fontSize = 18.sp, color = colorResource(id = R.color.teal_900))
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             CallScreenButton(
                 text = "Answer",
@@ -197,7 +132,7 @@ fun OutgoingCallScreen(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(text = phoneNumber, fontSize = 18.sp, color = colorResource(id = R.color.teal_900))
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
         CallScreenButton(
             text = "End Call",
             onClick = onEndCall,
@@ -207,6 +142,86 @@ fun OutgoingCallScreen(
             roundedCornerRadius = 60.dp,
             contentPadding = 18.dp
         )
+    }
+}
+
+@Composable
+fun InCallScreen(
+    name: String?,
+    phoneNumber: String,
+    callDuration: Long,
+    onMute: () -> Unit,
+    onSpeakerphone: () -> Unit,
+    onHold: () -> Unit,
+    onEndCall: () -> Unit
+) {
+    var isMuted by remember { mutableStateOf(false) }
+    var isSpeakerOn by remember { mutableStateOf(false) }
+    var isHolding by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colorResource(id = R.color.teal_100))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Active Call",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = colorResource(id = R.color.teal_900)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = formatDuration(callDuration),
+            fontSize = 18.sp,
+            color = colorResource(id = R.color.teal_900)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = name ?: "Unknown", fontSize = 20.sp, color = colorResource(id = R.color.teal_900)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(text = phoneNumber, fontSize = 18.sp, color = colorResource(id = R.color.teal_900))
+        Spacer(modifier = Modifier.height(24.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            if (isMuted) {
+                CallScreenButton(text = "Unmute", onClick = {
+                    onMute()
+                    isMuted = false
+                })
+            } else {
+                CallScreenButton(text = "Mute", onClick = {
+                    onMute()
+                    isMuted = true
+                })
+            }
+            if (isSpeakerOn) {
+                CallScreenButton(text = "Earpiece", onClick = {
+                    onSpeakerphone()
+                    isSpeakerOn = false
+                })
+            } else {
+                CallScreenButton(text = "Speaker", onClick = {
+                    onSpeakerphone()
+                    isSpeakerOn = true
+                })
+            }
+            if (isHolding) {
+                CallScreenButton(text = "Unhold", onClick = {
+                    onHold()
+                    isHolding = false
+                })
+            } else {
+                CallScreenButton(text = "Hold", onClick = {
+                    onHold()
+                    isHolding = true
+                })
+            }
+            CallScreenButton(text = "End Call", onClick = onEndCall)
+        }
     }
 }
 

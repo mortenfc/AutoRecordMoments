@@ -70,15 +70,6 @@
          App won't be used by chromeOS -->
 
         <activity
-                android:name=".IncomingCallFullScreenActivity"
-                android:exported="false"
-                android:launchMode="singleTop"
-                android:screenOrientation="portrait"
-                tools:ignore="DiscouragedApi,LockedOrientationActivity" />
-        <!-- ignore reasoning: UI breaks when rotated to landscape mode.
-         App won't be used by chromeOS -->
-
-        <activity
                 android:name=".MainActivity"
                 android:exported="true"
                 android:launchMode="singleTop"
@@ -106,22 +97,40 @@
                 android:exported="false" />
 
         <activity
-                android:name=".CallScreenActivity"
+                android:name=".DialerActivity"
                 android:exported="true"
                 android:launchMode="singleTop"
                 android:theme="@style/Theme.RecentAudioBuffer"
                 android:screenOrientation="portrait"
                 tools:ignore="DiscouragedApi,LockedOrientationActivity">
-          <intent-filter>
-               <action android:name="android.intent.action.DIAL" />
-               <category android:name="android.intent.category.DEFAULT" />
-          </intent-filter>
-          <intent-filter>
-               <action android:name="android.intent.action.DIAL" />
-               <category android:name="android.intent.category.DEFAULT" />
-               <data android:scheme="tel" />
-          </intent-filter>
+            <intent-filter>
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter>
+                <!-- Handle links from other applications -->
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.DIAL" />
+                <!-- Populate the system chooser -->
+                <category android:name="android.intent.category.DEFAULT" />
+                <!-- Handle links in browsers -->
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tel" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
+
+        <activity
+                android:name=".CallActivity"
+                android:exported="false"
+                android:launchMode="singleTop"
+                android:screenOrientation="portrait"
+                tools:ignore="DiscouragedApi,LockedOrientationActivity" />
+        <!-- ignore reasoning: UI breaks when rotated to landscape mode.
+         App won't be used by chromeOS -->
 
         <service
                 android:name=".MyInCallService"
@@ -130,9 +139,6 @@
             <meta-data
                     android:name="android.telecom.IN_CALL_SERVICE_UI"
                     android:value="true" /> <!-- Custom UI required to be default call app -->
-            <meta-data
-                    android:name="android.telecom.IN_CALL_SERVICE_RINGING"
-                    android:value="true" />
 
             <intent-filter>
                 <action android:name="android.telecom.InCallService" />

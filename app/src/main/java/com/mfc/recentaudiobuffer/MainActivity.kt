@@ -3,7 +3,6 @@ package com.mfc.recentaudiobuffer
 import MediaPlayerManager
 import android.Manifest
 import android.app.AlertDialog
-import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ComponentName
@@ -100,7 +99,7 @@ class MainActivity : AppCompatActivity() {
             }
             if (wasCallScreenButtonPress) {
                 getPermissionsAndThen(callingPermissions) {
-                    val intent = Intent(this@MainActivity, CallScreenActivity::class.java)
+                    val intent = Intent(this@MainActivity, DialerActivity::class.java)
                     startActivity(intent)
                     wasCallScreenButtonPress = false
                 }
@@ -387,7 +386,7 @@ class MainActivity : AppCompatActivity() {
             Log.d(logTag, "Buffer service started and bound")
         } else {
             getPermissionsAndThen(callingPermissions) {
-                val intent = Intent(this@MainActivity, CallScreenActivity::class.java)
+                val intent = Intent(this@MainActivity, DialerActivity::class.java)
                 startActivity(intent)
                 wasCallScreenButtonPress = false
             }

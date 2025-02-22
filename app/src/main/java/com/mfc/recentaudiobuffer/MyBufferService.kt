@@ -28,7 +28,6 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
@@ -147,42 +146,39 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         super.onTaskRemoved(rootIntent)
     }
 
-    // Flag to indicate if we are currently recording a call
     private var isRecordingCallAudio = false
-
-    // Flag to remember if we were recording before a call
-    private val wasRecordingBeforeCall = AtomicBoolean(false)
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         Log.d(logTag, "OnAudioFocusChangeListener() focusChange: $focusChange")
         when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                Log.d(logTag, "Audio focus lost, trying to capture VOICE_COMMUNICATION")
-                if (isRecording.get()) {
-                    wasRecordingBeforeCall.set(true)
-                    if (Thread.currentThread() != myRecordingThread) {
-                        stopRecording()
-                    }
-                } else {
-                    wasRecordingBeforeCall.set(false)
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                Log.d(logTag, "AUDIOFOCUS_LOSS")
+            }
+
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                // Completely lost focus, likely due to an incoming or outgoing call
+                Log.d(
+                    logTag, "AUDIOFOCUS_LOSS_TRANSIENT, restarting recording for VOICE_COMMUNICATION"
+                )
+                if (!isRecordingCallAudio) {
+                    isRecordingCallAudio = true
+                    // Restart recording with the new audio source
+                    stopRecording()  // Stop recording with the previous source
+                    startRecording() // Start recording with VOICE_COMMUNICATION
                 }
-                isRecordingCallAudio = true
-                startRecording()
+            }
+
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                Log.d(logTag, "AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK")
             }
 
             AudioManager.AUDIOFOCUS_GAIN -> {
-                Log.d(
-                    logTag,
-                    "Audio focus gained, recording normal mic with focus on VOICE_RECOGNITION"
-                )
+                Log.d(logTag, "AUDIOFOCUS_GAIN, restarting recording for VOICE_RECOGNITION")
                 if (isRecordingCallAudio) {
-                    if (Thread.currentThread() != myRecordingThread) {
-                        stopRecording()
-                    }
                     isRecordingCallAudio = false
-                    if (wasRecordingBeforeCall.get()) {
-                        startRecording()
-                    }
+                    // Restart recording with the original audio source
+                    stopRecording()  // Stop recording with VOICE_COMMUNICATION
+                    startRecording() // Start recording with VOICE_RECOGNITION
                 }
             }
         }

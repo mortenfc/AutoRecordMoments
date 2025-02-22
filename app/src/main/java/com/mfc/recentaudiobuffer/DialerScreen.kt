@@ -78,7 +78,7 @@ data class CallLogEntry(
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
-fun CallScreen(
+fun DialerScreen(
     onNavigateToMain: () -> Unit,
     onSignInClick: () -> Unit,
     signInButtonText: MutableState<String>,
@@ -149,7 +149,7 @@ fun CallScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 MakeCallButton(
-                    telecomManager = telecomManager, phoneNumber = phoneNumberTextFieldValue.text
+                    phoneNumber = phoneNumberTextFieldValue.text
                 )
 
                 Spacer(modifier = Modifier.height(26.dp))
@@ -306,25 +306,18 @@ fun getContactName(context: Context, phoneNumber: String): String? {
 }
 
 @Composable
-fun MakeCallButton(telecomManager: TelecomManager?, phoneNumber: String) {
+fun MakeCallButton(phoneNumber: String) {
     val context = LocalContext.current
     var callAttempted by remember { mutableStateOf(false) }
-
-    val phoneAccountHandle = PhoneUtils.getPhoneAccountHandle(context, telecomManager)
 
     val requestPermissionLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
             if (isGranted) {
                 Log.i("CallScreen", "Permission granted")
                 if (callAttempted) {
-                    // Launch the Outgoing Call Screen
-                    val intent = Intent(context, IncomingCallFullScreenActivity::class.java).apply {
-                        putExtra("phoneNumber", phoneNumber)
-                        putExtra("isIncomingCall", false)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(intent)
-                    PhoneUtils.placeCall(context, telecomManager, phoneNumber, phoneAccountHandle)
+                    PhoneUtils.placeCall(
+                        phoneNumber, context
+                    )
                 }
             } else {
                 Log.i("CallScreen", "Permission denied")
@@ -335,27 +328,15 @@ fun MakeCallButton(telecomManager: TelecomManager?, phoneNumber: String) {
         text = stringResource(id = R.string.make_a_call),
         onClick = {
             callAttempted = true
-            if (telecomManager != null) {
-                if (ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.CALL_PHONE
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
-                    // Launch the Outgoing Call Screen
-                    val intent = Intent(context, IncomingCallFullScreenActivity::class.java).apply {
-                        putExtra("phoneNumber", phoneNumber)
-                        putExtra("isIncomingCall", false)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(intent)
-                    PhoneUtils.placeCall(context, telecomManager, phoneNumber, phoneAccountHandle)
-                } else {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        requestPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
-                    }
-                }
+            if (ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.CALL_PHONE
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                PhoneUtils.placeCall(
+                    phoneNumber, context
+                )
             } else {
-                Log.e("CallScreen", "TelecomManager is null, cannot make a call in preview")
+                requestPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
             }
         },
         icon = R.drawable.baseline_call_24,
@@ -384,28 +365,16 @@ fun SetDefaultDialerButton() {
     CallScreenButton(
         text = stringResource(id = R.string.set_as_default_dialer),
         onClick = {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
-                if (roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
-                    if (!roleManager.isRoleHeld(RoleManager.ROLE_DIALER)) {
-                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
-                        requestRoleLauncher.launch(intent)
-                    } else {
-                        Log.i("CallScreen", "Already default dialer")
-                    }
+            val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
+            if (roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
+                if (!roleManager.isRoleHeld(RoleManager.ROLE_DIALER)) {
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+                    requestRoleLauncher.launch(intent)
                 } else {
-                    Log.e("CallScreen", "Dialer role not available")
+                    Log.i("CallScreen", "Already default dialer")
                 }
             } else {
-                val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
-                intent.putExtra(
-                    TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName
-                )
-                try {
-                    context.startActivity(intent)
-                } catch (e: ActivityNotFoundException) {
-                    Log.e("CallScreen", "No activity found to handle ACTION_CHANGE_DEFAULT_DIALER")
-                }
+                Log.e("CallScreen", "Dialer role not available")
             }
         },
         widthModifier = Modifier.wrapContentWidth(),
@@ -496,7 +465,7 @@ fun CallScreenButton(
 @Composable
 @Preview
 fun CallScreenPreview() {
-    CallScreen(
+    DialerScreen(
         onNavigateToMain = { },
         telecomManager = null,
         signInButtonText = mutableStateOf("Sign In"),

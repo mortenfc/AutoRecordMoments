@@ -1,88 +1,60 @@
 package com.mfc.recentaudiobuffer
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.telecom.PhoneAccountHandle
+import android.telecom.Call
 import android.telecom.TelecomManager
-import android.util.Log
-import androidx.core.content.ContextCompat
+import timber.log.Timber
 
 object PhoneUtils {
-    fun getPhoneAccountHandle(
-        context: Context, telecomManager: TelecomManager?
-    ): PhoneAccountHandle? {
-        if (telecomManager == null) {
-            Log.e("PhoneUtils", "TelecomManager is null")
-            return null
-        }
-
-        if (ContextCompat.checkSelfPermission(
-                context, Manifest.permission.READ_PHONE_STATE
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            Log.e("PhoneUtils", "READ_PHONE_STATE permission not granted")
-            return null
-        }
-
-        val phoneAccountHandles = telecomManager.callCapablePhoneAccounts
-        if (phoneAccountHandles.isNotEmpty()) {
-            return phoneAccountHandles[0]
-        }
-
-        Log.e("PhoneUtils", "No call-capable phone accounts found")
-        return null
-    }
-
     fun placeCall(
-        context: Context,
-        telecomManager: TelecomManager?,
-        phoneNumber: String,
-        phoneAccountHandle: PhoneAccountHandle?
+        phoneNumber: String, context: Context
     ) {
-        if (telecomManager == null) {
-            Log.e("PhoneUtils", "TelecomManager is null, cannot make a call")
-            return
-        }
-        if (phoneAccountHandle == null) {
-            Log.e("PhoneUtils", "Phone account handle is null")
-            return
-        }
         try {
             val intent = Intent(Intent.ACTION_CALL).apply {
                 data = Uri.parse("tel:$phoneNumber")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, phoneAccountHandle)
             }
             context.startActivity(intent)
-        } catch (e: SecurityException) {
-            Log.e("PhoneUtils", "SecurityException: ${e.message}")
         } catch (e: Exception) {
-            Log.e("PhoneUtils", "Exception: ${e.message}")
+            Timber.e("Exception: ${e.message}")
         }
     }
 
     fun isDefaultDialer(context: Context, telecomManager: TelecomManager): Boolean {
         val isDefault = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val result = telecomManager.defaultDialerPackage == context.packageName
-            Log.d(
-                "isDefaultDialer",
-                "Q and above: defaultDialerPackage = ${telecomManager.defaultDialerPackage}, packageName = ${context.packageName}, result = $result"
-            )
+            Timber.tag("isDefaultDialer")
+                .d("Q and above: defaultDialerPackage = ${telecomManager.defaultDialerPackage}, packageName = ${context.packageName}, result = $result")
             result
         } else {
             val intent = Intent(Intent.ACTION_DIAL)
             val componentName = intent.resolveActivity(context.packageManager)
             val result = componentName?.packageName == context.packageName
-            Log.d(
-                "isDefaultDialer",
-                "Pre-Q: componentName = $componentName, packageName = ${context.packageName}, result = $result"
-            )
+            Timber.tag("isDefaultDialer")
+                .d("Pre-Q: componentName = $componentName, packageName = ${context.packageName}, result = $result")
             result
         }
         return isDefault
+    }
+
+    fun getCallStateString(state: Int): String {
+        return when (state) {
+            Call.STATE_NEW -> "STATE_NEW"
+            Call.STATE_RINGING -> "STATE_RINGING"
+            Call.STATE_DIALING -> "STATE_DIALING"
+            Call.STATE_CONNECTING -> "STATE_CONNECTING"
+            Call.STATE_ACTIVE -> "STATE_ACTIVE"
+            Call.STATE_HOLDING -> "STATE_HOLDING"
+            Call.STATE_DISCONNECTED -> "STATE_DISCONNECTED"
+            Call.STATE_SELECT_PHONE_ACCOUNT -> "STATE_SELECT_PHONE_ACCOUNT"
+            Call.STATE_PULLING_CALL -> "STATE_PULLING_CALL"
+            Call.STATE_AUDIO_PROCESSING -> "STATE_AUDIO_PROCESSING"
+            Call.STATE_SIMULATED_RINGING -> "STATE_SIMULATED_RINGING"
+            Call.STATE_DISCONNECTING -> "STATE_DISCONNECTING"
+            else -> "STATE_UNKNOWN"
+        }
     }
 }

@@ -6,7 +6,6 @@ import dagger.hilt.android.HiltAndroidApp
 
 class SharedViewModel : ViewModel() {
     var myBufferService: MyBufferServiceInterface? = null
-    var myInCallService: MyInCallServiceInterface? = null
 }
 
 @HiltAndroidApp
