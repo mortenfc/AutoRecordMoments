@@ -11,6 +11,7 @@
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS" />
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
@@ -131,6 +132,16 @@
                 tools:ignore="DiscouragedApi,LockedOrientationActivity" />
         <!-- ignore reasoning: UI breaks when rotated to landscape mode.
          App won't be used by chromeOS -->
+
+        <!--  Needed to set capability of voice recording -->
+<!--        <service-->
+<!--            android:name=".MyConnectionService"-->
+<!--            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"-->
+<!--            android:exported="true">-->
+<!--            <intent-filter>-->
+<!--                <action android:name="android.telecom.ConnectionService" />-->
+<!--            </intent-filter>-->
+<!--        </service>-->
 
         <service
                 android:name=".MyInCallService"

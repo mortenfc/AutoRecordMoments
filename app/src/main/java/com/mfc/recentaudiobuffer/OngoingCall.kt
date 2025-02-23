@@ -32,7 +32,7 @@ object OngoingCall {
             _call?.unregisterCallback(callback)
             _call = value
             _call?.registerCallback(callback)
-            _state.value = _call?.state ?: Call.STATE_NEW
+            _state.value = _call?.details?.state ?: Call.STATE_NEW
             if (_call != null) {
                 name = _call?.details?.contactDisplayName
                 phoneNumber = _call?.details?.handle?.schemeSpecificPart
@@ -40,11 +40,35 @@ object OngoingCall {
             }
         }
 
+    val inCallScreenStates = setOf(
+        Call.STATE_ACTIVE,
+        Call.STATE_HOLDING,
+        Call.STATE_AUDIO_PROCESSING,
+        Call.STATE_SIMULATED_RINGING,
+        Call.STATE_PULLING_CALL
+    )
+
+    val outgoingCallScreenStates = setOf(
+        Call.STATE_DIALING, Call.STATE_CONNECTING
+    )
+
+    val incomingCallScreenStates = setOf(
+        Call.STATE_RINGING
+    )
+
+    val disconnectingCallScreenStates = setOf(
+        Call.STATE_DISCONNECTED, Call.STATE_DISCONNECTING, Call.STATE_SELECT_PHONE_ACCOUNT
+    )
+
+    fun isInActiveState(): Boolean {
+        return _state.value == Call.STATE_ACTIVE
+    }
+
     private val callback = object : Call.Callback() {
         override fun onStateChanged(call: Call, newState: Int) {
             Timber.d("Call state changed: ${PhoneUtils.getCallStateString(newState)}")
             _state.value = newState
-            if (newState == Call.STATE_ACTIVE || newState == Call.STATE_DIALING || newState == Call.STATE_CONNECTING || newState == Call.STATE_RINGING) {
+            if (!disconnectingCallScreenStates.contains(newState)) {
                 restartCallDurationTracking()
             }
             if (newState == Call.STATE_ACTIVE) {

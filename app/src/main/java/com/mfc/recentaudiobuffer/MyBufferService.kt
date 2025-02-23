@@ -161,7 +161,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                     logTag,
                     "AUDIOFOCUS_LOSS_TRANSIENT, restarting recording for VOICE_COMMUNICATION, isRecordingCallAudio: $isRecordingCallAudio"
                 )
-                if (!isRecordingCallAudio) {
+                if (!isRecordingCallAudio && OngoingCall.isInActiveState()) {
                     Log.d(logTag, "Setting isRecordingCallAudio to true")
                     isRecordingCallAudio = true
                     // Restart recording with the new audio source
@@ -174,12 +174,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 Log.d(logTag, "AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK")
             }
 
-            AudioManager.AUDIOFOCUS_GAIN -> {
+            AudioManager.AUDIOFOCUS_GAIN, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK -> {
                 Log.d(
                     logTag,
                     "AUDIOFOCUS_GAIN, restarting recording for VOICE_RECOGNITION, isRecordingCallAudio: $isRecordingCallAudio"
                 )
-                if (isRecordingCallAudio) {
+                if (isRecordingCallAudio && !OngoingCall.isInActiveState()) {
                     Log.d(logTag, "Setting isRecordingCallAudio to false")
                     isRecordingCallAudio = false
                     // Restart recording with the original audio source
@@ -193,7 +193,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     private fun requestAudioFocus() {
         Log.d(logTag, "requestAudioFocus()")
         val result = audioManager.requestAudioFocus(
-            audioFocusChangeListener, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN
+            audioFocusChangeListener,
+            AudioManager.STREAM_VOICE_CALL,
+            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
         )
         if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             Log.d(logTag, "Audio focus granted")

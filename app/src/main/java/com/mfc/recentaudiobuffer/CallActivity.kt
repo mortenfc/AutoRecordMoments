@@ -8,7 +8,6 @@ import android.os.Bundle
 import android.telecom.Call
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -25,7 +24,6 @@ import timber.log.Timber
 class CallActivity : ComponentActivity() {
     private var callerName by mutableStateOf<String?>(null)
     private var phoneNumber by mutableStateOf<String?>(null)
-    private var callHandle by mutableStateOf<Uri?>(null)
     private var connectionState by mutableIntStateOf(Call.STATE_NEW)
     private var callDuration by mutableLongStateOf(0L)
 
@@ -64,15 +62,16 @@ class CallActivity : ComponentActivity() {
 
             // Update the call duration
             LaunchedEffect(key1 = connectionState) {
-                if (connectionState == Call.STATE_ACTIVE || connectionState == Call.STATE_DIALING || connectionState == Call.STATE_CONNECTING || connectionState == Call.STATE_RINGING) {
-                    if (callHandle != null) {
-                        Timber.d("LaunchedEffect: Starting duration updates")
-                        callDurationJob = launch {
-                            while (connectionState == Call.STATE_ACTIVE || connectionState == Call.STATE_DIALING || connectionState == Call.STATE_CONNECTING || connectionState == Call.STATE_RINGING) {
-                                callDuration = OngoingCall.getCallDuration()
-                                Timber.d("LaunchedEffect: Duration updated")
-                                delay(1000)
-                            }
+                if (!OngoingCall.disconnectingCallScreenStates.contains(connectionState)) {
+                    Timber.d("LaunchedEffect: Starting duration updates")
+                    callDurationJob = launch {
+                        while (!OngoingCall.disconnectingCallScreenStates.contains(
+                                connectionState
+                            )
+                        ) {
+                            callDuration = OngoingCall.getCallDuration()
+                            Timber.d("LaunchedEffect: Duration updated")
+                            delay(1000)
                         }
                     }
                 } else {
@@ -82,22 +81,26 @@ class CallActivity : ComponentActivity() {
 
             // Update the caller name and phone number
             LaunchedEffect(key1 = OngoingCall.name, key2 = OngoingCall.phoneNumber) {
-                callerName = OngoingCall.name
                 phoneNumber = OngoingCall.phoneNumber
+                callerName =
+                    OngoingCall.name ?: PhoneUtils.getContactName(this@CallActivity, phoneNumber)
             }
 
-            when (connectionState) {
-                Call.STATE_ACTIVE -> {
+            when {
+                OngoingCall.inCallScreenStates.contains(connectionState) -> {
                     InCallScreen(name = callerName ?: "Unknown",
                         phoneNumber = phoneNumber ?: "Unknown",
                         callDuration = callDuration,
                         onMute = { value -> OngoingCall.toggleMute(value) },
                         onSpeakerphone = { value -> OngoingCall.toggleSpeaker(value) },
                         onHold = { value -> OngoingCall.toggleHold(value) },
-                        onEndCall = { OngoingCall.hangup() })
+                        onEndCall = {
+                            OngoingCall.hangup()
+                            finishAfterTransition()
+                        })
                 }
 
-                Call.STATE_RINGING -> {
+                OngoingCall.incomingCallScreenStates.contains(connectionState) -> {
                     IncomingCallScreen(
                         callerName = callerName ?: "Unknown",
                         phoneNumber = phoneNumber ?: "Unknown",
@@ -107,22 +110,28 @@ class CallActivity : ComponentActivity() {
                         },
                         onReject = {
                             OngoingCall.hangup()
+                            finishAfterTransition()
                         },
                     )
                 }
 
-                Call.STATE_DIALING, Call.STATE_CONNECTING -> {
+                OngoingCall.outgoingCallScreenStates.contains(connectionState) -> {
                     OutgoingCallScreen(name = callerName ?: "Unknown",
                         phoneNumber = phoneNumber ?: "Unknown",
                         callDuration = callDuration,
                         onEndCall = {
                             OngoingCall.hangup()
+                            finishAfterTransition()
                         })
                 }
 
+                OngoingCall.disconnectingCallScreenStates.contains(connectionState) -> {
+                    DisconnectingCallScreen()
+                }
+
                 else -> {
-                    // Handle other states or show a default screen
-                    Text("Call State: $connectionState")
+                    Timber.e("Unknown call state: $connectionState")
+                    DisconnectingCallScreen()
                 }
             }
         }
@@ -156,22 +165,18 @@ class CallActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent) {
-        callerName = if (intent.hasExtra("callerName")) {
-            intent.getStringExtra("callerName")
-        } else {
-            OngoingCall.name
-        }
-
         phoneNumber = if (intent.hasExtra("phoneNumber")) {
             intent.getStringExtra("phoneNumber")
         } else {
             OngoingCall.phoneNumber
         }
 
-        callHandle = if (phoneNumber != null) {
-            Uri.fromParts("tel", phoneNumber, null)
+        callerName = if (intent.hasExtra("callerName")) {
+            intent.getStringExtra("callerName")
         } else {
-            OngoingCall.call?.details?.handle
+            OngoingCall.name ?: PhoneUtils.getContactName(this, phoneNumber)
         }
+
+        Uri.fromParts("tel", phoneNumber, null)
     }
 }
