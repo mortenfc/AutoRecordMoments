@@ -55,12 +55,7 @@
     <string name="ok">OK</string>
     <string name="select_directory">This app requires a default saving directory for quick saves through the notification.
         You will be prompted to pick one. </string>
-    <string name="call_screen">Recordable Calling</string>
     <string name="go_back_to_main">Return</string>
-    <string name="make_a_call">Call</string>
-    <string name="phone_number">Phone Number</string>
-    <string name="go_to_call_screen">To Recordable Calling</string>
-    <string name="call">Call\n</string>
     <string name="set_as_default_dialer">Set as default call app</string>
 
 </resources>

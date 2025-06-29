@@ -74,7 +74,6 @@ fun MainScreen(
     onPickAndPlayFileClick: () -> Unit,
     onDonateClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onCallScreenClick: () -> Unit,
     onDirectoryAlertDismiss: () -> Unit,
     mediaPlayerManager: MediaPlayerManager,
     isPreview: Boolean = false
@@ -122,14 +121,6 @@ fun MainScreen(
                     text = stringResource(id = R.string.play_a_recording),
                     icon = R.drawable.baseline_play_circle_outline_24,
                     onClick = onPickAndPlayFileClick
-                )
-                Spacer(modifier = Modifier.height(15.dp))
-                MainButton(
-                    text = stringResource(id = R.string.go_to_call_screen),
-                    icon = R.drawable.baseline_call_24,
-                    onClick = onCallScreenClick,
-                    iconTint = colorResource(id = R.color.black),
-                    width = 240.dp
                 )
                 Spacer(modifier = Modifier.height(15.dp))
                 MainButton(
@@ -395,7 +386,6 @@ fun MainScreenPreview() {
         onDonateClick = {},
         onSettingsClick = {},
         onSignInClick = {},
-        onCallScreenClick = {},
         onDirectoryAlertDismiss = {},
         mediaPlayerManager = MediaPlayerManager(LocalContext.current) {},
         isPreview = true

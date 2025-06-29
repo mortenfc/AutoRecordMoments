@@ -39,8 +39,6 @@ interface MyBufferServiceInterface {
     fun writeWavHeader(out: OutputStream, audioDataLen: Int)
     fun stopRecording()
     fun startRecording()
-    fun startCallRecording()
-    fun stopCallRecording()
     fun resetBuffer()
     fun quickSaveBuffer()
 
@@ -146,8 +144,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         super.onTaskRemoved(rootIntent)
     }
 
-    private var isRecordingCallAudio = false
-
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         Log.d(logTag, "OnAudioFocusChangeListener() focusChange: $focusChange")
         when (focusChange) {
@@ -159,15 +155,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 // Completely lost focus, likely due to an incoming or outgoing call
                 Log.d(
                     logTag,
-                    "AUDIOFOCUS_LOSS_TRANSIENT, restarting recording for VOICE_COMMUNICATION, isRecordingCallAudio: $isRecordingCallAudio"
+                    "AUDIOFOCUS_LOSS_TRANSIENT, restarting recording for VOICE_COMMUNICATION"
                 )
-                if (!isRecordingCallAudio && OngoingCall.isInActiveState()) {
-                    Log.d(logTag, "Setting isRecordingCallAudio to true")
-                    isRecordingCallAudio = true
-                    // Restart recording with the new audio source
-                    stopRecording()  // Stop recording with the previous source
-                    startRecording() // Start recording with VOICE_COMMUNICATION
-                }
             }
 
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
@@ -177,15 +166,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             AudioManager.AUDIOFOCUS_GAIN, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK -> {
                 Log.d(
                     logTag,
-                    "AUDIOFOCUS_GAIN, restarting recording for VOICE_RECOGNITION, isRecordingCallAudio: $isRecordingCallAudio"
+                    "AUDIOFOCUS_GAIN, restarting recording for VOICE_RECOGNITION"
                 )
-                if (isRecordingCallAudio && !OngoingCall.isInActiveState()) {
-                    Log.d(logTag, "Setting isRecordingCallAudio to false")
-                    isRecordingCallAudio = false
-                    // Restart recording with the original audio source
-                    stopRecording()  // Stop recording with VOICE_COMMUNICATION
-                    startRecording() // Start recording with VOICE_RECOGNITION
-                }
             }
         }
     }
@@ -301,11 +283,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             return
         }
 
-        val audioSource = if (isRecordingCallAudio) {
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION
-        } else {
-            MediaRecorder.AudioSource.VOICE_RECOGNITION
-        }
+        val audioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION
 
         val audioFormat = AudioFormat.Builder().setEncoding(config.bitDepth.encodingEnum)
             .setSampleRate(config.sampleRateHz).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build()
@@ -563,20 +541,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         } catch (e: Exception) {
             Log.e(logTag, "Error syncing preferences", e)
         }
-    }
-
-    override fun startCallRecording() {
-        Log.d(logTag, "startCallRecording()")
-        isRecordingCallAudio = true
-        stopRecording()
-        startRecording()
-    }
-
-    override fun stopCallRecording() {
-        Log.d(logTag, "stopCallRecording()")
-        isRecordingCallAudio = false
-        stopRecording()
-        startRecording()
     }
 
     override fun resetBuffer() {

@@ -40,11 +40,9 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var authenticationManager: AuthenticationManager
 
-    private val settingsViewModel: SettingsViewModel by viewModels()
     private var myBufferService: MyBufferServiceInterface? = null
     private var isPickAndPlayFileRunning = false
     private var wasStartRecordingButtonPress = false
-    private var wasCallScreenButtonPress = false
 
     private val basePermissions = mutableListOf(
         Manifest.permission.RECORD_AUDIO,
@@ -71,14 +69,6 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private val callingPermissions = requiredPermissions + mutableListOf(
-        Manifest.permission.MANAGE_OWN_CALLS,
-        Manifest.permission.READ_CONTACTS,
-        Manifest.permission.READ_CALL_LOG,
-        Manifest.permission.CALL_PHONE,
-        Manifest.permission.READ_PHONE_STATE,
-    )
-
     private var mediaPlayerManager: MediaPlayerManager? = null
 
     private lateinit var foregroundServiceAudioBuffer: Intent
@@ -96,13 +86,6 @@ class MainActivity : AppCompatActivity() {
             if (wasStartRecordingButtonPress) {
                 myBufferService!!.startRecording()
                 wasStartRecordingButtonPress = false
-            }
-            if (wasCallScreenButtonPress) {
-                getPermissionsAndThen(callingPermissions) {
-                    val intent = Intent(this@MainActivity, DialerActivity::class.java)
-                    startActivity(intent)
-                    wasCallScreenButtonPress = false
-                }
             }
             Log.d(logTag, "onServiceConnect()")
         }
@@ -196,7 +179,6 @@ class MainActivity : AppCompatActivity() {
                 onPickAndPlayFileClick = { onClickPickAndPlayFile() },
                 onDonateClick = { onClickDonate() },
                 onSettingsClick = { onClickSettings() },
-                onCallScreenClick = { onClickCallScreen() },
                 onDirectoryAlertDismiss = {
                     FileSavingUtils.showDirectoryPermissionDialog = false
                     pickDirectory()
@@ -371,25 +353,6 @@ class MainActivity : AppCompatActivity() {
         getPermissionsAndThen(requiredPermissions) {
             val intent = Intent(this, DonationActivity::class.java)
             startActivity(intent)
-        }
-    }
-
-    private fun onClickCallScreen() {
-        if (!foregroundBufferServiceConn.isBound) {
-            wasCallScreenButtonPress = true
-            this.startForegroundService(foregroundServiceAudioBuffer)
-            bindService(
-                Intent(this, MyBufferService::class.java),
-                foregroundBufferServiceConn,
-                BIND_AUTO_CREATE
-            )
-            Log.d(logTag, "Buffer service started and bound")
-        } else {
-            getPermissionsAndThen(callingPermissions) {
-                val intent = Intent(this@MainActivity, DialerActivity::class.java)
-                startActivity(intent)
-                wasCallScreenButtonPress = false
-            }
         }
     }
 
