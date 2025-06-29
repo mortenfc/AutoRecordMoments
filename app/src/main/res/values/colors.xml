@@ -13,7 +13,9 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="red">#FFFF1111</color>
-    <color name="red_pause">#4D0000</color>
+    <color name="red_pause">#6B3030</color>
+    <color name="orange_pause">#FF9800</color>
+    <color name="gold">#FFD700</color>
     <color name="green_start">#8ADCBD</color>
     <color name="grey">#454A4E</color>
     <color name="light_grey">#727D85</color>

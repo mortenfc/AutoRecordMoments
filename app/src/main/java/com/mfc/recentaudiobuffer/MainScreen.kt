@@ -96,9 +96,14 @@ fun MainScreen(
     var isRecording by remember { mutableStateOf(false) }
 
     // Define colors for the recording button states
-    val recordingButtonColor by animateColorAsState(
-        targetValue = if (isRecording) colorResource(id = R.color.red_pause) else colorResource(id = R.color.green_start),
-        label = "RecordingButtonColor"
+    val recordingButtonBackgroundColor by animateColorAsState(
+        targetValue = if (isRecording) colorResource(id = R.color.red_pause).copy(green = 0.185F) else colorResource(id = R.color.green_start),
+        label = "recordingButtonBackgroundColor"
+    )
+
+    val recordingButtonElementsColor by animateColorAsState(
+        targetValue = if (isRecording) Color.White else colorResource(id = R.color.teal_900),
+        label = "recordingButtonElementsColor"
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -108,7 +113,7 @@ fun MainScreen(
             onSignInClick = onSignInClick,
             onSettingsClick = onSettingsClick
         )
-        AdMobBanner() // Assuming this is a composable you have
+        AdMobBanner()
 
         Scaffold { innerPadding ->
             Box(
@@ -129,7 +134,8 @@ fun MainScreen(
                     // Large, central toggle button for starting/stopping recording
                     RecordingToggleButton(
                         isRecording = isRecording,
-                        color = recordingButtonColor,
+                        backgroundColor = recordingButtonBackgroundColor,
+                        elementsColor = recordingButtonElementsColor,
                         onClick = {
                             if (isRecording) {
                                 onStopBufferingClick()
@@ -212,7 +218,8 @@ fun MainScreen(
 @Composable
 fun RecordingToggleButton(
     isRecording: Boolean,
-    color: Color,
+    backgroundColor: Color,
+    elementsColor : Color,
     onClick: () -> Unit
 ) {
     val buttonText =
@@ -251,7 +258,7 @@ fun RecordingToggleButton(
             },
         shape = CircleShape,
         colors = ButtonDefaults.buttonColors(
-            containerColor = color,
+            containerColor = backgroundColor,
             contentColor = Color.White
         ),
         border = ButtonDefaults.outlinedButtonBorder.copy(
@@ -269,12 +276,12 @@ fun RecordingToggleButton(
                 painter = painterResource(id = iconRes),
                 contentDescription = buttonText,
                 modifier = Modifier.size(64.dp),
-                tint = Color.White
+                tint = elementsColor
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = buttonText.uppercase(),
-                color = colorResource(id = R.color.teal_900),
+                color = elementsColor,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
                 textAlign = TextAlign.Center,
@@ -455,14 +462,13 @@ fun DonateBanner(
 ) {
     val accentColor = colorResource(id = R.color.purple_accent)
 
-    Card(
+    Surface( // Using Surface for more control over color overlays
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = accentColor.copy(alpha = 0.7f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, accentColor)
+        color = colorResource(id = R.color.purple_accent).copy(alpha = 0.65f), // The background color
+        border = BorderStroke(2.dp, colorResource(id = R.color.teal_500))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
@@ -472,15 +478,15 @@ fun DonateBanner(
             Icon(
                 painter = painterResource(id = R.drawable.dollar),
                 contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(24.dp)
+                tint = colorResource(id = R.color.gold),
+                modifier = Modifier.size(28.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = stringResource(id = R.string.donate_and_remove_ads),
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
-                fontSize = 16.sp
+                color = colorResource(id = R.color.gold),
+                fontSize = 20.sp
             )
         }
     }
@@ -650,12 +656,13 @@ fun MainButtonPreview() {
 @Composable
 fun ToggleButtonPreview() {
     val recordingButtonColor by animateColorAsState(
-        targetValue = colorResource(id = R.color.teal_350),
+        targetValue = colorResource(id = R.color.red_pause).copy(green = 0.185F),
         label = "RecordingButtonColor"
     )
     RecordingToggleButton(
         isRecording = true,
-        color = recordingButtonColor,
+        backgroundColor =  recordingButtonColor,
+        elementsColor = Color.White,
         onClick = {}
     )
 }
@@ -666,6 +673,16 @@ fun SecondaryButtonPreview() {
     SecondaryActionButton(
         text = stringResource(R.string.play_a_recording),
         icon = R.drawable.baseline_play_circle_outline_24,
+        onClick = {}
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun DonateBannerPreview() {
+    DonateBanner(
+        modifier = Modifier
+            .padding(16.dp),
         onClick = {}
     )
 }
