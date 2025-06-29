@@ -11,7 +11,6 @@
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS" />
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
@@ -133,15 +132,32 @@
         <!-- ignore reasoning: UI breaks when rotated to landscape mode.
          App won't be used by chromeOS -->
 
-        <!--  Needed to set capability of voice recording -->
-<!--        <service-->
-<!--            android:name=".MyConnectionService"-->
-<!--            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"-->
-<!--            android:exported="true">-->
-<!--            <intent-filter>-->
-<!--                <action android:name="android.telecom.ConnectionService" />-->
-<!--            </intent-filter>-->
-<!--        </service>-->
+        <service
+            android:name=".MyCallRedirectionService"
+            android:permission="android.permission.BIND_CALL_REDIRECTION_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.CallRedirectionService" />
+            </intent-filter>
+        </service>
+
+         <receiver
+            android:name=".MyDeviceAdminReceiver"
+            android:description="@string/device_description"
+            android:exported="true"
+            android:label="@string/device_admin_label"
+            android:permission="android.permission.BIND_DEVICE_ADMIN" >
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/my_admin" />
+
+
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.DEVICE_ADMIN_DISABLED" />
+                <action android:name="android.app.action.DEVICE_ADMIN_DISABLE_REQUESTED" />
+            </intent-filter>
+        </receiver>
 
         <service
                 android:name=".MyInCallService"

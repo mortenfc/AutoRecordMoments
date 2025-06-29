@@ -17,37 +17,21 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.Manifest
+import android.telephony.TelephonyManager
 
 object PhoneUtils {
-    fun placeCall(
-        phoneNumber: String, context: Context
-    ) {
-        try {
-            val intent = Intent(Intent.ACTION_CALL).apply {
-                data = Uri.parse("tel:$phoneNumber")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    fun isDefaultDialer(context: Context, telecomManager: TelecomManager?): Boolean {
+        return if (telecomManager != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                telecomManager.defaultDialerPackage == context.packageName
+            } else {
+                val intent = Intent(Intent.ACTION_DIAL)
+                val componentName = intent.resolveActivity(context.packageManager)
+                componentName?.packageName == context.packageName
             }
-            context.startActivity(intent)
-        } catch (e: Exception) {
-            Timber.e("Exception: ${e.message}")
-        }
-    }
-
-    fun isDefaultDialer(context: Context, telecomManager: TelecomManager): Boolean {
-        val isDefault = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val result = telecomManager.defaultDialerPackage == context.packageName
-            Timber.tag("isDefaultDialer")
-                .d("Q and above: defaultDialerPackage = ${telecomManager.defaultDialerPackage}, packageName = ${context.packageName}, result = $result")
-            result
         } else {
-            val intent = Intent(Intent.ACTION_DIAL)
-            val componentName = intent.resolveActivity(context.packageManager)
-            val result = componentName?.packageName == context.packageName
-            Timber.tag("isDefaultDialer")
-                .d("Pre-Q: componentName = $componentName, packageName = ${context.packageName}, result = $result")
-            result
+            false // Not relevant when using TelephonyManager directly
         }
-        return isDefault
     }
 
     fun getCallStateString(state: Int): String {
@@ -64,6 +48,15 @@ object PhoneUtils {
             Call.STATE_AUDIO_PROCESSING -> "STATE_AUDIO_PROCESSING"
             Call.STATE_SIMULATED_RINGING -> "STATE_SIMULATED_RINGING"
             Call.STATE_DISCONNECTING -> "STATE_DISCONNECTING"
+            else -> "STATE_UNKNOWN"
+        }
+    }
+
+    fun getTelephonyStateString(state: Int): String {
+        return when (state) {
+            TelephonyManager.CALL_STATE_IDLE -> "CALL_STATE_IDLE"
+            TelephonyManager.CALL_STATE_RINGING -> "CALL_STATE_RINGING"
+            TelephonyManager.CALL_STATE_OFFHOOK -> "CALL_STATE_OFFHOOK"
             else -> "STATE_UNKNOWN"
         }
     }

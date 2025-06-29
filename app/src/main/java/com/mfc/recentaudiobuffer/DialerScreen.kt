@@ -73,7 +73,8 @@ fun DialerScreen(
     onNavigateToMain: () -> Unit,
     onSignInClick: () -> Unit,
     signInButtonText: MutableState<String>,
-    telecomManager: TelecomManager? = null
+    telecomManager: TelecomManager? = null,
+    onPlaceCall: (String) -> Unit
 ) {
     val context = LocalContext.current
     var phoneNumberTextFieldValue by remember {
@@ -140,7 +141,7 @@ fun DialerScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 MakeCallButton(
-                    phoneNumber = phoneNumberTextFieldValue.text
+                    phoneNumber = phoneNumberTextFieldValue.text, onPlaceCall = onPlaceCall
                 )
 
                 Spacer(modifier = Modifier.height(26.dp))
@@ -162,13 +163,15 @@ fun DialerScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Log.d("CallScreen", "telecomManager = $telecomManager")
-                if (!isDefaultDialer) {
-                    SetDefaultDialerButton()
-                } else {
-                    Text(text = "Is the default dialer")
+                if (telecomManager != null) { // Only show if using Telecom framework
+                    Log.d("CallScreen", "telecomManager = $telecomManager")
+                    if (!isDefaultDialer) {
+                        SetDefaultDialerButton()
+                    } else {
+                        Text(text = "Is the default dialer")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
-                Spacer(modifier = Modifier.height(8.dp))
             } // End of the "item" block
         }
     }
@@ -239,38 +242,11 @@ fun DigitSelector(onDigitClick: (String) -> Unit) {
 }
 
 @Composable
-fun MakeCallButton(phoneNumber: String) {
-    val context = LocalContext.current
-    var callAttempted by remember { mutableStateOf(false) }
-
-    val requestPermissionLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-            if (isGranted) {
-                Log.i("CallScreen", "Permission granted")
-                if (callAttempted) {
-                    PhoneUtils.placeCall(
-                        phoneNumber, context
-                    )
-                }
-            } else {
-                Log.i("CallScreen", "Permission denied")
-            }
-        }
-
+fun MakeCallButton(phoneNumber: String, onPlaceCall: (String) -> Unit) {
     CallScreenButton(
         text = stringResource(id = R.string.make_a_call),
         onClick = {
-            callAttempted = true
-            if (ContextCompat.checkSelfPermission(
-                    context, Manifest.permission.CALL_PHONE
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                PhoneUtils.placeCall(
-                    phoneNumber, context
-                )
-            } else {
-                requestPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
-            }
+            onPlaceCall(phoneNumber)
         },
         icon = R.drawable.baseline_call_24,
         iconTint = colorResource(id = R.color.black),
@@ -403,5 +379,6 @@ fun CallScreenPreview() {
         telecomManager = null,
         signInButtonText = mutableStateOf("Sign In"),
         onSignInClick = {},
+        onPlaceCall = {},
     )
 }

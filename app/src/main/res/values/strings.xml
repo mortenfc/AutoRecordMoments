@@ -28,6 +28,10 @@
     <string name="DefaultRecordingName">recording.wav</string>
     <string name="exo_controls_close_description">Close</string>
 
+    <!-- Device admin -->
+    <string name="device_description">This app needs device admin privileges for call recording.</string>
+    <string name="device_admin_label">For Call Recording</string>
+
     <!-- GPay -->
     <string name="googlepay_button_content_description">Google Pay</string>
     <string name="buy_with_googlepay_button_content_description">Buy with Google Pay</string>

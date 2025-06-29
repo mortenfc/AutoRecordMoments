@@ -106,11 +106,13 @@ fun OutgoingCallScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Outgoing Call",
+            text = "Dialing",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = colorResource(id = R.color.teal_900)
         )
+        Spacer(modifier = Modifier.height(24.dp))
+        AnimatedDots()
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = formatDuration(callDuration),
