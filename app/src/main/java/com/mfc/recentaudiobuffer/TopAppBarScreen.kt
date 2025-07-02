@@ -19,6 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -107,90 +108,92 @@ fun TopAppBar(
         Text(
             text = title, color = colorResource(id = R.color.teal_900)
         )
-    }, navigationIcon = {
-        Row(
-            modifier = Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (onBackButtonClicked != null) {
-                IconButton(onClick = { onBackButtonClicked() }) {
+    },
+        navigationIcon = {
+            Row(
+                modifier = Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (onBackButtonClicked != null) {
+                    IconButton(onClick = { onBackButtonClicked() }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(id = R.string.back),
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                IconButton(onClick = {
+                    if (onIconClick != null) {
+                        onIconClick()
+                    }
+                }) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(id = R.string.back),
+                        painter = painterResource(id = R.drawable.awesome_edit_round_foreground),
+                        contentDescription = "Cool",
+                        tint = Color.Unspecified
+                    )
+                }
+            }
+        },
+        modifier = Modifier.drawBehind {
+            drawToolbarBackground(
+                toolbarOutlineColor,
+                toolbarBackgroundColor
+            )
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = Color.Transparent
+        ),
+        actions = {
+            GoogleSignInButton(onClick = onSignInClick, signInButtonText = signInButtonText)
+            if (onSettingsClick != null) {
+                Row(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(interactionSource = remember { MutableInteractionSource() },
+                            indication = ripple(
+                                bounded = true, radius = 24.dp
+                            ),
+                            onClick = {
+                                onSettingsClick()
+                            })
+                        .padding(12.dp), verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.baseline_settings_24),
+                        contentDescription = stringResource(id = R.string.settings),
                         tint = Color.White
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            IconButton(onClick = {
-                if (onIconClick != null) {
-                    onIconClick()
-                }
-            }) {
-                Icon(
-                    painter = painterResource(id = R.drawable.awesome_edit_round_foreground),
-                    contentDescription = "Cool",
-                    tint = Color.Unspecified
-                )
-            }
-        }
-    }, modifier = Modifier.drawBehind {
-        drawToolbarBackground(toolbarOutlineColor, toolbarBackgroundColor)
-    }, colors = TopAppBarDefaults.topAppBarColors(
-        containerColor = Color.Transparent
-    ), actions = {
-        GoogleSignInButton(onClick = onSignInClick, signInButtonText = signInButtonText)
-        if (onSettingsClick != null) {
-            Row(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(interactionSource = remember { MutableInteractionSource() },
-                        indication = ripple(
-                            bounded = true, radius = 24.dp
-                        ),
-                        onClick = {
-                            onSettingsClick()
-                        })
-                    .padding(12.dp), verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.baseline_settings_24),
-                    contentDescription = stringResource(id = R.string.settings),
-                    tint = Color.White
-                )
-            }
-        }
-    })
+        })
 }
 
 private fun DrawScope.drawToolbarBackground(
-    toolbarOutlineColor: Color, toolbarBackgroundColor: Color
+    toolbarOutlineColor: Color,
+    toolbarBackgroundColor: Color
 ) {
-    val paint = Paint().apply {
-        color = toolbarOutlineColor
-        style = PaintingStyle.Stroke
-        strokeWidth = 8.dp.toPx()
-    }
-    drawIntoCanvas { canvas ->
-        canvas.drawRoundRect(
-            left = 0f,
-            top = 0f,
-            right = size.width,
-            bottom = size.height,
-            radiusX = 0.dp.toPx(),
-            radiusY = 0.dp.toPx(),
-            paint = paint
-        )
-    }
-    drawRoundRect(
+    val strokeWidthPx = 3.dp.toPx()
+
+    // 1. Draw the main background fill for the entire TopAppBar.
+    drawRect(
         color = toolbarBackgroundColor,
-        topLeft = Offset(0f, 0f),
-        size = size,
-        style = Fill,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(
-            0.dp.toPx(), 0.dp.toPx()
-        )
+        size = size
+    )
+
+    // 2. Calculate the Y position to center the line just inside the bottom edge.
+    //    This ensures the entire line is visible.
+    val y = size.height - (strokeWidthPx / 2)
+
+    // 3. Draw only the bottom border line.
+    drawLine(
+        color = toolbarOutlineColor,
+        start = Offset(x = 0f, y = y),
+        end = Offset(x = size.width, y = y),
+        strokeWidth = strokeWidthPx
     )
 }
 

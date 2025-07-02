@@ -124,7 +124,7 @@ fun SettingsScreen(
                 .padding(16.dp)
                 .shadow(elevation = 8.dp, shape = RoundedCornerShape(12.dp))
                 .border(
-                    4.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(12.dp)
+                    3.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(12.dp)
                 )
                 .background(
                     colorResource(id = R.color.teal_200), RoundedCornerShape(12.dp)

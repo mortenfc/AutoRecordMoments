@@ -19,8 +19,10 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.widget.Toast
+import androidx.annotation.OptIn
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.media3.common.util.UnstableApi
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.runBlocking
 import java.io.OutputStream
@@ -66,8 +68,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         private const val REQUEST_CODE_START = 2
         private const val REQUEST_CODE_SAVE = 3
         private const val READ_SLEEP_DURATION = 300L
-        private val NOTIFICATION_UPDATE_INTERVAL_MS =
-            1000L - (READ_SLEEP_DURATION / 2.0).roundToLong()
+        private const val NOTIFICATION_UPDATE_INTERVAL_MS = 500L
 
         // Static variable to hold the buffer
         var sharedAudioDataToSave: ByteArray? = null
@@ -599,6 +600,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         }
     }
 
+    @OptIn(UnstableApi::class)
     private fun createNotification(): Notification {
         val stopIntent = PendingIntent.getBroadcast(
             this, REQUEST_CODE_STOP, Intent(this, NotificationActionReceiver::class.java).apply {
@@ -616,6 +618,17 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             this, REQUEST_CODE_SAVE, Intent(this, NotificationActionReceiver::class.java).apply {
                 action = NotificationActionReceiver.ACTION_SAVE_RECORDING
             }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // Intent to open MainActivity when the notification body is clicked
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).apply {
+                // Add flags to ensure the activity is brought to the front if it's already running
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val recordingNotification =
@@ -650,6 +663,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setOnlyAlertOnce(true) // IMPORTANCE_DEFAULT otherwise notifies on each update
                 .setSilent(true) // Don't make sounds
+                .setContentIntent(contentIntent) // Onclick open MainScreen
                 .setCategory(NotificationCompat.CATEGORY_SERVICE).build()
 
         return recordingNotification

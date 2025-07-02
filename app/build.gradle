@@ -109,20 +109,20 @@ dependencies {
     implementation 'androidx.compose.material3:material3'
     //noinspection GradleDependency Update requires API >= 35
     implementation platform('androidx.compose:compose-bom:2024.10.01')
-    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
     debugImplementation 'androidx.compose.ui:ui-tooling'
     debugImplementation 'androidx.compose.ui:ui-test-manifest'
     //noinspection GradleDependency Update requires API >= 35
     implementation 'androidx.activity:activity-compose:1.9.3'
     implementation "androidx.lifecycle:lifecycle-viewmodel-compose"
-    implementation("androidx.constraintlayout:constraintlayout-compose:1.1.0")
+    implementation("androidx.constraintlayout:constraintlayout-compose:1.1.1")
     //noinspection GradleDependency Update requires API >= 35
     implementation("androidx.media3:media3-ui:1.4.1")
 
     // Persistence
-    implementation 'com.google.firebase:firebase-firestore-ktx:25.1.1'
-    implementation 'com.google.firebase:firebase-firestore:25.1.1'
-    implementation 'androidx.datastore:datastore-preferences:1.1.2'
+    implementation 'com.google.firebase:firebase-firestore-ktx:25.1.4'
+    implementation 'com.google.firebase:firebase-firestore:25.1.4'
+    implementation 'androidx.datastore:datastore-preferences:1.1.7'
 
     // Hilt dependencies
     implementation("com.google.dagger:hilt-android:2.49")

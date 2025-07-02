@@ -2,21 +2,15 @@ package com.mfc.recentaudiobuffer
 
 import MediaPlayerManager
 import android.annotation.SuppressLint
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
-import android.view.View.GONE
-import android.view.View.VISIBLE
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,8 +26,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -43,8 +35,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -59,15 +49,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
@@ -75,6 +66,7 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
+
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
@@ -97,7 +89,7 @@ fun MainScreen(
 
     // Define colors for the recording button states
     val recordingButtonBackgroundColor by animateColorAsState(
-        targetValue = if (isRecording) colorResource(id = R.color.red_pause).copy(green = 0.185F) else colorResource(id = R.color.green_start),
+        targetValue = if (isRecording) colorResource(id = R.color.red_pause) else colorResource(id = R.color.green_start),
         label = "recordingButtonBackgroundColor"
     )
 
@@ -219,7 +211,7 @@ fun MainScreen(
 fun RecordingToggleButton(
     isRecording: Boolean,
     backgroundColor: Color,
-    elementsColor : Color,
+    elementsColor: Color,
     onClick: () -> Unit
 ) {
     val buttonText =
@@ -451,7 +443,6 @@ fun MainButton(
         }
     }
 }
-
 /**
  * A banner at the bottom of the screen for the donation/ad-removal action.
  */
@@ -460,34 +451,65 @@ fun DonateBanner(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val accentColor = colorResource(id = R.color.purple_accent)
-
-    Surface( // Using Surface for more control over color overlays
+    Surface(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        color = colorResource(id = R.color.purple_accent).copy(alpha = 0.65f), // The background color
-        border = BorderStroke(2.dp, colorResource(id = R.color.teal_500))
+        color = colorResource(id = R.color.teal_350),
+        border = BorderStroke(2.dp, colorResource(id = R.color.purple_accent))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            Icon(
-                painter = painterResource(id = R.drawable.dollar),
-                contentDescription = null,
-                tint = colorResource(id = R.color.gold),
+            // ✅ This is the correct and robust way to create an even icon outline.
+            Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier.size(28.dp)
-            )
+            ) {
+                // 1. The Background Icon (The Outline)
+                // It fills the entire Box.
+                Icon(
+                    painter = painterResource(id = R.drawable.dollar),
+                    contentDescription = null, // Description is on the text
+                    tint = colorResource(id = R.color.purple_accent), // Outline color
+                    modifier = Modifier.matchParentSize()
+                )
+                // 2. The Foreground Icon (The Fill)
+                // Padding shrinks its drawing area, revealing the background
+                // icon as a uniform border.
+                Icon(
+                    painter = painterResource(id = R.drawable.dollar),
+                    contentDescription = null,
+                    tint = colorResource(id = R.color.gold), // Fill color
+                    modifier = Modifier
+                        .matchParentSize()
+                        .padding(all = 1.5.dp) // Adjust padding to control stroke width
+                )
+            }
+
             Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = stringResource(id = R.string.donate_and_remove_ads),
-                fontWeight = FontWeight.Bold,
-                color = colorResource(id = R.color.gold),
-                fontSize = 20.sp
-            )
+
+            // The text implementation remains correct.
+            Box {
+                Text(
+                    text = stringResource(id = R.string.donate_and_remove_ads),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = colorResource(id = R.color.purple_accent),
+                    style = TextStyle(
+                        drawStyle = Stroke(width = 4f, join = StrokeJoin.Round)
+                    )
+                )
+                Text(
+                    text = stringResource(id = R.string.donate_and_remove_ads),
+                    fontWeight = FontWeight.Bold,
+                    color = colorResource(id = R.color.gold),
+                    fontSize = 20.sp
+                )
+            }
         }
     }
 }
@@ -504,9 +526,7 @@ fun PlayerControlViewContainer(
     val currentFileNameState by rememberUpdatedState(newValue = currentFileName)
 
     DisposableEffect(mediaPlayerManager) {
-        Log.d("PlayerControlViewContainer", "DisposableEffect mediaPlayerManager")
         mediaPlayerManager.onPlayerReady = { fileName ->
-            Log.i("PlayerControlViewContainer", "Player is ready with filename: $fileName")
             isContainerVisible = true
             currentFileName = fileName
         }
@@ -515,36 +535,47 @@ fun PlayerControlViewContainer(
         }
     }
 
-    Box(modifier = modifier, contentAlignment = Alignment.BottomCenter) {
-        AndroidView(factory = {
-            ConstraintLayout(context).apply {
-                id = View.generateViewId()
-                visibility = if (isContainerVisible) VISIBLE else GONE
-                val playerControlView = PlayerControlView(context).apply {
+    if (isContainerVisible) {
+        AndroidView(
+            factory = {
+                val constraintLayout = ConstraintLayout(context).apply {
+                    id = View.generateViewId()
+                    isClickable = true
+                }
+
+                val layoutInflater = LayoutInflater.from(context)
+                val closeButtonContainer =
+                    layoutInflater.inflate(
+                        R.layout.exo_close_button,
+                        constraintLayout,
+                        false
+                    ) as FrameLayout
+                closeButtonContainer.id = View.generateViewId()
+                closeButtonContainer.findViewById<ImageButton>(R.id.exo_close).setOnClickListener {
+                    mediaPlayerManager.player?.stop()
+                    mediaPlayerManager.playerControlView?.hide()
+                    mediaPlayerManager.closeMediaPlayer()
+                }
+
+                val playerControlView = PlayerControlView(it).apply {
                     id = View.generateViewId()
                     setShowFastForwardButton(true)
-                    setShowPlayButtonIfPlaybackIsSuppressed(true)
                     setShowRewindButton(true)
                     isAnimationEnabled = true
                     showTimeoutMs = 0
-                    setTimeBarMinUpdateInterval(100)
                     player = mediaPlayerManager.player
                     hide()
                 }
                 mediaPlayerManager.playerControlView = playerControlView
-                val layoutParamsIn = ConstraintLayout.LayoutParams(
-                    ConstraintLayout.LayoutParams.MATCH_PARENT,
-                    ConstraintLayout.LayoutParams.MATCH_PARENT
-                )
-                playerControlView.layoutParams = layoutParamsIn
-                Log.d(
-                    "PlayerControlViewContainer",
-                    "PlayerControlView created with ID: ${playerControlView.id}"
-                )
-                addView(playerControlView)
-                val closeButton = setCloseButton(playerControlView, context, mediaPlayerManager)
+
+                constraintLayout.addView(playerControlView)
+                constraintLayout.addView(closeButtonContainer)
+
+                // --- Start of Corrected Code ---
                 val constraintSet = ConstraintSet().apply {
-                    clone(this@apply)
+                    clone(constraintLayout)
+
+                    // Constrain PlayerControlView to the bottom of the screen
                     connect(
                         playerControlView.id,
                         ConstraintSet.BOTTOM,
@@ -563,56 +594,38 @@ fun PlayerControlViewContainer(
                         ConstraintSet.PARENT_ID,
                         ConstraintSet.END
                     )
-                    constrainPercentHeight(playerControlView.id, 0.20f)
-                    constrainPercentWidth(playerControlView.id, 1.0f)
+                    constrainPercentHeight(playerControlView.id, 0.25f)
+
+                    // ✅ Align the button's top with the media overlay's top
                     connect(
-                        closeButton.id,
+                        closeButtonContainer.id,
                         ConstraintSet.TOP,
                         playerControlView.id,
                         ConstraintSet.TOP
                     )
+
+                    // ✅ Align the button's end with the parent's end for top-right
                     connect(
-                        closeButton.id,
+                        closeButtonContainer.id,
                         ConstraintSet.END,
-                        playerControlView.id,
+                        ConstraintSet.PARENT_ID,
                         ConstraintSet.END
                     )
                 }
-                constraintSet.applyTo(this@apply)
-            }
-        }, update = {
-            Log.d("PlayerControlViewContainer", "AndroidView Update")
-            it.visibility = if (isContainerVisible) VISIBLE else GONE
-            mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
-        }, modifier = Modifier.fillMaxSize()
-        )
-        LaunchedEffect(currentFileNameState) {
-            Log.d("PlayerControlViewContainer", "LaunchedEffect currentFileNameState update")
-            val fileNameTextView =
-                mediaPlayerManager.playerControlView?.findViewById<TextView>(R.id.exo_file_name)
-            fileNameTextView?.text = currentFileNameState
-        }
-    }
-}
+                // --- End of Corrected Code ---
+                constraintSet.applyTo(constraintLayout)
 
-@androidx.annotation.OptIn(UnstableApi::class)
-private fun setCloseButton(
-    playerControlView: PlayerControlView,
-    context: android.content.Context,
-    mediaPlayerManager: MediaPlayerManager
-): FrameLayout {
-    val layoutInflater = LayoutInflater.from(context)
-    val closeButtonContainer =
-        layoutInflater.inflate(R.layout.exo_close_button, playerControlView, false) as FrameLayout
-    closeButtonContainer.id = View.generateViewId()
-    val closeButton = closeButtonContainer.findViewById<ImageButton>(R.id.exo_close)
-    closeButton.setOnClickListener {
-        mediaPlayerManager.player?.stop()
-        mediaPlayerManager.playerControlView?.hide()
-        mediaPlayerManager.closeMediaPlayer()
+                constraintLayout
+            },
+            update = { view ->
+                mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
+                val fileNameTextView = view.findViewById<TextView>(R.id.exo_file_name)
+                fileNameTextView?.text = currentFileNameState
+                mediaPlayerManager.playerControlView?.show()
+            },
+            modifier = modifier.fillMaxSize()
+        )
     }
-    playerControlView.addView(closeButtonContainer)
-    return closeButtonContainer
 }
 
 // --- Previews ---
@@ -656,12 +669,12 @@ fun MainButtonPreview() {
 @Composable
 fun ToggleButtonPreview() {
     val recordingButtonColor by animateColorAsState(
-        targetValue = colorResource(id = R.color.red_pause).copy(green = 0.185F),
+        targetValue = colorResource(id = R.color.red_pause),
         label = "RecordingButtonColor"
     )
     RecordingToggleButton(
         isRecording = true,
-        backgroundColor =  recordingButtonColor,
+        backgroundColor = recordingButtonColor,
         elementsColor = Color.White,
         onClick = {}
     )
