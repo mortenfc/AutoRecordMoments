@@ -23,7 +23,6 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import androidx.activity.compose.setContent
-import androidx.activity.viewModels
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -36,6 +35,11 @@ import dagger.hilt.android.AndroidEntryPoint
 @UnstableApi
 class MainActivity : AppCompatActivity() {
     private val logTag = "MainActivity"
+
+    companion object {
+        const val ACTION_REQUEST_DIRECTORY_PERMISSION =
+            "com.mfc.recentaudiobuffer.ACTION_REQUEST_DIRECTORY_PERMISSION"
+    }
 
     @Inject
     lateinit var authenticationManager: AuthenticationManager
@@ -252,6 +256,14 @@ class MainActivity : AppCompatActivity() {
             } else {
                 Log.e(logTag, "savedFileUri is null")
             }
+        }
+
+        if (intent.action == ACTION_REQUEST_DIRECTORY_PERMISSION) {
+            Log.d(logTag, "Intent to request directory permission received.")
+            // Directly trigger the directory picker flow.
+            pickDirectory()
+            // Clear the action so it doesn't re-trigger on configuration changes
+            setIntent(Intent(this, MainActivity::class.java))
         }
     }
 

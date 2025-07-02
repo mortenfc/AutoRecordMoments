@@ -146,7 +146,7 @@ fun SettingsScreen(
                 expanded = showSampleRateMenu,
                 onDismissRequest = { showSampleRateMenu = false },
                 modifier = Modifier
-                    .background(colorResource(id = R.color.teal_350))
+                    .background(colorResource(id = R.color.teal_100))
                     .border(
                         width = 2.dp,
                         color = colorResource(id = R.color.purple_accent),
@@ -174,7 +174,7 @@ fun SettingsScreen(
                 expanded = showBitDepthMenu,
                 onDismissRequest = { showBitDepthMenu = false },
                 modifier = Modifier
-                    .background(colorResource(id = R.color.teal_350))
+                    .background(colorResource(id = R.color.teal_100))
                     .border(
                         width = 2.dp,
                         color = colorResource(id = R.color.purple_accent),
@@ -237,7 +237,7 @@ fun SettingsButton(text: String, icon: ImageVector, onClick: () -> Unit) {
                 2.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(8.dp)
             )
             .background(
-                colorResource(id = R.color.teal_350), RoundedCornerShape(8.dp)
+                colorResource(id = R.color.teal_100), RoundedCornerShape(8.dp)
             )
     ) {
         Text(
@@ -329,7 +329,7 @@ fun MyOutlinedBufferInputField(
                     colors = TextFieldDefaults.colors(
                         unfocusedIndicatorColor = colorResource(id = R.color.purple_accent),
                         focusedIndicatorColor = colorResource(id = R.color.purple_accent),
-                        unfocusedContainerColor = colorResource(id = R.color.teal_350),
+                        unfocusedContainerColor = colorResource(id = R.color.teal_100),
                         focusedContainerColor = colorResource(id = R.color.teal_200),
                         errorContainerColor = colorResource(id = R.color.teal_200),
                         errorIndicatorColor = Color.Red

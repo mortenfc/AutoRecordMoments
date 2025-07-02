@@ -103,12 +103,6 @@ fun DonationScreen(
             ) {
                 DonationHeader()
 
-                if (isGooglePayReady.value) {
-                    GoogleSignInButton(onClick = onSignInClick, signInButtonText)
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
                 if (isGooglePayReady.value && isLoggedIn) {
                     when (signInButtonViewState.value) {
                         SignInButtonViewState.Hidden -> {}
@@ -120,15 +114,24 @@ fun DonationScreen(
                                         it.toIntOrNull() == null || it.toIntOrNull()!! < 5
                                 }, isDonationAmountError = isDonationAmountError
                             )
-                            GooglePayButton(onClick = {
-                                val amount = donationAmount.toIntOrNull()
-                                if (amount != null && amount >= 5) {
-                                    isDonationAmountError = false
-                                    onPayClick(amount)
-                                } else {
-                                    isDonationAmountError = true
-                                }
-                            })
+                            Row() {
+                                GooglePayButton(onClick = {
+                                    val amount = donationAmount.toIntOrNull()
+                                    if (amount != null && amount >= 5) {
+                                        isDonationAmountError = false
+                                        onPayClick(amount)
+                                    } else {
+                                        isDonationAmountError = true
+                                    }
+                                })
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                GoogleSignInButton(
+                                    onClick = onSignInClick,
+                                    signInButtonText
+                                )
+                            }
                         }
                     }
                 } else if (!isGooglePayReady.value) {
@@ -158,7 +161,7 @@ fun DonationScreen(
 fun DonationHeader() {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Image(
-            painter = painterResource(id = R.drawable.donation_banner),
+            painter = painterResource(id = R.drawable.gradient_love_donation),
             contentDescription = stringResource(id = R.string.donate_ads_away),
             modifier = Modifier
                 .fillMaxWidth()
@@ -168,15 +171,17 @@ fun DonationHeader() {
 
         Column(
             modifier = Modifier
-                .align(Alignment.Start)
+                .align(Alignment.CenterHorizontally)
                 .padding(start = 5.dp),
         ) {
             Text(
                 text = stringResource(id = R.string.donate_your_heart_out),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 30.dp),
-                color = colorResource(R.color.black)
+                modifier = Modifier
+                    .padding(top = 30.dp)
+                    .align(Alignment.CenterHorizontally),
+                color = MaterialTheme.colorScheme.primary
             )
 
             Text(
@@ -228,37 +233,6 @@ fun DonationAmountTextField(
         }
     }
 }
-//
-//@Composable
-//fun GoogleSignInButton(onClick: () -> Unit, signInButtonText: MutableState<String>) {
-//    Button(
-//        onClick = onClick,
-//        modifier = Modifier
-//            .width(140.dp)
-//            .height(48.dp)
-//            .shadow(elevation = 2.dp, shape = RoundedCornerShape(4.dp)),
-//        colors = ButtonDefaults.buttonColors(
-//            containerColor = Color.White, contentColor = Color.Black // Text color
-//        ),
-//        shape = RoundedCornerShape(4.dp)
-//    ) {
-//        Row(
-//            verticalAlignment = Alignment.CenterVertically
-//        ) {
-//            Image(
-//                painter = painterResource(id = R.drawable.ic_google_logo),
-//                contentDescription = stringResource(id = R.string.google_logo),
-//                modifier = Modifier.size(24.dp)
-//            )
-//            Spacer(modifier = Modifier.width(5.dp))
-//            Text(
-//                text = if (signInButtonText.value == "Sign In") stringResource(id = R.string.sign_in) else stringResource(
-//                    id = R.string.sign_out
-//                ), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray
-//            )
-//        }
-//    }
-//}
 
 @Composable
 fun GooglePayButton(onClick: () -> Unit) {
@@ -313,8 +287,10 @@ fun PaymentButton(
             }
             drawIntoCanvas { canvas ->
                 canvas.drawRoundRect(
-                    left = 0f, top = offset, // Anchor is 0
-                    right = size.width, bottom = size.height, // Draw to the bottom of the button
+                    left = 0f,
+                    top = offset, // Anchor is 0
+                    right = size.width,
+                    bottom = size.height, // Draw to the bottom of the button
                     radiusX = size.height / 2, // Half the height for rounded corners
                     radiusY = size.height / 2, // Half the height for rounded corners
                     paint = paint

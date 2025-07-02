@@ -89,7 +89,10 @@ fun MainScreen(
 
     // Define colors for the recording button states
     val recordingButtonBackgroundColor by animateColorAsState(
-        targetValue = if (isRecording) colorResource(id = R.color.red_pause) else colorResource(id = R.color.green_start),
+        targetValue = if (isRecording) colorResource(id = R.color.red_pause).copy(
+            red = 0.65f,
+            blue = 0.3f
+        ) else colorResource(id = R.color.green_start).copy(green = 0.95f),
         label = "recordingButtonBackgroundColor"
     )
 
@@ -443,6 +446,7 @@ fun MainButton(
         }
     }
 }
+
 /**
  * A banner at the bottom of the screen for the donation/ad-removal action.
  */
@@ -669,7 +673,7 @@ fun MainButtonPreview() {
 @Composable
 fun ToggleButtonPreview() {
     val recordingButtonColor by animateColorAsState(
-        targetValue = colorResource(id = R.color.red_pause),
+        targetValue = colorResource(id = R.color.red_pause).copy(red = 0.65f),
         label = "RecordingButtonColor"
     )
     RecordingToggleButton(

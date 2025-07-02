@@ -4,7 +4,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
+import androidx.media3.common.util.UnstableApi
 
 class NotificationActionReceiver : BroadcastReceiver() {
     private val logTag = "NotificationActionReceiver"
@@ -15,6 +17,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
         const val ACTION_SAVE_RECORDING = "ACTION_SAVE_RECORDING"
     }
 
+    @OptIn(UnstableApi::class)
     override fun onReceive(context: Context, intent: Intent) {
         val myBufferService = RecentAudioBufferApplication.getSharedViewModel().myBufferService
 
@@ -39,11 +42,26 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
             ACTION_SAVE_RECORDING -> {
                 Log.d(logTag, "Received ACTION_SAVE_RECORDING")
-                if (myBufferService != null) {
-                    myBufferService.quickSaveBuffer()
-                    myBufferService.resetBuffer()
+                val grantedUri = FileSavingUtils.getCachedGrantedUri()
+
+                // ✅ Check if we have a valid, accessible URI permission
+                if (FileSavingUtils.isUriValidAndAccessible(context, grantedUri)) {
+                    // Permission exists, proceed with saving as before
+                    Log.d(logTag, "Valid URI permission found. Proceeding with save.")
+                    if (myBufferService != null) {
+                        myBufferService.quickSaveBuffer()
+                        myBufferService.resetBuffer()
+                    } else {
+                        startService(context, MyBufferService.ACTION_SAVE_RECORDING_SERVICE)
+                    }
                 } else {
-                    startService(context, MyBufferService.ACTION_SAVE_RECORDING_SERVICE)
+                    // Permission does NOT exist, launch MainActivity to request it
+                    Log.d(logTag, "No valid URI permission. Launching MainActivity to request it.")
+                    val mainActivityIntent = Intent(context, MainActivity::class.java).apply {
+                        action = MainActivity.ACTION_REQUEST_DIRECTORY_PERMISSION
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    }
+                    context.startActivity(mainActivityIntent)
                 }
             }
         }
