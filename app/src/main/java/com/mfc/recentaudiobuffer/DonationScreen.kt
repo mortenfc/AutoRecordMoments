@@ -180,7 +180,7 @@ fun DonationScreen(
 fun DonationHeader() {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Image(
-            painter = painterResource(id = R.drawable.gradient_love_donation),
+            painter = painterResource(id = R.drawable.teal_gradient_orange),
             contentDescription = stringResource(id = R.string.donate_ads_away),
             modifier = Modifier
                 .fillMaxWidth()
