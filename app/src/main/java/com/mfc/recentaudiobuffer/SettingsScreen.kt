@@ -135,8 +135,7 @@ fun SettingsScreen(
                     shape = RoundedCornerShape(12.dp)
                 )
                 .background(
-                    color = colorResource(id = R.color.teal_150),
-                    shape = RoundedCornerShape(12.dp)
+                    color = colorResource(id = R.color.teal_150), shape = RoundedCornerShape(12.dp)
                 )
         ) {
             // The Column ONLY organizes the content inside the Box. It has no style of its own.
@@ -147,8 +146,7 @@ fun SettingsScreen(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = { focusManager.clearFocus() }
-                    ),
+                        onClick = { focusManager.clearFocus() }),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Spacer(modifier = Modifier.height(16.dp))
@@ -402,9 +400,7 @@ fun StyledDropdownMenuItem(
 }
 
 data class ImpactEstimate(
-    val impactLabel: String,
-    val qualityLabel: String,
-    val color: Color
+    val impactLabel: String, val qualityLabel: String, val color: Color
 )
 
 private fun estimateBatteryImpact(
@@ -425,10 +421,10 @@ private fun estimateBatteryImpact(
 
     // ✅ Return instances of the data class
     return when (sampleRateScore + bitDepthScore + ramScore) {
-        in 0f..<4f -> ImpactEstimate("Low", "Poor Sound", Color(0xFF388E3C))
-        in 4f..<6f -> ImpactEstimate("Medium Low", "Decent Sound", Color(0xFF7B8E38))
-        in 6f..<8f -> ImpactEstimate("Medium High", "Great Sound", Color(0xFFF57C00))
-        else -> ImpactEstimate("Very High", "Best Sound", Color(0xFFD32F2F))
+        in 0f..<4f -> ImpactEstimate("Low", "Poor", Color(0xFF388E3C))
+        in 4f..<6f -> ImpactEstimate("M. Low", "Decent", Color(0xFF7B8E38))
+        in 6f..<8f -> ImpactEstimate("M. High", "Great", Color(0xFFF57C00))
+        else -> ImpactEstimate("V. High", "Best", Color(0xFFD32F2F))
     }
 }
 
@@ -436,12 +432,12 @@ private fun estimateBatteryImpact(
 fun ComprehensiveHelpDialog(
     sampleRate: Int, bitDepth: BitDepth, bufferTimeLength: Int, onDismissRequest: () -> Unit
 ) {
-// --- Calculations ---
+    // --- Calculations ---
     val (formattedRamUsage, estimate) = remember(sampleRate, bitDepth, bufferTimeLength) {
         val bytesPerSample = bitDepth.bytes / 8
         val totalBytes = sampleRate.toLong() * bufferTimeLength * bytesPerSample
         val megabytes = totalBytes / (1024.0 * 1024.0)
-        val ram = String.format("%.2f MB", megabytes)
+        val ram = String.format("~%.0f", megabytes)
 
         // ✅ Return a Pair containing the RAM string and the full estimate object
         Pair(ram, estimateBatteryImpact(sampleRate, bitDepth, bufferTimeLength))
@@ -462,14 +458,16 @@ fun ComprehensiveHelpDialog(
                 // --- Section 1: Estimates ---
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.Top, // Align content to the top
+                    horizontalArrangement = Arrangement.SpaceAround
                 ) {
+                    // --- Column 1: RAM Usage ---
                     Column(
                         modifier = Modifier.weight(1f),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            "Est. RAM Usage",
+                            "RAM Usage [MB]",
                             style = MaterialTheme.typography.labelMedium,
                             color = colorResource(id = R.color.teal_900).copy(alpha = 0.7f),
                             textAlign = TextAlign.Center
@@ -482,17 +480,20 @@ fun ComprehensiveHelpDialog(
                             textAlign = TextAlign.Center
                         )
                     }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // --- Column 2: Battery Impact ---
                     Column(
                         modifier = Modifier.weight(1f),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            "Est. Battery / Quality", // Updated title
+                            "Battery Impact",
                             style = MaterialTheme.typography.labelMedium,
                             color = colorResource(id = R.color.teal_900).copy(alpha = 0.7f),
                             textAlign = TextAlign.Center
                         )
-
                         Text(
                             text = estimate.impactLabel,
                             style = MaterialTheme.typography.headlineSmall,
@@ -500,12 +501,26 @@ fun ComprehensiveHelpDialog(
                             color = estimate.color,
                             textAlign = TextAlign.Center
                         )
+                    }
 
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // --- Column 3: Sound Quality ---
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "Sound Quality",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colorResource(id = R.color.teal_900).copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center
+                        )
                         Text(
                             text = estimate.qualityLabel,
-                            style = MaterialTheme.typography.bodySmall, // Use a smaller style
-                            fontWeight = FontWeight.Normal,
-                            color = estimate.color.copy(alpha = 0.8f),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colorResource(id = R.color.teal_900), // Use a neutral bold color
                             textAlign = TextAlign.Center
                         )
                     }
