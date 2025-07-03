@@ -290,14 +290,18 @@ class MainActivity : AppCompatActivity() {
                 )
                 Log.i(logTag, "Buffer service started and bound")
             } else if (myBufferService!!.isRecording.get()) {
-                Toast.makeText(
-                    this, "Buffer is already running!", Toast.LENGTH_SHORT
-                ).show()
+                runOnUiThread {
+                    Toast.makeText(
+                        this, "Buffer is already running!", Toast.LENGTH_SHORT
+                    ).show()
+                }
             } else {
                 myBufferService!!.startRecording()
-                Toast.makeText(
-                    this, "Restarted buffering in the background", Toast.LENGTH_LONG
-                ).show()
+                runOnUiThread {
+                    Toast.makeText(
+                        this, "Restarted buffering in the background", Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         }
     }
@@ -307,19 +311,25 @@ class MainActivity : AppCompatActivity() {
             if (myBufferService!!.isRecording.get()) {
                 Log.i(logTag, "Stopping recording in MyBufferService")
                 myBufferService!!.stopRecording()
-                Toast.makeText(
-                    this, "Stopped buffering in the background", Toast.LENGTH_SHORT
-                ).show()
+                runOnUiThread {
+                    Toast.makeText(
+                        this, "Stopped buffering in the background", Toast.LENGTH_SHORT
+                    ).show()
+                }
             } else {
-                Toast.makeText(
-                    this, "Buffer is not running", Toast.LENGTH_SHORT
-                ).show()
+                runOnUiThread {
+                    Toast.makeText(
+                        this, "Buffer is not running", Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         } else {
             Log.e(logTag, "Buffer service is not running")
-            Toast.makeText(
-                this, "Buffer service is not running", Toast.LENGTH_SHORT
-            ).show()
+            runOnUiThread {
+                Toast.makeText(
+                    this, "Buffer service is not running", Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 
@@ -327,8 +337,10 @@ class MainActivity : AppCompatActivity() {
         if (foregroundBufferServiceConn.isBound) {
             myBufferService!!.resetBuffer()
         } else {
-            Toast.makeText(this, "ERROR: Buffer service is not running. ", Toast.LENGTH_SHORT)
-                .show()
+            runOnUiThread {
+                Toast.makeText(this, "ERROR: Buffer service is not running. ", Toast.LENGTH_SHORT)
+                    .show()
+            }
         }
     }
 
@@ -349,11 +361,13 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } else {
-            Toast.makeText(
-                this,
-                "ERROR: Buffer service is not running. There is no recorded data.",
-                Toast.LENGTH_LONG
-            ).show()
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    "ERRO}R: Buffer service is not running. There is no recorded data.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -413,11 +427,13 @@ class MainActivity : AppCompatActivity() {
 
                 } else {
                     // "Don't ask again" was checked and permission denied
-                    Toast.makeText(
-                        this,
-                        "Permissions are required. Please grant them in app settings.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    runOnUiThread {
+                        Toast.makeText(
+                            this,
+                            "Perm}issions are required. Please grant them in app settings.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                     val intent = Intent(
                         Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         Uri.fromParts("package", packageName, null)
@@ -442,7 +458,10 @@ class MainActivity : AppCompatActivity() {
         onPermissionsGrantedCallback = onPermissionsGranted // Store the callback
 
         val permissionsToRequest = permissions.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(
+                this,
+                it
+            ) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
 
         if (permissionsToRequest.isNotEmpty()) {
@@ -462,7 +481,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setUpMediaPlayer(selectedMediaToPlayUri: Uri) {
-        Log.d(logTag, "setUpMediaPlayer: selectedMediaToPlayUri = $selectedMediaToPlayUri")
+        Log.d(
+            logTag,
+            "setUpMediaPlayer: selectedMediaToPlayUri = $selectedMediaToPlayUri"
+        )
         mediaPlayerManager?.setUpMediaPlayer(selectedMediaToPlayUri)
     }
 

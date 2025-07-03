@@ -8,6 +8,8 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.EaseInOutCubic
+import androidx.compose.animation.core.EaseOutSine
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -74,6 +76,8 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -104,12 +108,13 @@ fun MainScreen(
             return@LaunchedEffect
         }
 
-        // The UI animation has already started at this point.
-        // Now, we do the actual work.
-        if (isRecording) {
-            onStartBufferingClick()
-        } else {
-            onStopBufferingClick()
+        // ✅ Force the work onto a dedicated background thread
+        withContext(Dispatchers.IO) {
+            if (isRecording) {
+                onStartBufferingClick()
+            } else {
+                onStopBufferingClick()
+            }
         }
     }
 
@@ -123,13 +128,12 @@ fun MainScreen(
             alpha = 1f, green = 0.95f
         ),
         label = "recordingButtonBackgroundColor",
-        animationSpec = tween(durationMillis = 300, easing = LinearEasing)
+        animationSpec = tween(durationMillis = 400, easing = EaseInOutCubic)
     )
-
     val recordingButtonElementsColor by animateColorAsState(
         targetValue = if (isRecording) Color.White else colorResource(id = R.color.teal_900),
         label = "recordingButtonElementsColor",
-        animationSpec = tween(durationMillis = 300, easing = LinearEasing)
+        animationSpec = tween(durationMillis = 400, delayMillis = 50, easing = EaseInOutCubic)
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
