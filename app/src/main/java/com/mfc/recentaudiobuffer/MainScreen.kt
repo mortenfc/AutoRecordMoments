@@ -7,11 +7,13 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.compose.animation.VectorConverter
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.EaseInOutCubic
 import androidx.compose.animation.core.EaseOutSine
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateValueAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -66,6 +68,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -119,7 +122,7 @@ fun MainScreen(
     }
 
     // Define colors for the recording button states
-    val recordingButtonBackgroundColor by animateColorAsState(
+    val recordingButtonBackgroundColor by animateValueAsState(
         targetValue = if (isRecording) colorResource(id = R.color.red_pause).copy(
             alpha = 1f,
             red = 0.65f,
@@ -128,12 +131,14 @@ fun MainScreen(
             alpha = 1f, green = 0.95f
         ),
         label = "recordingButtonBackgroundColor",
-        animationSpec = tween(durationMillis = 400, easing = EaseInOutCubic)
+        animationSpec = tween(durationMillis = 400, easing = EaseInOutCubic),
+        typeConverter = Color.VectorConverter(ColorSpaces.Oklab)
     )
-    val recordingButtonElementsColor by animateColorAsState(
+    val recordingButtonElementsColor by animateValueAsState(
         targetValue = if (isRecording) Color.White else colorResource(id = R.color.teal_900),
         label = "recordingButtonElementsColor",
-        animationSpec = tween(durationMillis = 400, delayMillis = 50, easing = EaseInOutCubic)
+        animationSpec = tween(durationMillis = 400, delayMillis = 50, easing = EaseInOutCubic),
+        typeConverter = Color.VectorConverter(ColorSpaces.Oklab)
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
