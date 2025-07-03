@@ -67,7 +67,7 @@ data class BitDepth(val bytes: Int, val encodingEnum: Int) {
 }
 
 const val DEFAULT_BIT_DEPTH_KEY = "16"
-const val DEFAULT_SAMPLE_RATE = 44100
+const val DEFAULT_SAMPLE_RATE = 22050
 const val DEFAULT_BUFFER_TIME_LENGTH_S = 300
 
 public val bitDepths = mapOf(
@@ -83,7 +83,7 @@ public val sampleRates = mapOf(
     "11025" to 11025,
     "16000" to 16000,
     "22050" to 22050,
-    "44100" to DEFAULT_SAMPLE_RATE,
+    "44100" to 44100,
     "48000" to 48000,
     "88200" to 88200,
     "96000" to 96000,

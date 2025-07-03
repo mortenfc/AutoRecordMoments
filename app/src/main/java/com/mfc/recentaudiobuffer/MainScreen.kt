@@ -8,9 +8,13 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -48,7 +52,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,19 +94,42 @@ fun MainScreen(
 ) {
     // State to manage if recording is active, controlling the main button's appearance and action
     var isRecording by remember { mutableStateOf(false) }
+    var isInitialComposition by remember { mutableStateOf(true) }
+
+    // This effect triggers whenever 'isRecording' changes.
+    LaunchedEffect(isRecording) {
+        // Don't run this logic the very first time the screen is composed
+        if (isInitialComposition) {
+            isInitialComposition = false
+            return@LaunchedEffect
+        }
+
+        // The UI animation has already started at this point.
+        // Now, we do the actual work.
+        if (isRecording) {
+            onStartBufferingClick()
+        } else {
+            onStopBufferingClick()
+        }
+    }
 
     // Define colors for the recording button states
     val recordingButtonBackgroundColor by animateColorAsState(
         targetValue = if (isRecording) colorResource(id = R.color.red_pause).copy(
+            alpha = 1f,
             red = 0.65f,
             blue = 0.3f
-        ) else colorResource(id = R.color.green_start).copy(green = 0.95f),
-        label = "recordingButtonBackgroundColor"
+        ) else colorResource(id = R.color.green_start).copy(
+            alpha = 1f, green = 0.95f
+        ),
+        label = "recordingButtonBackgroundColor",
+        animationSpec = tween(durationMillis = 300, easing = LinearEasing)
     )
 
     val recordingButtonElementsColor by animateColorAsState(
         targetValue = if (isRecording) Color.White else colorResource(id = R.color.teal_900),
-        label = "recordingButtonElementsColor"
+        label = "recordingButtonElementsColor",
+        animationSpec = tween(durationMillis = 300, easing = LinearEasing)
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -132,11 +163,6 @@ fun MainScreen(
                         backgroundColor = recordingButtonBackgroundColor,
                         elementsColor = recordingButtonElementsColor,
                         onClick = {
-                            if (isRecording) {
-                                onStopBufferingClick()
-                            } else {
-                                onStartBufferingClick()
-                            }
                             isRecording = !isRecording
                         }
                     )
@@ -190,7 +216,8 @@ fun MainScreen(
         val context = LocalContext.current
         FileSavingUtils.currentGrantedDirectoryUri?.let { grantedDirectoryUri ->
             FileSavingUtils.currentData?.let { data ->
-                FileSaveDialog(onDismiss = { FileSavingUtils.showSavingDialog = false },
+                FileSaveDialog(
+                    onDismiss = { FileSavingUtils.showSavingDialog = false },
                     onSave = { filename ->
                         FileSavingUtils.fixBaseNameToSave(
                             context, grantedDirectoryUri, data, filename
@@ -455,12 +482,13 @@ fun DonateBanner(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+    Card(
+        onClick = onClick, // The Card handles the click and ripple effect itself
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = colorResource(id = R.color.teal_350),
+        colors = CardDefaults.cardColors(
+            containerColor = colorResource(id = R.color.teal_350)
+        ),
         border = BorderStroke(2.dp, colorResource(id = R.color.purple_accent))
     ) {
         Row(

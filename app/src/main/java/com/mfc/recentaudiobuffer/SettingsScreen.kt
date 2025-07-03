@@ -1,14 +1,16 @@
 package com.mfc.recentaudiobuffer
 
 import android.annotation.SuppressLint
-import android.provider.Settings
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,12 +18,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,20 +39,15 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -66,12 +64,15 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.mfc.recentaudiobuffer.ui.theme.RecentAudioBufferTheme
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.PaintingStyle
-import androidx.compose.ui.graphics.drawscope.Fill
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
@@ -87,6 +88,8 @@ fun SettingsScreen(
 ) {
     var showSampleRateMenu by remember { mutableStateOf(false) }
     var showBitDepthMenu by remember { mutableStateOf(false) }
+    var showHelpDialog by remember { mutableStateOf(false) }
+
     val focusManager = LocalFocusManager.current
 
     val sampleRate = state.value.sampleRateTemp
@@ -97,16 +100,18 @@ fun SettingsScreen(
     val errorMessage = state.value.errorMessage
     val isSubmitEnabled = state.value.isSubmitEnabled
 
-    Log.d("SettingsScreen", "recompose")
+    Log.d("SettingsScreen", "Recompose")
 
-    Scaffold(containerColor = colorResource(id = R.color.teal_100),
+    Scaffold(
+        containerColor = colorResource(id = R.color.teal_100),
         modifier = Modifier.pointerInput(Unit) {
             detectTapGestures {
                 focusManager.clearFocus()
             }
         },
         topBar = {
-            TopAppBar(title = stringResource(id = R.string.donate),
+            TopAppBar(
+                title = stringResource(id = R.string.donate),
                 signInButtonText = signInButtonText,
                 onSignInClick = onSignInClick,
                 onBackButtonClicked = {
@@ -117,113 +122,147 @@ fun SettingsScreen(
                     }
                 })
         }) { innerPadding ->
-        Column(
+        // The Box is now the single, styled container. It acts as our "card".
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(innerPadding)
-                .padding(16.dp)
+                .padding(innerPadding) // 1. Apply padding from Scaffold (for the TopAppBar)
+                .padding(16.dp)       // 2. Apply margin around the card
                 .shadow(elevation = 8.dp, shape = RoundedCornerShape(12.dp))
                 .border(
-                    3.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(12.dp)
+                    width = 3.dp,
+                    color = colorResource(id = R.color.purple_accent),
+                    shape = RoundedCornerShape(12.dp)
                 )
                 .background(
-                    colorResource(id = R.color.teal_150), RoundedCornerShape(12.dp)
+                    color = colorResource(id = R.color.teal_150),
+                    shape = RoundedCornerShape(12.dp)
                 )
-                .padding(16.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() }, indication = null
-                ) {
-                    focusManager.clearFocus()
-                }, horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Sample Rate
-            SettingsButton(text = "Sample Rate: ${sampleRate.value} Hz",
-                icon = Icons.Filled.ArrowDropDown,
-                onClick = { showSampleRateMenu = true })
-            DropdownMenu(
-                expanded = showSampleRateMenu,
-                onDismissRequest = { showSampleRateMenu = false },
+            // The Column ONLY organizes the content inside the Box. It has no style of its own.
+            Column(
                 modifier = Modifier
-                    .background(colorResource(id = R.color.teal_100))
-                    .border(
-                        width = 2.dp,
-                        color = colorResource(id = R.color.purple_accent),
-                        shape = RoundedCornerShape(8.dp)
-                    )
+                    .fillMaxWidth()
+                    .padding(16.dp) // 3. Apply padding for the content INSIDE the card
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { focusManager.clearFocus() }
+                    ),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                sampleRates.forEach { (label, value) ->
-                    StyledDropdownMenuItem(text = "$label Hz", onClick = {
-                        Log.i(
-                            "SettingsScreen", "Clicked SampleRate $label with value: $value"
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Sample Rate
+                SettingsButton(
+                    text = "Sample Rate: ${sampleRate.value} Hz",
+                    icon = Icons.Filled.ArrowDropDown,
+                    onClick = { showSampleRateMenu = true })
+                DropdownMenu(
+                    expanded = showSampleRateMenu,
+                    onDismissRequest = { showSampleRateMenu = false },
+                    modifier = Modifier
+                        .background(colorResource(id = R.color.teal_100))
+                        .border(
+                            width = 2.dp,
+                            color = colorResource(id = R.color.purple_accent),
+                            shape = RoundedCornerShape(8.dp)
                         )
-                        onSampleRateChanged(value)
-                        showSampleRateMenu = false
-                    })
+                ) {
+                    sampleRates.forEach { (label, value) ->
+                        StyledDropdownMenuItem(text = "$label Hz", onClick = {
+                            Log.i(
+                                "SettingsScreen", "Clicked SampleRate $label with value: $value"
+                            )
+                            onSampleRateChanged(value)
+                            showSampleRateMenu = false
+                        })
+                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // Bit Depth
-            SettingsButton(text = "Bit Depth: ${bitDepth.value.bytes} bit",
-                icon = Icons.Filled.ArrowDropDown,
-                onClick = { showBitDepthMenu = true })
-            DropdownMenu(
-                expanded = showBitDepthMenu,
-                onDismissRequest = { showBitDepthMenu = false },
-                modifier = Modifier
-                    .background(colorResource(id = R.color.teal_100))
-                    .border(
-                        width = 2.dp,
-                        color = colorResource(id = R.color.purple_accent),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-            ) {
-                bitDepths.forEach { (label, value) ->
-                    StyledDropdownMenuItem(text = "$label bit", onClick = {
-                        Log.i(
-                            "SettingsScreen", "Clicked BitDepth $label with value: $value"
+                // Bit Depth
+                SettingsButton(
+                    text = "Bit Depth: ${bitDepth.value.bytes} bit",
+                    icon = Icons.Filled.ArrowDropDown,
+                    onClick = { showBitDepthMenu = true })
+                DropdownMenu(
+                    expanded = showBitDepthMenu,
+                    onDismissRequest = { showBitDepthMenu = false },
+                    modifier = Modifier
+                        .background(colorResource(id = R.color.teal_100))
+                        .border(
+                            width = 2.dp,
+                            color = colorResource(id = R.color.purple_accent),
+                            shape = RoundedCornerShape(8.dp)
                         )
-                        onBitDepthChanged(value)
-                        showBitDepthMenu = false
-                    })
+                ) {
+                    bitDepths.forEach { (label, value) ->
+                        StyledDropdownMenuItem(text = "$label bit", onClick = {
+                            Log.i(
+                                "SettingsScreen", "Clicked BitDepth $label with value: $value"
+                            )
+                            onBitDepthChanged(value)
+                            showBitDepthMenu = false
+                        })
+                    }
                 }
-            }
+                Spacer(modifier = Modifier.height(16.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
+                MyOutlinedBufferInputField(
+                    bufferTimeLength = bufferTimeLengthTemp,
+                    onValueChange = onBufferTimeLengthChanged,
+                    isMaxExceeded = isMaxExceeded,
+                    isNull = isBufferTimeLengthNull
+                )
 
-            MyOutlinedBufferInputField(
-                bufferTimeLength = bufferTimeLengthTemp,
-                onValueChange = onBufferTimeLengthChanged,
-                isMaxExceeded = isMaxExceeded,
-                isNull = isBufferTimeLengthNull
-            )
+                Spacer(modifier = Modifier.height(16.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
+                // Error Message
+                if (errorMessage.value != null) {
+                    Text(text = errorMessage.value!!, color = Color.Red)
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
 
-            // Error Message
-            if (errorMessage.value != null) {
-                Text(text = errorMessage.value!!, color = Color.Red)
+                MainButton(
+                    text = stringResource(id = R.string.submit),
+                    icon = R.drawable.baseline_save_alt_24,
+                    onClick = {
+                        if (isSubmitEnabled.value) {
+                            onSubmit(bufferTimeLengthTemp.intValue)
+                        }
+                    },
+                    iconTint = colorResource(id = R.color.purple_accent),
+                    width = 130.dp,
+                    enabled = isSubmitEnabled.value
+                )
+
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            MainButton(
-                text = stringResource(id = R.string.submit),
-                icon = R.drawable.baseline_save_alt_24,
-                onClick = {
-                    if (isSubmitEnabled.value) {
-                        onSubmit(bufferTimeLengthTemp.intValue)
-                    }
-                },
-                iconTint = colorResource(id = R.color.purple_accent),
-                width = 130.dp,
-                enabled = isSubmitEnabled.value
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
+            IconButton(
+                onClick = { showHelpDialog = true },
+                modifier = Modifier
+                    .align(Alignment.TopEnd) // Positions it at the top-right
+                    .padding(top = 4.dp, end = 4.dp) // Adds padding so it's not on the edge
+                    .zIndex(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "Show settings help",
+                    tint = colorResource(id = R.color.purple_accent)
+                )
+            }
         }
+    }
+
+    if (showHelpDialog) {
+        ComprehensiveHelpDialog(
+            sampleRate = sampleRate.value,
+            bitDepth = bitDepth.value,
+            bufferTimeLength = bufferTimeLengthTemp.intValue,
+            onDismissRequest = { showHelpDialog = false })
     }
 }
 
@@ -309,7 +348,8 @@ fun MyOutlinedBufferInputField(
             focusManager.clearFocus()
         }),
     ) { innerTextField ->
-        OutlinedTextFieldDefaults.DecorationBox(value = bufferTimeLength.intValue.toString(),
+        OutlinedTextFieldDefaults.DecorationBox(
+            value = bufferTimeLength.intValue.toString(),
             innerTextField = innerTextField,
             enabled = true,
             singleLine = true,
@@ -361,12 +401,269 @@ fun StyledDropdownMenuItem(
     )
 }
 
+data class ImpactEstimate(
+    val impactLabel: String,
+    val qualityLabel: String,
+    val color: Color
+)
+
+private fun estimateBatteryImpact(
+    sampleRate: Int, bitDepth: BitDepth, bufferTimeLength: Int
+): ImpactEstimate { // ✅ Return the new data class
+    val sampleRateScore = when {
+        sampleRate <= 16000 -> 1.5f
+        sampleRate <= 22050 -> 2f
+        sampleRate <= 48000 -> 4f
+        else -> 6f
+    }
+    val bitDepthScore = if (bitDepth.bytes == 8) 1.5f else 2f
+    val ramScore = when {
+        (sampleRate.toLong() * bufferTimeLength * (bitDepth.bytes / 8)) / (1024 * 1024) <= 50 -> 0.5f
+        (sampleRate.toLong() * bufferTimeLength * (bitDepth.bytes / 8)) / (1024 * 1024) <= 150 -> 1f
+        else -> 2f
+    }
+
+    // ✅ Return instances of the data class
+    return when (sampleRateScore + bitDepthScore + ramScore) {
+        in 0f..<4f -> ImpactEstimate("Low", "Poor Sound", Color(0xFF388E3C))
+        in 4f..<6f -> ImpactEstimate("Medium Low", "Decent Sound", Color(0xFF7B8E38))
+        in 6f..<8f -> ImpactEstimate("Medium High", "Great Sound", Color(0xFFF57C00))
+        else -> ImpactEstimate("Very High", "Best Sound", Color(0xFFD32F2F))
+    }
+}
+
+@Composable
+fun ComprehensiveHelpDialog(
+    sampleRate: Int, bitDepth: BitDepth, bufferTimeLength: Int, onDismissRequest: () -> Unit
+) {
+// --- Calculations ---
+    val (formattedRamUsage, estimate) = remember(sampleRate, bitDepth, bufferTimeLength) {
+        val bytesPerSample = bitDepth.bytes / 8
+        val totalBytes = sampleRate.toLong() * bufferTimeLength * bytesPerSample
+        val megabytes = totalBytes / (1024.0 * 1024.0)
+        val ram = String.format("%.2f MB", megabytes)
+
+        // ✅ Return a Pair containing the RAM string and the full estimate object
+        Pair(ram, estimateBatteryImpact(sampleRate, bitDepth, bufferTimeLength))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        containerColor = colorResource(id = R.color.teal_100), // Light background
+        title = {
+            Text(
+                "Settings Explained",
+                fontWeight = FontWeight.Bold,
+                color = colorResource(id = R.color.teal_900) // Dark text
+            )
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                // --- Section 1: Estimates ---
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "Est. RAM Usage",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colorResource(id = R.color.teal_900).copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = formattedRamUsage,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colorResource(id = R.color.teal_900),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "Est. Battery / Quality", // Updated title
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colorResource(id = R.color.teal_900).copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center
+                        )
+
+                        Text(
+                            text = estimate.impactLabel,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = estimate.color,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Text(
+                            text = estimate.qualityLabel,
+                            style = MaterialTheme.typography.bodySmall, // Use a smaller style
+                            fontWeight = FontWeight.Normal,
+                            color = estimate.color.copy(alpha = 0.8f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+                Text(
+                    text = "*Estimates are relative. Actual device performance will vary.",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontStyle = FontStyle.Italic,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .fillMaxWidth(),
+                    color = colorResource(id = R.color.teal_900).copy(alpha = 0.7f)
+                )
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 16.dp),
+                    color = colorResource(id = R.color.purple_accent).copy(alpha = 0.5f)
+                )
+
+                // --- Section 2: Detailed Explanations ---
+                val textColor = colorResource(id = R.color.teal_900)
+                val headingColor = colorResource(id = R.color.purple_accent)
+
+                Text(
+                    "Sample Rate (Hz)",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    color = headingColor
+                )
+                Text(
+                    "How many times per second the microphone listens. Higher values mean clearer, higher-fidelity sound (like more frames-per-second in a video). Lower values use less battery.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    "Bit Depth (bit)",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    color = headingColor
+                )
+                Text(
+                    "The amount of detail in each audio sample. Higher bit depth provides a wider dynamic range (difference between loud and quiet sounds) and a cleaner recording.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    "Buffer Length (seconds)",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    color = headingColor
+                )
+                Text(
+                    "The total duration of audio the app keeps in memory (RAM). A longer buffer requires significantly more RAM and can increase battery drain.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor
+                )
+
+                // In ComprehensiveHelpDialog, after the last Text(...)
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 16.dp),
+                    color = colorResource(id = R.color.purple_accent).copy(alpha = 0.5f)
+                )
+
+                Text(
+                    "Example Presets",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = textColor
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // --- Battery Saver Preset ---
+                Text(
+                    "🔋 Battery Saver (Voice Notes)",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    color = headingColor
+                )
+                Text(
+                    "Best for recording lectures or voice memos with maximum efficiency.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor
+                )
+                Text(
+                    " • Sample Rate: 16000 Hz\n • Bit Depth: 16-bit\n • Buffer Length: 600s (10 min)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // --- Balanced Preset ---
+                Text(
+                    "⚖️ Balanced (Everyday Use)",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    color = headingColor
+                )
+                Text(
+                    "The recommended setting for great quality and performance. Perfect for capturing unexpected moments clearly.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor
+                )
+                Text(
+                    " • Sample Rate: 22050 Hz\n • Bit Depth: 16-bit\n • Buffer Length: 300s (5 min)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // --- High Quality Preset ---
+                Text(
+                    "🎧 High Quality (Music / Detail)",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    color = headingColor
+                )
+                Text(
+                    "For capturing music or detailed environmental sounds with the highest fidelity. Note: this uses significantly more resources.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor
+                )
+                Text(
+                    " • Sample Rate: 48000 Hz\n • Bit Depth: 16-bit\n • Buffer Length: 180s (3 min)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(
+                    "GOT IT",
+                    fontWeight = FontWeight.Bold,
+                    color = colorResource(id = R.color.purple_accent)
+                )
+            }
+        })
+}
+
 @SuppressLint("UnrememberedMutableState")
 @Preview(showBackground = true)
 @Composable
 fun SettingsScreenPreview() {
     RecentAudioBufferTheme {
-        SettingsScreen(mutableStateOf(SettingsScreenState(SettingsConfig())),
+        SettingsScreen(
+            mutableStateOf(SettingsScreenState(SettingsConfig())),
             signInButtonText = mutableStateOf("Sign In"),
             {},
             {},
