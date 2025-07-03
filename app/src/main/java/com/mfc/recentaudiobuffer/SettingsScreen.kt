@@ -127,7 +127,7 @@ fun SettingsScreen(
                     3.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(12.dp)
                 )
                 .background(
-                    colorResource(id = R.color.teal_200), RoundedCornerShape(12.dp)
+                    colorResource(id = R.color.teal_150), RoundedCornerShape(12.dp)
                 )
                 .padding(16.dp)
                 .clickable(
@@ -330,8 +330,8 @@ fun MyOutlinedBufferInputField(
                         unfocusedIndicatorColor = colorResource(id = R.color.purple_accent),
                         focusedIndicatorColor = colorResource(id = R.color.purple_accent),
                         unfocusedContainerColor = colorResource(id = R.color.teal_100),
-                        focusedContainerColor = colorResource(id = R.color.teal_200),
-                        errorContainerColor = colorResource(id = R.color.teal_200),
+                        focusedContainerColor = colorResource(id = R.color.teal_150),
+                        errorContainerColor = colorResource(id = R.color.teal_150),
                         errorIndicatorColor = Color.Red
                     ),
                     shape = RoundedCornerShape(8.dp),

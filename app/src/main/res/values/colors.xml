@@ -4,7 +4,8 @@
     <color name="teal_700">#00695C</color>
     <color name="teal_500">#00897B</color>
     <color name="teal_350">#4DB6AC</color>
-    <color name="teal_200">#8ADCD8</color>
+    <color name="teal_200">#A1DCD7</color>
+    <color name="teal_150">#A1DCD7</color>
     <color name="teal_100">#B2DFDB</color>
     <color name="button_ripple">#AAB2DFDB</color>
 
