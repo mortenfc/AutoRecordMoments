@@ -100,7 +100,7 @@ data class SettingsConfig(
     var areAdsEnabled: Boolean = true,
 )
 
-public const val MAX_BUFFER_SIZE: Int = 200_000_000
+public const val MAX_BUFFER_SIZE: Int = 200 * 1024 * 1024 // 200 MB
 
 // DataStore setup
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -338,6 +338,7 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
     fun validateSettings() {
         val calculatedValue: Long =
             sampleRateTemp.intValue.toLong() * (bitDepthTemp.value.bits / 8).toLong() * bufferTimeLengthTemp.intValue.toLong()
+
         Log.d("SettingsScreenState", "calculatedValue:  $calculatedValue")
         isMaxExceeded.value = calculatedValue > MAX_BUFFER_SIZE
         isBufferTimeLengthNull.value = bufferTimeLengthTemp.intValue == 0
@@ -349,7 +350,7 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
 
         // Only update errorMessage if input is invalid
         errorMessage.value = when {
-            isMaxExceeded.value -> "Value(s) too high: Multiplication of settings exceeds 100 MB"
+            isMaxExceeded.value -> "Value(s) too high: Multiplication of settings exceeds 200 MB"
             isBufferTimeLengthNull.value -> "Invalid buffer length. Must be a number greater than 0"
             else -> null
         }
