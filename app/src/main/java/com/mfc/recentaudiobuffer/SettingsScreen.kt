@@ -487,8 +487,8 @@ private fun getQualityLabel(sampleRate: Int, bitDepth: BitDepth): QualityEstimat
     return when (bitDepthScore + sampleRateScore) {
         in 0f..<6f -> QualityEstimate("Poor\n(Phone)", poorQualityColor)
         in 6f..<15f -> QualityEstimate("Decent\n(Radio)", decentQualityColor)
-        in 15f..<22f -> QualityEstimate("Great\n(CD/DVD)", highQualityColor)
-        else -> QualityEstimate("Best\n(Studio)", highQualityColor)
+        in 15f..<22f -> QualityEstimate("Great\n(CD)", highQualityColor)
+        else -> QualityEstimate("Studio\n", highQualityColor)
     }
 }
 
