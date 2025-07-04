@@ -165,7 +165,7 @@ class AuthenticationManager @Inject constructor(
         signInButtonText.value = if (user != null) "Sign Out" else "Sign In"
         if (user != null) {
             managerScope.launch(Dispatchers.IO) {
-                settingsRepository.syncSettings()
+                settingsRepository.pullFromFirestore()
             }
         }
     }

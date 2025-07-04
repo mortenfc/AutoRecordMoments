@@ -403,28 +403,84 @@ data class ImpactEstimate(
     val impactLabel: String, val qualityLabel: String, val color: Color
 )
 
-private fun estimateBatteryImpact(
+// A small data class to make the battery impact return type cleaner
+private data class BatteryImpact(val label: String, val color: Color)
+
+/**
+ * Estimates the impact of audio settings on both battery life and sound quality.
+ *
+ * @return An [ImpactEstimate] object containing separate labels for battery and quality.
+ */
+private fun estimateAudioImpact(
     sampleRate: Int, bitDepth: BitDepth, bufferTimeLength: Int
-): ImpactEstimate { // ✅ Return the new data class
+): ImpactEstimate {
+    // Calculate RAM usage once, as it's a key factor for battery drain.
+    val ramUsageMb = (sampleRate.toLong() * bufferTimeLength * (bitDepth.bits / 8)) / (1024 * 1024)
+
+    // 1. Get the estimated battery impact, which includes a label and a color.
+    val batteryImpact = getBatteryImpact(sampleRate, bitDepth, ramUsageMb)
+
+    // 2. Get the estimated sound quality label, calculated independently.
+    val qualityLabel = getQualityLabel(sampleRate, bitDepth)
+
+    // 3. Combine the results into the final data class for the UI.
+    return ImpactEstimate(
+        impactLabel = batteryImpact.label,
+        qualityLabel = qualityLabel,
+        color = batteryImpact.color // The color is tied to the battery warning level.
+    )
+}
+
+/**
+ * Calculates the estimated battery drain based on hardware usage.
+ * - Sample Rate: High impact (CPU/mic usage).
+ * - RAM/Processing: Medium impact (memory bus and processing overhead).
+ * - Bit Depth: Low impact (minor increase in processing).
+ */
+private fun getBatteryImpact(sampleRate: Int, bitDepth: BitDepth, ramUsageMb: Long): BatteryImpact {
     val sampleRateScore = when {
-        sampleRate <= 16000 -> 1.5f
-        sampleRate <= 22050 -> 2f
-        sampleRate <= 48000 -> 4f
-        else -> 6f
+        sampleRate <= 16000 -> 1.0f // Low
+        sampleRate <= 22050 -> 2.0f // Medium
+        sampleRate <= 48000 -> 4.0f // High
+        else -> 6.0f              // Very High
     }
-    val bitDepthScore = if (bitDepth.bits == 8) 1.5f else 2f
+    // Bit depth has a much smaller effect on battery than on quality.
+    val bitDepthScore = if (bitDepth.bits == 8) 0.5f else 1.0f
+
     val ramScore = when {
-        (sampleRate.toLong() * bufferTimeLength * (bitDepth.bits / 8)) / (1024 * 1024) <= 50 -> 0.5f
-        (sampleRate.toLong() * bufferTimeLength * (bitDepth.bits / 8)) / (1024 * 1024) <= 150 -> 1f
-        else -> 2f
+        ramUsageMb <= 50 -> 1.0f  // Low
+        ramUsageMb <= 150 -> 2.5f // Medium
+        else -> 4.0f              // High
     }
 
-    // ✅ Return instances of the data class
     return when (sampleRateScore + bitDepthScore + ramScore) {
-        in 0f..<4f -> ImpactEstimate("Low", "Poor", Color(0xFF388E3C))
-        in 4f..<6f -> ImpactEstimate("M. Low", "Decent", Color(0xFF7B8E38))
-        in 6f..<8f -> ImpactEstimate("M. High", "Great", Color(0xFFF57C00))
-        else -> ImpactEstimate("V. High", "Best", Color(0xFFD32F2F))
+        in 0f..<4.5f -> BatteryImpact("Low", Color(0xFF388E3C))        // Green
+        in 4.5f..<7.5f -> BatteryImpact("Medium", Color(0xFFF57C00))   // Orange
+        else -> BatteryImpact("High", Color(0xFFD32F2F))              // Red
+    }
+}
+
+/**
+ * Calculates the estimated sound quality based on audio fidelity parameters.
+ * - Bit Depth: Very high impact (dynamic range).
+ * - Sample Rate: High impact (frequency range).
+ */
+private fun getQualityLabel(sampleRate: Int, bitDepth: BitDepth): String {
+    // Bit depth has a massive impact on perceived quality.
+    val bitDepthScore = if (bitDepth.bits == 8) 2f else 10f
+
+    val sampleRateScore = when {
+        sampleRate <= 16000 -> 2f  // Poor (telephones)
+        sampleRate <= 22050 -> 5f  // Good (radio)
+        sampleRate <= 48000 -> 10f // Excellent (CD quality)
+        else -> 12f                // Studio (pro audio)
+    }
+
+    return when (bitDepthScore + sampleRateScore) {
+        in 0f..<6f -> "Poor"
+        in 6f..<15f -> "Good"
+        in 15f..<22f -> "Excellent"
+        else -> "Studio"
     }
 }
 
@@ -440,7 +496,7 @@ fun ComprehensiveHelpDialog(
         val ram = String.format("~%.0f", megabytes)
 
         // ✅ Return a Pair containing the RAM string and the full estimate object
-        Pair(ram, estimateBatteryImpact(sampleRate, bitDepth, bufferTimeLength))
+        Pair(ram, estimateAudioImpact(sampleRate, bitDepth, bufferTimeLength))
     }
 
     AlertDialog(

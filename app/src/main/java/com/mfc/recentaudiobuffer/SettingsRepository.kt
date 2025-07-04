@@ -72,7 +72,7 @@ const val DEFAULT_BUFFER_TIME_LENGTH_S = 300
 
 public val bitDepths = mapOf(
     "8" to BitDepth(8, AudioFormat.ENCODING_PCM_8BIT),
-    DEFAULT_BIT_DEPTH_KEY to BitDepth(16, AudioFormat.ENCODING_PCM_16BIT),
+    "16" to BitDepth(16, AudioFormat.ENCODING_PCM_16BIT),
 )
 
 public val sampleRates = mapOf(
@@ -183,92 +183,107 @@ class SettingsRepository @Inject constructor(
         return BitDepth.fromString(key) ?: BitDepth(8, AudioFormat.ENCODING_PCM_8BIT)
     }
 
-    suspend fun getSettingsConfig(): SettingsConfig {
-        Log.d(logTag, "getSettingsConfig() called")
-        return if (isLoggedIn()) {
-            val userId = getUserId()!!
-            val userDocRef = firestore.collection("users").document(userId)
-            val document = getDocumentSync(userDocRef)
-            document ?: return loadSettingsFromDatastore()
-            val sampleRate = document.getLong("SAMPLE_RATE_HZ")?.toInt() ?: DEFAULT_SAMPLE_RATE
-            val bufferTimeLength =
-                document.getLong("BUFFER_TIME_LENGTH_S")?.toInt() ?: DEFAULT_BUFFER_TIME_LENGTH_S
-            val bitDepthString = document.getString("BIT_DEPTH") ?: DEFAULT_BIT_DEPTH_KEY
-            val bitDepth = getBitDepth(bitDepthString)
-            val areAdsEnabled = document.getBoolean("ARE_ADS_ENABLED") ?: true
-            Log.d(
-                logTag,
-                "SettingsConfig: $sampleRate, $bufferTimeLength, $bitDepthString, $areAdsEnabled"
-            )
-            SettingsConfig(sampleRate, bufferTimeLength, bitDepth, areAdsEnabled)
-        } else {
-            loadSettingsFromDatastore()
-        }
-    }
-
-    private suspend fun loadSettingsFromDatastore(): SettingsConfig {
-        val preferences = dataStore.data.first()
-        val sampleRate = preferences[PreferencesKeys.SAMPLE_RATE_HZ] ?: DEFAULT_SAMPLE_RATE
-        val bufferTimeLength =
-            preferences[PreferencesKeys.BUFFER_TIME_LENGTH_S] ?: DEFAULT_BUFFER_TIME_LENGTH_S
-        val bitDepthString = preferences[PreferencesKeys.BIT_DEPTH] ?: DEFAULT_BIT_DEPTH_KEY
-        val bitDepth = getBitDepth(bitDepthString)
-        val areAdsEnabled = preferences[PreferencesKeys.ARE_ADS_ENABLED] ?: true
-        Log.d(
-            logTag,
-            "SettingsConfig: $sampleRate, $bufferTimeLength, $bitDepthString, $areAdsEnabled"
-        )
-        return SettingsConfig(sampleRate, bufferTimeLength, bitDepth, areAdsEnabled)
-    }
-
+    // ✅ PUBLIC FUNCTION
     suspend fun getAudioConfig(): AudioConfig {
         Log.d(logTag, "getAudioConfig() called")
         return if (isLoggedIn()) {
-            val userId = getUserId()!!
-            val userDocRef = firestore.collection("users").document(userId)
+            val userDocRef = firestore.collection("users").document(getUserId()!!)
             val document = getDocumentSync(userDocRef)
-            document ?: return loadAudioFromDatastore()
-            val sampleRate = document.getLong("SAMPLE_RATE_HZ")?.toInt() ?: DEFAULT_SAMPLE_RATE
-            val bufferTimeLength =
-                document.getLong("BUFFER_TIME_LENGTH_S")?.toInt() ?: DEFAULT_BUFFER_TIME_LENGTH_S
-            val bitDepthString = document.getString("BIT_DEPTH") ?: DEFAULT_BIT_DEPTH_KEY
-            Log.d(logTag, "AudioConfig: $sampleRate, $bufferTimeLength, $bitDepthString")
-            val bitDepth = getBitDepth(bitDepthString)
-            Log.d(logTag, "bitDepth: $bitDepth")
-            AudioConfig(sampleRate, bufferTimeLength, bitDepth)
+            // Use the helper to parse the document, or fall back to DataStore
+            document?.toAudioConfig() ?: loadAudioFromDatastore()
         } else {
             loadAudioFromDatastore()
         }
     }
 
+    // ✅ PUBLIC FUNCTION
+    suspend fun getSettingsConfig(): SettingsConfig {
+        Log.d(logTag, "getSettingsConfig() called")
+        return if (isLoggedIn()) {
+            val userDocRef = firestore.collection("users").document(getUserId()!!)
+            val document = getDocumentSync(userDocRef)
+            // Use the helper to parse, or fall back to DataStore
+            document?.toSettingsConfig() ?: loadSettingsFromDatastore()
+        } else {
+            loadSettingsFromDatastore()
+        }
+    }
+
+    // ✅ PRIVATE HELPER for Firestore
+    private fun DocumentSnapshot.toAudioConfig(): AudioConfig {
+        val sampleRate = getLong("SAMPLE_RATE_HZ")?.toInt() ?: DEFAULT_SAMPLE_RATE
+        val bufferTimeLength =
+            getLong("BUFFER_TIME_LENGTH_S")?.toInt() ?: DEFAULT_BUFFER_TIME_LENGTH_S
+        val bitDepthString = getString("BIT_DEPTH") ?: DEFAULT_BIT_DEPTH_KEY
+        val bitDepth = getBitDepth(bitDepthString)
+        return AudioConfig(sampleRate, bufferTimeLength, bitDepth)
+    }
+
+    // ✅ PRIVATE HELPER for Firestore
+    private fun DocumentSnapshot.toSettingsConfig(): SettingsConfig {
+        val audioConfig = this.toAudioConfig() // Reuse the other helper!
+        val areAdsEnabled = getBoolean("ARE_ADS_ENABLED") ?: true
+        return SettingsConfig(
+            sampleRateHz = audioConfig.sampleRateHz,
+            bufferTimeLengthS = audioConfig.bufferTimeLengthS,
+            bitDepth = audioConfig.bitDepth,
+            areAdsEnabled = areAdsEnabled
+        )
+    }
+
+    // ✅ PRIVATE HELPER for DataStore
     private suspend fun loadAudioFromDatastore(): AudioConfig {
         val preferences = dataStore.data.first()
         val sampleRate = preferences[PreferencesKeys.SAMPLE_RATE_HZ] ?: DEFAULT_SAMPLE_RATE
         val bufferTimeLength =
             preferences[PreferencesKeys.BUFFER_TIME_LENGTH_S] ?: DEFAULT_BUFFER_TIME_LENGTH_S
         val bitDepthString = preferences[PreferencesKeys.BIT_DEPTH] ?: DEFAULT_BIT_DEPTH_KEY
-        Log.d(logTag, "AudioConfig: $sampleRate, $bufferTimeLength, $bitDepthString")
         val bitDepth = getBitDepth(bitDepthString)
-        Log.d(logTag, "bitDepth: $bitDepth")
         return AudioConfig(sampleRate, bufferTimeLength, bitDepth)
     }
 
-    suspend fun syncSettings() {
-        Log.d(logTag, "syncSettings() called. auth.currentUser: ${auth.currentUser}")
+    // ✅ PRIVATE HELPER for DataStore
+    private suspend fun loadSettingsFromDatastore(): SettingsConfig {
+        val audioConfig = loadAudioFromDatastore() // Reuse the other helper!
+        val preferences = dataStore.data.first()
+        val areAdsEnabled = preferences[PreferencesKeys.ARE_ADS_ENABLED] ?: true
+        return SettingsConfig(
+            sampleRateHz = audioConfig.sampleRateHz,
+            bufferTimeLengthS = audioConfig.bufferTimeLengthS,
+            bitDepth = audioConfig.bitDepth,
+            areAdsEnabled = areAdsEnabled
+        )
+    }
+
+    suspend fun pullFromFirestore() {
+        Log.d(logTag, "pullFromFirestore() called. auth.currentUser: ${auth.currentUser}")
         if (isLoggedIn()) {
             val userId = getUserId()!!
             val userDocRef = firestore.collection("users").document(userId)
-            val document = getDocumentSync(userDocRef)
-            if (!document?.exists()!!) {
-                firestore.collection("users").document(userId).set(SettingsConfig()).await()
-            }
-            // Save to DataStore as well
-            val settingsConfig = getSettingsConfig()
-            dataStore.edit { preferences ->
-                preferences[PreferencesKeys.SAMPLE_RATE_HZ] = settingsConfig.sampleRateHz
-                preferences[PreferencesKeys.BUFFER_TIME_LENGTH_S] = settingsConfig.bufferTimeLengthS
-                preferences[PreferencesKeys.BIT_DEPTH] = settingsConfig.bitDepth.toString()
-                preferences[PreferencesKeys.ARE_ADS_ENABLED] = settingsConfig.areAdsEnabled
+
+            // Only update dataStore if firestore gave data
+            getDocumentSync(userDocRef)?.let { document ->
+                val settingsToCache: SettingsConfig
+
+                if (!document.exists()) {
+                    // If doc doesn't exist, create it and use the local default object.
+                    Log.d(logTag, "No Firestore doc found, creating default.")
+                    settingsToCache = SettingsConfig()
+                    userDocRef.set(settingsToCache).await()
+                } else {
+                    // If doc exists, parse it.
+                    Log.d(logTag, "Firestore doc found, parsing it.")
+                    settingsToCache = document.toSettingsConfig()
+                }
+
+                // Now, cache the determined settings in DataStore
+                dataStore.edit { preferences ->
+                    preferences[PreferencesKeys.SAMPLE_RATE_HZ] = settingsToCache.sampleRateHz
+                    preferences[PreferencesKeys.BUFFER_TIME_LENGTH_S] =
+                        settingsToCache.bufferTimeLengthS
+                    preferences[PreferencesKeys.BIT_DEPTH] = settingsToCache.bitDepth.toString()
+                    preferences[PreferencesKeys.ARE_ADS_ENABLED] = settingsToCache.areAdsEnabled
+                }
             }
         }
     }

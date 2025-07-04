@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.LaunchedEffect
@@ -62,9 +63,10 @@ class SettingsActivity : ComponentActivity() {
 
         // Sync config with state of BUFFER_TIME_LENGTH_S
         LaunchedEffect(config) {
-            Log.d(logTag, "LaunchedEffect config: $config")
-            state.value.updateBufferTimeLengthTemp(config.bufferTimeLengthS)
-            state.value.validateSettings()
+            // When the config from the ViewModel changes,
+            // create a new state object with the correct, loaded values.
+            Log.d(logTag, "Config updated from ViewModel, re-creating UI state.")
+            state.value = SettingsScreenState(config)
         }
 
         // Observe the isSaving state and finish the activity when saving is complete
@@ -75,7 +77,8 @@ class SettingsActivity : ComponentActivity() {
             }
         }
 
-        SettingsScreen(signInButtonText = authenticationManager.signInButtonText,
+        SettingsScreen(
+            signInButtonText = authenticationManager.signInButtonText,
             state = state,
             onSignInClick = { authenticationManager.onSignInClick() },
             onSampleRateChanged = { value ->
@@ -98,9 +101,15 @@ class SettingsActivity : ComponentActivity() {
                 val configBeforeUpdate = settingsViewModel.config.value
                 state.value.updateSettings(settingsViewModel)
                 val configAfterUpdate = settingsViewModel.config.value
-                if (configBeforeUpdate != configAfterUpdate) {
+                val service = RecentAudioBufferApplication.getSharedViewModel().myBufferService
+                val isSessionActive = service != null
+                if (configBeforeUpdate != configAfterUpdate && isSessionActive) {
                     Log.d(logTag, "onSubmit(): Settings updated, stopping recording")
-                    RecentAudioBufferApplication.getSharedViewModel().myBufferService?.stopRecording()
+                    Toast.makeText(
+                        this,
+                        "Settings saved. WARN: They will only apply once you restart a clean recording!",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
                 hasSaved = true
             },

@@ -6,7 +6,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioFormat
@@ -25,8 +24,8 @@ import androidx.media3.common.util.UnstableApi
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.ticker
@@ -62,8 +61,7 @@ interface MyBufferServiceInterface {
 @AndroidEntryPoint
 class MyBufferService : Service(), MyBufferServiceInterface {
     private val logTag = "MyBufferService"
-
-    private lateinit var config: AudioConfig
+    private var config: AudioConfig = AudioConfig()
     private lateinit var audioDataStorage: ByteArray
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var recordingJob: Job? = null
@@ -105,7 +103,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     private val recorded_duration: AtomicReference<String> = AtomicReference("00:00:00")
 
-    private var recorder: AudioRecord? = null
     private val lock: ReentrantLock = ReentrantLock()
 
     private lateinit var notificationManager: NotificationManager
@@ -116,8 +113,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         Log.i(logTag, "onCreate()")
         isServiceRunning.set(true)
 
-        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
         createNotificationChannels()
         requestAudioFocus()
@@ -125,9 +122,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(logTag, "onStartCommand()")
-
-        config = runBlocking { settingsRepository.getAudioConfig() }
-        updateTotalBufferSize(config)
 
         when (intent?.action) {
             ACTION_STOP_RECORDING_SERVICE -> {
@@ -281,10 +275,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         audioDataStorage = ByteArray(totalRingBufferSize.get())
     }
 
-    @kotlin.OptIn(ExperimentalCoroutinesApi::class)
-    private fun startBuffering() {
-        this.syncPreferences()
-
+    private fun initializeAndBuildRecorder(): RecorderInfo {
         val micPermission =
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
         if (micPermission == PackageManager.PERMISSION_DENIED) {
@@ -292,7 +283,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 logTag, "Audio record permission not granted, can't record..."
             )
             resetBuffer()
-            return
+            throw SecurityException("Audio record permission not granted.")
         }
 
         val audioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION
@@ -311,98 +302,17 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         // This is a best practice to prevent data loss if the system gets busy.
         val internalBufferSize = readChunkSize * 2
 
-        // Permission has been granted
-        recorder = AudioRecord.Builder().setAudioSource(audioSource).setAudioFormat(audioFormat)
+        val recorder = AudioRecord.Builder().setAudioSource(audioSource).setAudioFormat(audioFormat)
             .setBufferSizeInBytes(internalBufferSize).build()
 
-        try {
-            recordingJob?.cancel()
-            recordingJob = serviceScope.launch {
-                recorder?.startRecording()
-
-                // This is now a high-frequency polling loop for audio
-                while (isActive && _isRecording.value) {
-                    val readDataChunk = ByteArray(readChunkSize)
-                    val readResult = recorder?.read(
-                        readDataChunk, 0, readChunkSize
-                    ) ?: -1
-
-                    Log.d(
-                        logTag,
-                        "readResult: $readResult, recorderIndex before update: ${recorderIndex.get()}"
-                    )
-                    if (readResult > 0) {
-                        // Copy to storage if data was read
-                        lock.lock()
-                        try {
-                            // Check for overflow before copying
-                            if (recorderIndex.get() + readResult > totalRingBufferSize.get() - 1) {
-                                hasOverflowed.set(true)
-                                val bytesToEnd = totalRingBufferSize.get() - recorderIndex.get()
-                                // If overflow copy what's left until the end
-                                System.arraycopy(
-                                    readDataChunk,
-                                    0,
-                                    audioDataStorage,
-                                    recorderIndex.get(),
-                                    bytesToEnd
-                                )
-                                // Then copy the remaining data to position 0
-                                System.arraycopy(
-                                    readDataChunk,
-                                    bytesToEnd,
-                                    audioDataStorage,
-                                    0,
-                                    readResult - bytesToEnd
-                                )
-                                recorderIndex.set(readResult - bytesToEnd)
-                            } else {
-                                // Typical operation, just copy entire read data to current index
-                                System.arraycopy(
-                                    readDataChunk,
-                                    0,
-                                    audioDataStorage,
-                                    recorderIndex.get(),
-                                    readResult
-                                )
-                                recorderIndex.set(recorderIndex.get() + readResult)
-                            }
-                        } finally {
-                            lock.unlock()
-                        }
-                    } else if (readResult == AudioRecord.ERROR_INVALID_OPERATION) {
-                        Log.e(
-                            logTag,
-                            "AudioRecord invalid operation. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
-                        )
-                    } else if (readResult == AudioRecord.ERROR_BAD_VALUE) {
-                        Log.e(
-                            logTag,
-                            "AudioRecord bad value. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
-                        )
-                    } else if (recorder?.state == AudioRecord.RECORDSTATE_STOPPED) {
-                        Log.w(logTag, "AudioRecord stopped unexpectedly")
-                    } else {
-                        Log.e(
-                            logTag,
-                            "AudioRecord other error state: ${recorder?.state}, result: $readResult. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
-                        )
-                    }
-                }
-                recorder?.stop()
-                recorder?.release()
-                recorder = null
-                Log.d(logTag, "Recording coroutine finished and cleaned up.")
-            }
-        } catch (e: IllegalArgumentException) {
-            Log.e(logTag, "startBuffering() failed: illegal argument", e)
-            _isRecording.value = false
-        } catch (e: IllegalStateException) {
-            Log.e(logTag, "startBuffering() failed: illegal state", e)
-            _isRecording.value = false
+        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            // Throw another exception if the hardware fails to initialize
+            throw IllegalStateException("AudioRecord failed to initialize.")
         }
-    }
 
+        // Permission has been granted
+        return RecorderInfo(recorder, readChunkSize)
+    }
 
     override fun stopRecording() {
         if (!_isRecording.value) return
@@ -446,11 +356,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         val seconds = flooredDuration % 60
 
         val durationFormatted = String.format(
-            Locale.getDefault(),
-            "%02d:%02d:%02d",
-            hours,
-            minutes,
-            seconds
+            Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds
         )
 
         recorded_duration.set(durationFormatted)
@@ -540,31 +446,11 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         return shiftedBuffer
     }
 
-    private fun syncPreferences() {
-        Log.i(logTag, "syncPreferences()")
-        try {
-            val newConfig = runBlocking {
-                settingsRepository.getAudioConfig()
-            }
-            if (config != newConfig) {
-                Log.d(logTag, "syncPreferences(): config != newConfig, resetting")
-                config = newConfig
-                resetBuffer()
-                updateTotalBufferSize(config)
-            }
-            Log.i(
-                logTag,
-                "syncPreferences(): sampleRate = ${config.sampleRateHz}, bufferTimeLengthS = ${config.bufferTimeLengthS}, bitDepth = ${config.bitDepth}"
-            )
-        } catch (e: Exception) {
-            Log.e(logTag, "Error syncing preferences", e)
-        }
-    }
-
     override fun resetBuffer() {
         Log.d(logTag, "resetBuffer()")
         recorderIndex.set(0)
         hasOverflowed.set(false)
+        updateDurationToDisplay()
         updateNotification()
     }
 
@@ -580,28 +466,127 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         this.startService(quickSaveIntent)
     }
 
+    data class RecorderInfo(val recorder: AudioRecord, val readChunkSize: Int)
+
     override fun startRecording() {
         if (_isRecording.value) return
         _isRecording.value = true
 
         // Start the audio recording loop
-        startBuffering()
+        recordingJob?.cancel()
+        recordingJob = serviceScope.launch {
+            var recorder: AudioRecord? = null
+            try {
+                val isNewSession = recorderIndex.get() == 0 && !hasOverflowed.get()
+                if (isNewSession) {
+                    Log.d(logTag, "Starting a new session. Fetching latest config.")
+                    // If it's new, fetch the latest config and set up the buffer.
+                    config = settingsRepository.getAudioConfig()
+                    updateTotalBufferSize(config)
+                } else {
+                    Log.d(logTag, "Continuing a paused session. Using existing config.")
+                }
+                val initResult = initializeAndBuildRecorder()
+                recorder = initResult.recorder
+                val readChunkSize = initResult.readChunkSize
+                recorder.startRecording()
 
-        // Start the separate, parallel notification timer loop
+                // This is now a high-frequency polling loop for audio
+                while (isActive && _isRecording.value) {
+                    val readDataChunk = ByteArray(readChunkSize)
+                    val readResult = recorder.read(
+                        readDataChunk, 0, readChunkSize
+                    )
+
+                    Log.d(
+                        logTag,
+                        "readResult: $readResult, recorderIndex before update: ${recorderIndex.get()}"
+                    )
+                    if (readResult > 0) {
+                        // Copy to storage if data was read
+                        lock.lock()
+                        try {
+                            // Check for overflow before copying
+                            if (recorderIndex.get() + readResult > totalRingBufferSize.get() - 1) {
+                                hasOverflowed.set(true)
+                                val bytesToEnd = totalRingBufferSize.get() - recorderIndex.get()
+                                // If overflow copy what's left until the end
+                                System.arraycopy(
+                                    readDataChunk,
+                                    0,
+                                    audioDataStorage,
+                                    recorderIndex.get(),
+                                    bytesToEnd
+                                )
+                                // Then copy the remaining data to position 0
+                                System.arraycopy(
+                                    readDataChunk,
+                                    bytesToEnd,
+                                    audioDataStorage,
+                                    0,
+                                    readResult - bytesToEnd
+                                )
+                                recorderIndex.set(readResult - bytesToEnd)
+                            } else {
+                                // Typical operation, just copy entire read data to current index
+                                System.arraycopy(
+                                    readDataChunk,
+                                    0,
+                                    audioDataStorage,
+                                    recorderIndex.get(),
+                                    readResult
+                                )
+                                recorderIndex.set(recorderIndex.get() + readResult)
+                            }
+                        } finally {
+                            lock.unlock()
+                        }
+                    } else if (readResult == AudioRecord.ERROR_INVALID_OPERATION) {
+                        Log.e(
+                            logTag,
+                            "AudioRecord invalid operation. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
+                        )
+                    } else if (readResult == AudioRecord.ERROR_BAD_VALUE) {
+                        Log.e(
+                            logTag,
+                            "AudioRecord bad value. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
+                        )
+                    } else if (recorder.state == AudioRecord.RECORDSTATE_STOPPED) {
+                        Log.w(logTag, "AudioRecord stopped unexpectedly")
+                    } else {
+                        Log.e(
+                            logTag,
+                            "AudioRecord other error state: ${recorder.state}, result: $readResult. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(logTag, "Failed to start or run recording", e)
+                _isRecording.value = false // Revert state on any failure.
+            } finally {
+                // This now correctly cleans up only when the coroutine is finished or cancelled.
+                recorder?.stop()
+                recorder?.release()
+                Log.d(logTag, "Recording coroutine finished and cleaned up.")
+            }
+        }
+
+        startNotificationUpdates();
+    }
+
+    // Start the separate, parallel notification timer loop
+    @kotlin.OptIn(ObsoleteCoroutinesApi::class)
+    private fun startNotificationUpdates() {
         notificationJob?.cancel()
         notificationJob = serviceScope.launch {
             val tickerChannel = ticker(delayMillis = 1000)
-            for (event in tickerChannel) {
-                if (_isRecording.value) {
-                    updateDurationToDisplay()
-                    updateNotification()
-                } else {
-                    break // Exit the loop if recording has stopped
-                }
+            while (isActive && _isRecording.value) {
+                updateDurationToDisplay()
+                updateNotification()
+                tickerChannel.receive()
             }
         }
     }
-
 
     inner class MyBinder : Binder() {
         fun getService(): MyBufferServiceInterface = this@MyBufferService
@@ -623,7 +608,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 description = CHRONIC_NOTIFICATION_CHANNEL_DESCRIPTION
             }
             val notificationManager: NotificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
     }
@@ -695,7 +680,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     private fun updateNotification() {
-        updateDurationToDisplay()
         val notification = createNotification()
         notificationManager.notify(CHRONIC_NOTIFICATION_ID, notification)
     }
