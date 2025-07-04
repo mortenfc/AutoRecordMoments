@@ -12,12 +12,11 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
+import android.media.AudioRecord.READ_NON_BLOCKING
 import android.media.MediaRecorder
 import android.os.Binder
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -27,9 +26,13 @@ import androidx.media3.common.util.UnstableApi
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.ticker
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -63,8 +66,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     private lateinit var audioDataStorage: ByteArray
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var recordingJob: Job? = null
-    private val handler = Handler(Looper.getMainLooper())
-    private lateinit var periodicUpdateRunnable: Runnable
+    private var notificationJob: Job? = null
+    private var lastNotificationUpdateTime: Long = 0
 
     companion object {
         const val CHRONIC_NOTIFICATION_ID = 1
@@ -229,7 +232,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     private fun updateTotalBufferSize(config: AudioConfig) {
         // Calculate the ideal buffer size based on settings
         var idealBufferSize =
-            config.sampleRateHz * (config.bitDepth.bytes / 8) * config.bufferTimeLengthS
+            config.sampleRateHz * (config.bitDepth.bits / 8) * config.bufferTimeLengthS
 
         Log.d(logTag, "updateTotalBufferSize(): idealBufferSize = $idealBufferSize")
 
@@ -275,9 +278,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         Log.d(logTag, "stopBuffering()")
         recordingJob?.cancel()
         isRecording.set(false)
-        handler.removeCallbacks(periodicUpdateRunnable)
     }
 
+    @kotlin.OptIn(ExperimentalCoroutinesApi::class)
     private fun startBuffering() {
         this.syncPreferences()
 
@@ -296,38 +299,34 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         val audioFormat = AudioFormat.Builder().setEncoding(config.bitDepth.encodingEnum)
             .setSampleRate(config.sampleRateHz).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build()
 
-        val minReadChunkSize = AudioRecord.getMinBufferSize(
-            audioFormat.sampleRate, audioFormat.channelMask, audioFormat.encoding
-        )
+        // 1. Calculate how many bytes are generated per second.
+        val bytesPerSecond = config.sampleRateHz * (config.bitDepth.bits / 8)
 
-        val bufferSizeMultiplier = 8
-        val readChunkSize = minReadChunkSize * bufferSizeMultiplier
-        Log.d(logTag, "startBuffering(): readChunkSize = $readChunkSize")
+        // 2. Set our target: we want to read audio in 250ms chunks (4 times per second).
+        // This ensures the read() call returns quickly.
+        val readChunkSize = (bytesPerSecond * 0.25).toInt()
 
-        if (readChunkSize <= 0) {
-            Log.e(logTag, "Minimum audioDataStorage size <= 0 somehow")
-            return
-        }
+        // 3. Make the internal hardware buffer larger than our read chunk size.
+        // This is a best practice to prevent data loss if the system gets busy.
+        val internalBufferSize = readChunkSize * 2
 
         // Permission has been granted
         recorder = AudioRecord.Builder().setAudioSource(audioSource).setAudioFormat(audioFormat)
-            .setBufferSizeInBytes(readChunkSize).build()
+            .setBufferSizeInBytes(internalBufferSize).build()
 
         try {
             isRecording.set(true)
             recordingJob?.cancel()
             recordingJob = serviceScope.launch {
-                recorder?.startRecording() // Start recording
-                if (recorder?.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
-                    Log.e(logTag, "AudioRecord failed to start recording")
-                    isRecording.set(false)
-                }
-                Log.d(logTag, "Recording thread started with source: $audioSource")
+                recorder?.startRecording()
+
+                // This is now a high-frequency polling loop for audio
                 while (isActive && isRecording.get()) {
-                    // Blocking read in chunks of the size equal to the audio recorder's internal audioDataStorage.
-                    // Waits for readChunkSize to be available
                     val readDataChunk = ByteArray(readChunkSize)
-                    val readResult = recorder?.read(readDataChunk, 0, readChunkSize) ?: -1
+                    val readResult = recorder?.read(
+                        readDataChunk, 0, readChunkSize
+                    ) ?: -1
+
                     Log.d(
                         logTag,
                         "readResult: $readResult, recorderIndex before update: ${recorderIndex.get()}"
@@ -371,22 +370,24 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                         } finally {
                             lock.unlock()
                         }
+
+                        delay(10L)
                     } else if (readResult == AudioRecord.ERROR_INVALID_OPERATION) {
                         Log.e(
                             logTag,
-                            "AudioRecord invalid operation. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $minReadChunkSize)"
+                            "AudioRecord invalid operation. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
                         )
                     } else if (readResult == AudioRecord.ERROR_BAD_VALUE) {
                         Log.e(
                             logTag,
-                            "AudioRecord bad value. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $minReadChunkSize)"
+                            "AudioRecord bad value. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
                         )
                     } else if (recorder?.state == AudioRecord.RECORDSTATE_STOPPED) {
                         Log.w(logTag, "AudioRecord stopped unexpectedly")
                     } else {
                         Log.e(
                             logTag,
-                            "AudioRecord other error state: ${recorder?.state}, result: $readResult. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $minReadChunkSize)"
+                            "AudioRecord other error state: ${recorder?.state}, result: $readResult. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
                         )
                     }
                 }
@@ -404,44 +405,47 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         }
     }
 
+
     override fun stopRecording() {
-        Log.i(logTag, "stopRecording()")
+        if (!isRecording.get()) return
         isRecording.set(false)
-        stopBuffering()
+
+        // Stop both loops
+        recordingJob?.cancel()
+        notificationJob?.cancel()
+
+        // Update notification one last time
         updateNotification()
     }
 
-    private fun updateLengthInTime() {
-        val sampleRate = config.sampleRateHz
-        val bitDepthInBytes = config.bitDepth.bytes
-        val channels = 1 // Recording is in mono
 
-        // Ensure bitDepthInBytes is not zero to avoid division by zero
-        if (sampleRate == 0 || bitDepthInBytes == 0 || channels == 0) {
+    private fun updateDurationToDisplay() {
+        val sampleRate = config.sampleRateHz
+        val bitsPerSample = config.bitDepth.bits
+        val channels = 1
+
+        if (sampleRate == 0 || bitsPerSample == 0) {
             recorded_duration.set("00:00:00")
             return
         }
 
-        val currentLengthInBytes: Int = if (hasOverflowed.get()) {
+        // ✅ This value is the number of BYTES recorded.
+        val totalRecordedBytes: Int = if (hasOverflowed.get()) {
             totalRingBufferSize.get()
         } else {
             recorderIndex.get()
         }
 
-        // Calculate duration in seconds as a Double
-        // The formula for duration in seconds is: (totalBytes * 8 bits/byte) / (samplesPerSecond * bitsPerSample * numberOfChannels)
-        // Or, if bitDepth is already in bytes: totalBytes / (samplesPerSecond * bytesPerSample * numberOfChannels)
-        val exactDurationInSeconds =
-            currentLengthInBytes.toDouble() / (sampleRate * bitDepthInBytes * channels)
+        // ✅ This is the correct formula: total bytes / (bytes per second)
+        val bytesPerSecond = sampleRate * (bitsPerSample / 8) * channels
+        val durationInSeconds = totalRecordedBytes.toDouble() / bytesPerSecond
 
-        // Explicitly take the floor to get the total number of whole seconds elapsed
-        val flooredDurationInSecondsLong = floor(exactDurationInSeconds).toLong()
+        val flooredDuration = floor(durationInSeconds).toLong()
 
         // Format duration into HH:mm:ss
-        val hours = TimeUnit.SECONDS.toHours(flooredDurationInSecondsLong)
-        val minutes =
-            TimeUnit.SECONDS.toMinutes(flooredDurationInSecondsLong) % TimeUnit.HOURS.toMinutes(1)
-        val seconds = flooredDurationInSecondsLong % TimeUnit.MINUTES.toSeconds(1)
+        val hours = TimeUnit.SECONDS.toHours(flooredDuration)
+        val minutes = TimeUnit.SECONDS.toMinutes(flooredDuration) % 60
+        val seconds = flooredDuration % 60
 
         val durationFormatted = String.format(
             Locale.getDefault(),
@@ -457,7 +461,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     override fun writeWavHeader(out: OutputStream, audioDataLen: Int) {
         val channels = 1.toShort() // Recording is in mono
         val sampleRate = config.sampleRateHz
-        val bitsPerSample = config.bitDepth.bytes.toShort()
+        val bitsPerSample = config.bitDepth.bits.toShort()
 
         // WAV constants
         val sampleSize = bitsPerSample / 8
@@ -579,33 +583,25 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     override fun startRecording() {
-        if (isRecording.get()) return // Already running
+        if (isRecording.get()) return
+        isRecording.set(true)
 
-        startBuffering() // This will start the AudioRecord coroutine job
+        // Start the audio recording loop
+        startBuffering()
 
-        // Define the runnable that updates the notification
-        periodicUpdateRunnable = object : Runnable {
-            override fun run() {
-                // Only run if the service is still in a recording state
-                if (!isRecording.get()) {
-                    return
+        // Start the separate, parallel notification timer loop
+        notificationJob?.cancel()
+        notificationJob = serviceScope.launch {
+            val tickerChannel = ticker(delayMillis = 1000)
+            for (event in tickerChannel) {
+                if (isRecording.get()) {
+                    updateDurationToDisplay()
+                    updateNotification()
+                } else {
+                    break // Exit the loop if recording has stopped
                 }
-
-                // 1. Calculate the current buffer status
-                updateLengthInTime()
-
-                // 2. Update the notification with the latest data
-                // Pass `false` to bypass the time check, as the Handler is our timer now.
-                updateNotification()
-
-                // 3. Schedule the next run for 1 second later
-                handler.postDelayed(this, NOTIFICATION_UPDATE_INTERVAL_MS)
             }
         }
-
-        // Start the periodic updates immediately
-        handler.post(periodicUpdateRunnable)
-        updateNotification() // Initial update
     }
 
 
@@ -706,6 +702,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     private fun updateNotification() {
+        updateDurationToDisplay()
         val notification = createNotification()
         notificationManager.notify(CHRONIC_NOTIFICATION_ID, notification)
     }

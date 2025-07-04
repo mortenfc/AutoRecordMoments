@@ -214,7 +214,11 @@ fun MainScreen(
 
                 // The media player controller, which will overlay at the bottom when visible
                 if (!isPreview) {
-                    PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
+                    PlayerControlViewContainer(
+                        mediaPlayerManager = mediaPlayerManager,
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    )
+
                 }
             }
         }
@@ -582,6 +586,11 @@ fun PlayerControlViewContainer(
                 val constraintLayout = ConstraintLayout(context).apply {
                     id = View.generateViewId()
                     isClickable = true
+                    // Set layout params to fill width but wrap height
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT
+                    )
                 }
 
                 val layoutInflater = LayoutInflater.from(context)
@@ -596,6 +605,7 @@ fun PlayerControlViewContainer(
                     mediaPlayerManager.player?.stop()
                     mediaPlayerManager.playerControlView?.hide()
                     mediaPlayerManager.closeMediaPlayer()
+                    isContainerVisible = false
                 }
 
                 val playerControlView = PlayerControlView(it).apply {
@@ -612,11 +622,9 @@ fun PlayerControlViewContainer(
                 constraintLayout.addView(playerControlView)
                 constraintLayout.addView(closeButtonContainer)
 
-                // --- Start of Corrected Code ---
                 val constraintSet = ConstraintSet().apply {
                     clone(constraintLayout)
 
-                    // Constrain PlayerControlView to the bottom of the screen
                     connect(
                         playerControlView.id,
                         ConstraintSet.BOTTOM,
@@ -635,17 +643,16 @@ fun PlayerControlViewContainer(
                         ConstraintSet.PARENT_ID,
                         ConstraintSet.END
                     )
-                    constrainPercentHeight(playerControlView.id, 0.25f)
 
-                    // ✅ Align the button's top with the media overlay's top
+                    // REMOVED: This is no longer necessary as the parent wraps content
+                    // constrainPercentHeight(playerControlView.id, 0.25f)
+
                     connect(
                         closeButtonContainer.id,
                         ConstraintSet.TOP,
                         playerControlView.id,
                         ConstraintSet.TOP
                     )
-
-                    // ✅ Align the button's end with the parent's end for top-right
                     connect(
                         closeButtonContainer.id,
                         ConstraintSet.END,
@@ -653,7 +660,6 @@ fun PlayerControlViewContainer(
                         ConstraintSet.END
                     )
                 }
-                // --- End of Corrected Code ---
                 constraintSet.applyTo(constraintLayout)
 
                 constraintLayout
@@ -664,13 +670,13 @@ fun PlayerControlViewContainer(
                 fileNameTextView?.text = currentFileNameState
                 mediaPlayerManager.playerControlView?.show()
             },
-            modifier = modifier.fillMaxSize()
+            // MODIFIED: Use the passed-in modifier, removing fillMaxSize
+            modifier = modifier
         )
     }
 }
 
 // --- Previews ---
-
 @SuppressLint("UnrememberedMutableState")
 @Preview(showBackground = true, device = "id:pixel_6")
 @Composable

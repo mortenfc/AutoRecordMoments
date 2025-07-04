@@ -27,9 +27,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
-data class BitDepth(val bytes: Int, val encodingEnum: Int) {
+data class BitDepth(val bits: Int, val encodingEnum: Int) {
     override fun toString(): String {
-        return "$bytes,$encodingEnum"
+        return "$bits,$encodingEnum"
     }
 
     companion object {
@@ -38,20 +38,20 @@ data class BitDepth(val bytes: Int, val encodingEnum: Int) {
                 val parts = value.split(",")
                 when (parts.size) {
                     2 -> {
-                        val bytes = parts[0].toInt()
+                        val bits = parts[0].toInt()
                         val encoding = parts[1].toInt()
-                        BitDepth(bytes, encoding)
+                        BitDepth(bits, encoding)
                     }
 
                     1 -> {
                         // Handle the case where there's no comma
-                        val bytes = parts[0].toInt()
-                        val encoding = when (bytes) {
+                        val bits = parts[0].toInt()
+                        val encoding = when (bits) {
                             8 -> AudioFormat.ENCODING_PCM_8BIT
                             16 -> AudioFormat.ENCODING_PCM_16BIT
-                            else -> throw IllegalArgumentException("Invalid bit depth: $bytes")
+                            else -> throw IllegalArgumentException("Invalid bit depth: $bits")
                         }
-                        BitDepth(bytes, encoding)
+                        BitDepth(bits, encoding)
                     }
 
                     else -> throw IllegalArgumentException("Invalid BitDepth format: $value")
@@ -73,9 +73,6 @@ const val DEFAULT_BUFFER_TIME_LENGTH_S = 300
 public val bitDepths = mapOf(
     "8" to BitDepth(8, AudioFormat.ENCODING_PCM_8BIT),
     DEFAULT_BIT_DEPTH_KEY to BitDepth(16, AudioFormat.ENCODING_PCM_16BIT),
-// Need a float array and a bunch of conversions and stuff to support other bit depths.. not worth
-//    "24" to BitDepth(24, AudioFormat.ENCODING_PCM_FLOAT), // Use FLOAT for 24-bit
-//    "32" to BitDepth(32, AudioFormat.ENCODING_PCM_FLOAT),  // Use FLOAT for 32-bit
 )
 
 public val sampleRates = mapOf(
@@ -325,7 +322,7 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
 
     fun validateSettings() {
         val calculatedValue: Long =
-            sampleRateTemp.intValue.toLong() * (bitDepthTemp.value.bytes / 8).toLong() * bufferTimeLengthTemp.intValue.toLong()
+            sampleRateTemp.intValue.toLong() * (bitDepthTemp.value.bits / 8).toLong() * bufferTimeLengthTemp.intValue.toLong()
         Log.d("SettingsScreenState", "calculatedValue:  $calculatedValue")
         isMaxExceeded.value = calculatedValue > MAX_BUFFER_SIZE
         isBufferTimeLengthNull.value = bufferTimeLengthTemp.intValue == 0

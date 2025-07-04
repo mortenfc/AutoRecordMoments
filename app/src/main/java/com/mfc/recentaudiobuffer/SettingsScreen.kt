@@ -111,7 +111,7 @@ fun SettingsScreen(
         },
         topBar = {
             TopAppBar(
-                title = stringResource(id = R.string.donate),
+                title = stringResource(id = R.string.settings),
                 signInButtonText = signInButtonText,
                 onSignInClick = onSignInClick,
                 onBackButtonClicked = {
@@ -182,7 +182,7 @@ fun SettingsScreen(
 
                 // Bit Depth
                 SettingsButton(
-                    text = "Bit Depth: ${bitDepth.value.bytes} bit",
+                    text = "Bit Depth: ${bitDepth.value.bits} bit",
                     icon = Icons.Filled.ArrowDropDown,
                     onClick = { showBitDepthMenu = true })
                 DropdownMenu(
@@ -412,10 +412,10 @@ private fun estimateBatteryImpact(
         sampleRate <= 48000 -> 4f
         else -> 6f
     }
-    val bitDepthScore = if (bitDepth.bytes == 8) 1.5f else 2f
+    val bitDepthScore = if (bitDepth.bits == 8) 1.5f else 2f
     val ramScore = when {
-        (sampleRate.toLong() * bufferTimeLength * (bitDepth.bytes / 8)) / (1024 * 1024) <= 50 -> 0.5f
-        (sampleRate.toLong() * bufferTimeLength * (bitDepth.bytes / 8)) / (1024 * 1024) <= 150 -> 1f
+        (sampleRate.toLong() * bufferTimeLength * (bitDepth.bits / 8)) / (1024 * 1024) <= 50 -> 0.5f
+        (sampleRate.toLong() * bufferTimeLength * (bitDepth.bits / 8)) / (1024 * 1024) <= 150 -> 1f
         else -> 2f
     }
 
@@ -434,7 +434,7 @@ fun ComprehensiveHelpDialog(
 ) {
     // --- Calculations ---
     val (formattedRamUsage, estimate) = remember(sampleRate, bitDepth, bufferTimeLength) {
-        val bytesPerSample = bitDepth.bytes / 8
+        val bytesPerSample = bitDepth.bits / 8
         val totalBytes = sampleRate.toLong() * bufferTimeLength * bytesPerSample
         val megabytes = totalBytes / (1024.0 * 1024.0)
         val ram = String.format("~%.0f", megabytes)
