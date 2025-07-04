@@ -23,6 +23,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -45,6 +46,9 @@ class MainActivity : AppCompatActivity() {
     lateinit var authenticationManager: AuthenticationManager
 
     private var myBufferService: MyBufferServiceInterface? = null
+
+    private var isRecording = mutableStateOf(false)
+
     private var isPickAndPlayFileRunning = false
     private var wasStartRecordingButtonPress = false
 
@@ -91,11 +95,19 @@ class MainActivity : AppCompatActivity() {
                 myBufferService!!.startRecording()
                 wasStartRecordingButtonPress = false
             }
+            lifecycleScope.launch {
+                myBufferService?.isRecording?.collect { recordingStatus ->
+                    // This block will run every time the state changes in the service
+                    isRecording.value = recordingStatus
+                }
+            }
             Log.d(logTag, "onServiceConnect()")
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
             Log.e(logTag, "onServiceDisconnected unexpectedly called")
+            myBufferService = null
+            isRecording.value = false
             isBound = false
             // Try to rebind the service
             this@MainActivity.startForegroundService(foregroundServiceAudioBuffer)
@@ -145,7 +157,8 @@ class MainActivity : AppCompatActivity() {
                 putExtra(DocumentsContract.EXTRA_INITIAL_URI, contentUri)
             }
         }
-        directoryPickerLauncher.launch(intent.getParcelableExtra(DocumentsContract.EXTRA_INITIAL_URI))
+        val initialUri = intent.getParcelableExtra<Uri>(DocumentsContract.EXTRA_INITIAL_URI)
+        directoryPickerLauncher.launch(initialUri)
     }
 
     // Helper function to convert a file path to a content:// URI (if possible)
@@ -187,7 +200,8 @@ class MainActivity : AppCompatActivity() {
                     FileSavingUtils.showDirectoryPermissionDialog = false
                     pickDirectory()
                 },
-                mediaPlayerManager = mediaPlayerManager!!
+                mediaPlayerManager = mediaPlayerManager!!,
+                isRecordingFromService = isRecording
             )
         }
 
@@ -214,9 +228,9 @@ class MainActivity : AppCompatActivity() {
             "onStart() called with isPickAndPlayFileRunning: $isPickAndPlayFileRunning \nIntent.action: ${intent.action}"
         )
         authenticationManager.registerLauncher(this)
-        if (isMyBufferServiceRunning(this)) {
+        if (MyBufferService.isServiceRunning.get()) {
             // Rebind to the existing service
-            Log.i(logTag, "Rebinding to existing service")
+            Log.i(logTag, "Rebinding to existing service because its flag is set.")
             Intent(this, MyBufferService::class.java).also { intent ->
                 bindService(intent, foregroundBufferServiceConn, Context.BIND_AUTO_CREATE)
             }
@@ -267,17 +281,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun isMyBufferServiceRunning(context: Context): Boolean {
-        val manager =
-            context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-        for (service in manager.getRunningServices(Int.MAX_VALUE)) {
-            if (MyBufferService::class.java.name == service.service.className) {
-                return true
-            }
-        }
-        return false
-    }
-
     private fun onClickStartRecording() {
         getPermissionsAndThen(requiredPermissions) {
             if (!foregroundBufferServiceConn.isBound) {
@@ -289,7 +292,7 @@ class MainActivity : AppCompatActivity() {
                     BIND_AUTO_CREATE
                 )
                 Log.i(logTag, "Buffer service started and bound")
-            } else if (myBufferService!!.isRecording.get()) {
+            } else if (myBufferService!!.isRecording.value) {
                 runOnUiThread {
                     Toast.makeText(
                         this, "Buffer is already running!", Toast.LENGTH_SHORT
@@ -308,7 +311,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun onClickStopRecording() {
         if (foregroundBufferServiceConn.isBound) {
-            if (myBufferService!!.isRecording.get()) {
+            if (myBufferService!!.isRecording.value) {
                 Log.i(logTag, "Stopping recording in MyBufferService")
                 myBufferService!!.stopRecording()
                 runOnUiThread {

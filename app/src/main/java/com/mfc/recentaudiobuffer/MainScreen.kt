@@ -56,8 +56,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -97,11 +103,13 @@ fun MainScreen(
     onSettingsClick: () -> Unit,
     onDirectoryAlertDismiss: () -> Unit,
     mediaPlayerManager: MediaPlayerManager,
+    isRecordingFromService: MutableState<Boolean>,
     isPreview: Boolean = false
 ) {
     // State to manage if recording is active, controlling the main button's appearance and action
-    var isRecording by remember { mutableStateOf(false) }
+    var isRecording by remember { isRecordingFromService }
     var isInitialComposition by remember { mutableStateOf(true) }
+    var showPrivacyInfoDialog by remember { mutableStateOf(false) }
 
     // This effect triggers whenever 'isRecording' changes.
     LaunchedEffect(isRecording) {
@@ -167,14 +175,34 @@ fun MainScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     // Large, central toggle button for starting/stopping recording
-                    RecordingToggleButton(
-                        isRecording = isRecording,
-                        backgroundColor = recordingButtonBackgroundColor,
-                        elementsColor = recordingButtonElementsColor,
-                        onClick = {
-                            isRecording = !isRecording
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Large, central toggle button for starting/stopping recording
+                        RecordingToggleButton(
+                            isRecording = isRecording,
+                            backgroundColor = recordingButtonBackgroundColor,
+                            elementsColor = recordingButtonElementsColor,
+                            onClick = {
+                                isRecording = !isRecording
+                            }
+                        )
+
+                        // Info icon button, offset to the side of the main button
+                        IconButton(
+                            onClick = { showPrivacyInfoDialog = true },
+                            // (90dp button radius + 24dp standard icon radius - ? = 100)
+                            modifier = Modifier.offset(x = 100.dp, y = -100.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "Show privacy info",
+                                tint = colorResource(id = R.color.purple_accent),
+                                modifier = Modifier.size(32.dp)
+                            )
                         }
-                    )
+                    }
 
                     Spacer(Modifier.height(48.dp))
 
@@ -225,6 +253,11 @@ fun MainScreen(
     }
 
     // --- Dialogs ---
+    if (showPrivacyInfoDialog) {
+        PrivacyInfoDialog(onDismissRequest = { showPrivacyInfoDialog = false })
+    }
+
+
     if (FileSavingUtils.showSavingDialog) {
         val context = LocalContext.current
         FileSavingUtils.currentGrantedDirectoryUri?.let { grantedDirectoryUri ->
@@ -244,6 +277,43 @@ fun MainScreen(
     if (FileSavingUtils.showDirectoryPermissionDialog) {
         DirectoryPickerDialog(onDismiss = onDirectoryAlertDismiss)
     }
+}
+
+/**
+ * A dialog that explains how the audio buffering and data privacy works.
+ */
+@Composable
+fun PrivacyInfoDialog(onDismissRequest: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        containerColor = colorResource(id = R.color.teal_100),
+        title = {
+            Text(
+                "Privacy Info",
+                fontWeight = FontWeight.Bold,
+                color = colorResource(id = R.color.teal_900)
+            )
+        },
+        text = {
+            Text(
+                "This app continuously records audio to a temporary buffer in your phone's memory (RAM). " +
+                        "No audio data (except settings) is saved or sent to the cloud unless you explicitly press the 'Save' button. " +
+                        "Clearing buffer or closing the persistent notification will discard the buffered audio.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = colorResource(id = R.color.teal_900),
+                lineHeight = 20.sp
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(
+                    "GOT IT",
+                    fontWeight = FontWeight.Bold,
+                    color = colorResource(id = R.color.purple_accent)
+                )
+            }
+        }
+    )
 }
 
 /**
@@ -694,6 +764,7 @@ fun MainScreenPreview() {
             onSignInClick = {},
             onDirectoryAlertDismiss = {},
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) {},
+            isRecordingFromService = mutableStateOf(true),
             isPreview = true
         )
     }

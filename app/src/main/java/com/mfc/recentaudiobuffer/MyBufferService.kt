@@ -12,7 +12,6 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
-import android.media.AudioRecord.READ_NON_BLOCKING
 import android.media.MediaRecorder
 import android.os.Binder
 import android.os.Build
@@ -28,11 +27,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.ticker
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -41,6 +41,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
@@ -55,7 +56,7 @@ interface MyBufferServiceInterface {
     fun resetBuffer()
     fun quickSaveBuffer()
 
-    val isRecording: AtomicReference<Boolean>
+    val isRecording: StateFlow<Boolean>
 }
 
 @AndroidEntryPoint
@@ -67,7 +68,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var recordingJob: Job? = null
     private var notificationJob: Job? = null
-    private var lastNotificationUpdateTime: Long = 0
 
     companion object {
         const val CHRONIC_NOTIFICATION_ID = 1
@@ -85,12 +85,17 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         // Static variable to hold the buffer
         var sharedAudioDataToSave: ByteArray? = null
+        var isServiceRunning = AtomicBoolean(false)
     }
 
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
-    public override val isRecording: AtomicReference<Boolean> = AtomicReference(false)
+    // 1. Create a private, mutable state flow that the service controls.
+    private val _isRecording = MutableStateFlow(false)
+
+    // 2. Expose it publicly as a read-only StateFlow, fulfilling the interface.
+    override val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
 
     private val hasOverflowed: AtomicReference<Boolean> = AtomicReference(false)
 
@@ -109,6 +114,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     override fun onCreate() {
         super.onCreate()
         Log.i(logTag, "onCreate()")
+        isServiceRunning.set(true)
 
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -147,6 +153,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     override fun onDestroy() {
         super.onDestroy()
         Log.i(logTag, "onDestroy()")
+        isServiceRunning.set(false)
         stopRecording()
         serviceScope.cancel()
         abandonAudioFocus()
@@ -274,12 +281,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         audioDataStorage = ByteArray(totalRingBufferSize.get())
     }
 
-    private fun stopBuffering() {
-        Log.d(logTag, "stopBuffering()")
-        recordingJob?.cancel()
-        isRecording.set(false)
-    }
-
     @kotlin.OptIn(ExperimentalCoroutinesApi::class)
     private fun startBuffering() {
         this.syncPreferences()
@@ -304,7 +305,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         // 2. Set our target: we want to read audio in 250ms chunks (4 times per second).
         // This ensures the read() call returns quickly.
-        val readChunkSize = (bytesPerSecond * 0.25).toInt()
+        val readChunkSize = (bytesPerSecond * 0.5).toInt()
 
         // 3. Make the internal hardware buffer larger than our read chunk size.
         // This is a best practice to prevent data loss if the system gets busy.
@@ -315,13 +316,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             .setBufferSizeInBytes(internalBufferSize).build()
 
         try {
-            isRecording.set(true)
             recordingJob?.cancel()
             recordingJob = serviceScope.launch {
                 recorder?.startRecording()
 
                 // This is now a high-frequency polling loop for audio
-                while (isActive && isRecording.get()) {
+                while (isActive && _isRecording.value) {
                     val readDataChunk = ByteArray(readChunkSize)
                     val readResult = recorder?.read(
                         readDataChunk, 0, readChunkSize
@@ -370,8 +370,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                         } finally {
                             lock.unlock()
                         }
-
-                        delay(10L)
                     } else if (readResult == AudioRecord.ERROR_INVALID_OPERATION) {
                         Log.e(
                             logTag,
@@ -398,17 +396,17 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             }
         } catch (e: IllegalArgumentException) {
             Log.e(logTag, "startBuffering() failed: illegal argument", e)
-            isRecording.set(false)
+            _isRecording.value = false
         } catch (e: IllegalStateException) {
             Log.e(logTag, "startBuffering() failed: illegal state", e)
-            isRecording.set(false)
+            _isRecording.value = false
         }
     }
 
 
     override fun stopRecording() {
-        if (!isRecording.get()) return
-        isRecording.set(false)
+        if (!_isRecording.value) return
+        _isRecording.value = false
 
         // Stop both loops
         recordingJob?.cancel()
@@ -583,8 +581,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     override fun startRecording() {
-        if (isRecording.get()) return
-        isRecording.set(true)
+        if (_isRecording.value) return
+        _isRecording.value = true
 
         // Start the audio recording loop
         startBuffering()
@@ -594,7 +592,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         notificationJob = serviceScope.launch {
             val tickerChannel = ticker(delayMillis = 1000)
             for (event in tickerChannel) {
-                if (isRecording.get()) {
+                if (_isRecording.value) {
                     updateDurationToDisplay()
                     updateNotification()
                 } else {
@@ -613,11 +611,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     override fun onBind(intent: Intent): IBinder {
         return binder
-    }
-
-    override fun onUnbind(intent: Intent?): Boolean {
-        // Continue recording after unbinding from MainActivity
-        return super.onUnbind(intent)
     }
 
     private fun createNotificationChannels() {
@@ -666,7 +659,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         val recordingNotification =
             NotificationCompat.Builder(this, CHRONIC_NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("Buffered Recent Audio")
-                .setContentText(if (isRecording.get()) "Running...\n" else "Stopped.\n")
+                .setContentText(if (_isRecording.value) "Running...\n" else "Stopped.\n")
                 .setContentText(
                     "${
                         if (hasOverflowed.get()) "100%" else "${
@@ -682,13 +675,13 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                         recorderIndex.get()
                     }, false
                 ).addAction(
-                    if (isRecording.get()) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24,
-                    if (isRecording.get()) "Pause" else "Continue", // Update action text
-                    if (isRecording.get()) stopIntent else startIntent // Update PendingIntent
+                    if (_isRecording.value) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24,
+                    if (_isRecording.value) "Pause" else "Continue", // Update action text
+                    if (_isRecording.value) stopIntent else startIntent // Update PendingIntent
                 ).addAction(
-                    if (isRecording.get()) R.drawable.baseline_save_alt_24 else 0,
-                    if (isRecording.get()) "Save and clear" else null,
-                    if (isRecording.get()) saveIntent else null
+                    if (_isRecording.value) R.drawable.baseline_save_alt_24 else 0,
+                    if (_isRecording.value) "Save and clear" else null,
+                    if (_isRecording.value) saveIntent else null
                 ).setAutoCancel(false) // Keep notification after being tapped
                 .setSmallIcon(R.drawable.baseline_record_voice_over_24) // Set the small icon
                 .setOngoing(true) // Make it a chronic notification
