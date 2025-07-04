@@ -399,12 +399,17 @@ fun StyledDropdownMenuItem(
     )
 }
 
+// Data class for the final combined estimate
 data class ImpactEstimate(
-    val impactLabel: String, val qualityLabel: String, val color: Color
+    val impactLabel: String,
+    val impactColor: Color,
+    val qualityLabel: String,
+    val qualityColor: Color
 )
 
-// A small data class to make the battery impact return type cleaner
+// Data classes for the intermediate calculations
 private data class BatteryImpact(val label: String, val color: Color)
+private data class QualityEstimate(val label: String, val color: Color)
 
 /**
  * Estimates the impact of audio settings on both battery life and sound quality.
@@ -421,13 +426,14 @@ private fun estimateAudioImpact(
     val batteryImpact = getBatteryImpact(sampleRate, bitDepth, ramUsageMb)
 
     // 2. Get the estimated sound quality label, calculated independently.
-    val qualityLabel = getQualityLabel(sampleRate, bitDepth)
+    val qualityEstimate = getQualityLabel(sampleRate, bitDepth)
 
     // 3. Combine the results into the final data class for the UI.
     return ImpactEstimate(
         impactLabel = batteryImpact.label,
-        qualityLabel = qualityLabel,
-        color = batteryImpact.color // The color is tied to the battery warning level.
+        impactColor = batteryImpact.color,
+        qualityLabel = qualityEstimate.label,
+        qualityColor = qualityEstimate.color
     )
 }
 
@@ -456,31 +462,33 @@ private fun getBatteryImpact(sampleRate: Int, bitDepth: BitDepth, ramUsageMb: Lo
     return when (sampleRateScore + bitDepthScore + ramScore) {
         in 0f..<4.5f -> BatteryImpact("Low", Color(0xFF388E3C))        // Green
         in 4.5f..<7.5f -> BatteryImpact("Medium", Color(0xFFF57C00))   // Orange
-        else -> BatteryImpact("High", Color(0xFFD32F2F))              // Red
+        else -> BatteryImpact("High", Color(0xFFD32F2F))                  // Red
     }
 }
 
 /**
- * Calculates the estimated sound quality based on audio fidelity parameters.
- * - Bit Depth: Very high impact (dynamic range).
- * - Sample Rate: High impact (frequency range).
+ * Calculates the estimated sound quality, returning a label and a corresponding color.
  */
-private fun getQualityLabel(sampleRate: Int, bitDepth: BitDepth): String {
-    // Bit depth has a massive impact on perceived quality.
-    val bitDepthScore = if (bitDepth.bits == 8) 2f else 10f
+private fun getQualityLabel(sampleRate: Int, bitDepth: BitDepth): QualityEstimate {
+    // Define colors for quality levels
+    val highQualityColor = Color(0xFF388E3C)   // Same green as low battery impact
+    val decentQualityColor = Color(0xFF7B8E38) // Yellow-Green
+    val poorQualityColor = Color(0xFFF57C00)   // Orange
 
+    // Scoring logic
+    val bitDepthScore = if (bitDepth.bits == 8) 2f else 10f
     val sampleRateScore = when {
-        sampleRate <= 16000 -> 2f  // Poor (telephones)
-        sampleRate <= 22050 -> 5f  // Good (radio)
-        sampleRate <= 48000 -> 10f // Excellent (CD quality)
-        else -> 12f                // Studio (pro audio)
+        sampleRate <= 16000 -> 2f
+        sampleRate <= 22050 -> 5f
+        sampleRate <= 48000 -> 10f
+        else -> 12f
     }
 
     return when (bitDepthScore + sampleRateScore) {
-        in 0f..<6f -> "Poor"
-        in 6f..<15f -> "Good"
-        in 15f..<22f -> "Excellent"
-        else -> "Studio"
+        in 0f..<6f -> QualityEstimate("Poor\n(Phone)", poorQualityColor)
+        in 6f..<15f -> QualityEstimate("Decent\n(Radio)", decentQualityColor)
+        in 15f..<22f -> QualityEstimate("Great\n(CD/DVD)", highQualityColor)
+        else -> QualityEstimate("Best\n(Studio)", highQualityColor)
     }
 }
 
@@ -554,7 +562,7 @@ fun ComprehensiveHelpDialog(
                             text = estimate.impactLabel,
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
-                            color = estimate.color,
+                            color = estimate.impactColor,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -576,7 +584,7 @@ fun ComprehensiveHelpDialog(
                             text = estimate.qualityLabel,
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
-                            color = colorResource(id = R.color.teal_900), // Use a neutral bold color
+                            color = estimate.qualityColor,
                             textAlign = TextAlign.Center
                         )
                     }
