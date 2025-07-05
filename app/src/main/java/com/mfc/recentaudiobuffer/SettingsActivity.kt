@@ -104,12 +104,10 @@ class SettingsActivity : ComponentActivity() {
                 val service = RecentAudioBufferApplication.getSharedViewModel().myBufferService
                 val isSessionActive = service != null
                 if (configBeforeUpdate != configAfterUpdate && isSessionActive) {
-                    Log.d(logTag, "onSubmit(): Settings updated, stopping recording")
-                    Toast.makeText(
-                        this,
-                        "Settings saved. WARN: They will only apply once you restart a clean recording!",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Log.d(logTag, "onSubmit(): Settings updated, quicksaving and restarting recording")
+                    service!!.stopRecording()
+                    service.quickSaveBuffer()
+                    service.startRecording()
                 }
                 hasSaved = true
             },

@@ -481,7 +481,9 @@ fun MainButton(
     iconTint: Color = Color.White,
     width: Dp = 180.dp,
     enabled: Boolean = true,
-    contentPadding: Dp = 16.dp
+    contentPadding: Dp = 16.dp,
+    iconSize: Dp = 22.dp,
+    maxLines: Int = 1
 ) {
     Button(
         onClick = onClick,
@@ -542,14 +544,14 @@ fun MainButton(
                 painter = painterResource(id = icon),
                 contentDescription = text,
                 tint = iconTint,
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(iconSize)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = if (enabled) text else "Disabled",
                 fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
-                maxLines = 1,
+                maxLines = maxLines,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )

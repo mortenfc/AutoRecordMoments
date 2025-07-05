@@ -28,10 +28,6 @@
     <string name="DefaultRecordingName">recording.wav</string>
     <string name="exo_controls_close_description">Close</string>
 
-    <!-- Device admin -->
-    <string name="device_description">This app needs device admin privileges for call recording.</string>
-    <string name="device_admin_label">For Call Recording</string>
-
     <!-- GPay -->
     <string name="googlepay_button_content_description">Google Pay</string>
     <string name="buy_with_googlepay_button_content_description">Buy with Google Pay</string>
@@ -47,7 +43,7 @@
     <string name="donate_your_heart_out">Donate Your Heart Out</string>
     <string name="donate_ads_away">Donate ads away</string>
     <string name="buffer_length_seconds">Buffer length in Seconds</string>
-    <string name="submit">Submit</string>
+    <string name="submit">Apply, Save, and\nRestart Recording</string>
     <string name="back">Return</string>
     <string name="donate">Donate</string>
     <string name="enter_filename">Select Filename</string>
@@ -56,6 +52,5 @@
     <string name="select_directory">This app requires a default saving directory for quick saves through the notification.
         You will be prompted to pick one. </string>
     <string name="go_back_to_main">Return</string>
-    <string name="set_as_default_dialer">Set as default call app</string>
 
 </resources>

@@ -571,7 +571,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             }
         }
 
-        startNotificationUpdates();
+        startNotificationUpdates()
     }
 
     // Start the separate, parallel notification timer loop

@@ -225,15 +225,17 @@ fun SettingsScreen(
 
                 MainButton(
                     text = stringResource(id = R.string.submit),
-                    icon = R.drawable.baseline_save_alt_24,
+                    icon = R.drawable.outline_restore_page_24,
                     onClick = {
                         if (isSubmitEnabled.value) {
                             onSubmit(bufferTimeLengthTemp.intValue)
                         }
                     },
                     iconTint = colorResource(id = R.color.purple_accent),
-                    width = 130.dp,
-                    enabled = isSubmitEnabled.value
+                    enabled = isSubmitEnabled.value,
+                    width = 200.dp,
+                    maxLines = 2,
+                    iconSize = 40.dp
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
