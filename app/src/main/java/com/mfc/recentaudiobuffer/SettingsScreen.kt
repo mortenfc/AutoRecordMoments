@@ -238,6 +238,14 @@ fun SettingsScreen(
                     iconSize = 40.dp
                 )
 
+                Text(
+                    text = "Sign In to sync settings with cloud",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    fontStyle = FontStyle.Italic
+                )
+                
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
