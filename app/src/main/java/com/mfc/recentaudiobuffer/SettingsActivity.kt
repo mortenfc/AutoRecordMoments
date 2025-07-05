@@ -13,11 +13,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.firebase.auth.FirebaseAuth
 import com.mfc.recentaudiobuffer.ui.theme.RecentAudioBufferTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
@@ -47,6 +50,7 @@ class SettingsActivity : ComponentActivity() {
     @SuppressLint("UnrememberedMutableState")
     @androidx.compose.runtime.Composable
     fun SettingsScreenInitializer(settingsViewModel: SettingsViewModel = hiltViewModel()) {
+        val scope = rememberCoroutineScope()
         val config by settingsViewModel.config.collectAsState()
         val auth = FirebaseAuth.getInstance()
         val state = remember { mutableStateOf(SettingsScreenState(config)) }
@@ -98,18 +102,44 @@ class SettingsActivity : ComponentActivity() {
                 state.value.validateSettings()
             },
             onSubmit = {
-                val configBeforeUpdate = settingsViewModel.config.value
-                state.value.updateSettings(settingsViewModel)
-                val configAfterUpdate = settingsViewModel.config.value
-                val service = RecentAudioBufferApplication.getSharedViewModel().myBufferService
-                val isSessionActive = service != null
-                if (configBeforeUpdate != configAfterUpdate && isSessionActive) {
-                    Log.d(logTag, "onSubmit(): Settings updated, quicksaving and restarting recording")
-                    service!!.stopRecording()
-                    service.quickSaveBuffer()
-                    service.startRecording()
+                // Launch a coroutine for the save and restart logic
+                scope.launch {
+                    val configBeforeUpdate = settingsViewModel.config.value
+
+                    // 1. Call updateSettings and get the list of jobs
+                    val updateJobs = state.value.updateSettings(settingsViewModel)
+
+                    // 2. Wait for all save operations to complete
+                    updateJobs.joinAll()
+
+                    // 3. Now the ViewModel's state is guaranteed to be updated
+                    val configAfterUpdate = settingsViewModel.config.value
+
+                    val service = RecentAudioBufferApplication.getSharedViewModel().myBufferService
+                    val isSessionActive = service != null
+
+                    if (configBeforeUpdate != configAfterUpdate && isSessionActive) {
+                        Log.d(
+                            logTag,
+                            "onSubmit(): Settings changed, quicksaving and restarting recording"
+                        )
+                        // The service calls can be run on the main thread if they are fast,
+                        // or you can ensure they are safe to call from this coroutine context.
+                        service!!.stopRecording()
+                        service.quickSaveBuffer()
+                        service.resetBuffer()
+                        service.startRecording()
+                    } else if (configBeforeUpdate != configAfterUpdate) {
+                        Log.w(
+                            logTag,
+                            "onSubmit(): Settings changed, but no recording session found"
+                        )
+                    } else {
+                        Log.i(logTag, "onSubmit(): No settings changed")
+                    }
+
+                    hasSaved = true
                 }
-                hasSaved = true
             },
             justExit = {
                 this.finish()

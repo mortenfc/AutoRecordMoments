@@ -18,6 +18,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
@@ -324,10 +325,11 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
         bitDepthTemp.value = newBitDepthTemp
     }
 
-    fun updateSettings(settingsViewModel: SettingsViewModel) {
-        settingsViewModel.updateBufferTimeLength(bufferTimeLengthTemp.intValue)
-        settingsViewModel.updateSampleRate(sampleRateTemp.intValue)
-        settingsViewModel.updateBitDepth(bitDepthTemp.value)
+    fun updateSettings(settingsViewModel: SettingsViewModel): List<Job> {
+        val job1 = settingsViewModel.updateBufferTimeLength(bufferTimeLengthTemp.intValue)
+        val job2 = settingsViewModel.updateSampleRate(sampleRateTemp.intValue)
+        val job3 = settingsViewModel.updateBitDepth(bitDepthTemp.value)
+        return listOf(job1, job2, job3)
     }
 
     fun validateSettings() {

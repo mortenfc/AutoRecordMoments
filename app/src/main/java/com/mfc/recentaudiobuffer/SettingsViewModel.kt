@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,30 +40,25 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun updateSampleRate(sampleRate: Int) {
-        viewModelScope.launch {
-            _isSaving.value = true
+    fun updateSampleRate(sampleRate: Int): Job {
+        return viewModelScope.launch {
+            // No change to the logic inside
             settingsRepository.updateSampleRate(sampleRate)
             _config.update { it.copy(sampleRateHz = sampleRate) }
-            _isSaving.value = false
         }
     }
 
-    fun updateBufferTimeLength(bufferTimeLength: Int) {
-        viewModelScope.launch {
-            _isSaving.value = true
+    fun updateBufferTimeLength(bufferTimeLength: Int): Job {
+        return viewModelScope.launch {
             settingsRepository.updateBufferTimeLength(bufferTimeLength)
             _config.update { it.copy(bufferTimeLengthS = bufferTimeLength) }
-            _isSaving.value = false
         }
     }
 
-    fun updateBitDepth(bitDepth: BitDepth) {
-        viewModelScope.launch {
-            _isSaving.value = true
+    fun updateBitDepth(bitDepth: BitDepth): Job {
+        return viewModelScope.launch {
             settingsRepository.updateBitDepth(bitDepth)
             _config.update { it.copy(bitDepth = bitDepth) }
-            _isSaving.value = false
         }
     }
 
