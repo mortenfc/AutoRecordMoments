@@ -30,8 +30,20 @@ android {
         localProperties.load(new FileInputStream(localPropertiesFile))
     }
 
+    signingConfigs {
+        release {
+            if (localProperties.getProperty("RELEASE_STORE_FILE") != null) {
+                storeFile file(localProperties.getProperty("RELEASE_STORE_FILE"))
+                storePassword localProperties.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias localProperties.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword localProperties.getProperty("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_LIVE")}")

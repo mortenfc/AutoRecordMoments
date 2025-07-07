@@ -25,8 +25,11 @@
 -keep class com.mfc.recentaudiobuffer.SettingsActivity
 -keep class com.mfc.recentaudiobuffer.MyBufferService
 
+
 # General Proguard rules for optimization and obfuscation
 # (You can add more rules here based on your project's requirements)
+-dontwarn android.media.LoudnessCodecController$OnLoudnessCodecUpdateListener
+-dontwarn android.media.LoudnessCodecController
 
 # Conditional logging based on build types
 -assumenosideeffects class android.util.Log {
