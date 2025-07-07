@@ -13,7 +13,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
-import android.util.Log
+
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.ActivityResultLauncher
@@ -31,12 +31,11 @@ import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import dagger.hilt.android.AndroidEntryPoint
+import timber.log.Timber
 
 @AndroidEntryPoint
 @UnstableApi
 class MainActivity : AppCompatActivity() {
-    private val logTag = "MainActivity"
-
     companion object {
         const val ACTION_REQUEST_DIRECTORY_PERMISSION =
             "com.mfc.recentaudiobuffer.ACTION_REQUEST_DIRECTORY_PERMISSION"
@@ -101,11 +100,11 @@ class MainActivity : AppCompatActivity() {
                     isRecording.value = recordingStatus
                 }
             }
-            Log.d(logTag, "onServiceConnect()")
+            Timber.d("onServiceConnect()")
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
-            Log.e(logTag, "onServiceDisconnected unexpectedly called")
+            Timber.e("onServiceDisconnected unexpectedly called")
             myBufferService = null
             isRecording.value = false
             isBound = false
@@ -117,7 +116,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onBindingDied(name: ComponentName?) {
-            Log.e(logTag, "onBindingDied unexpectedly called")
+            Timber.e("onBindingDied unexpectedly called")
             isBound = false
             // Try to rebind the service
             this@MainActivity.startForegroundService(foregroundServiceAudioBuffer)
@@ -132,7 +131,7 @@ class MainActivity : AppCompatActivity() {
     private val directoryPickerLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { selectedDir: Uri? ->
             selectedDir?.let {
-                Log.i("MainActivity", "directoryPickerLauncher: $it")
+                Timber.i("directoryPickerLauncher: $it")
                 contentResolver.takePersistableUriPermission(
                     it,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -175,14 +174,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.i(logTag, "onCreate(): Build.VERSION.SDK_INT: ${Build.VERSION.SDK_INT}")
+        Timber.i("onCreate(): Build.VERSION.SDK_INT: ${Build.VERSION.SDK_INT}")
 
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
 
         createNotificationChannels()
 
         mediaPlayerManager = MediaPlayerManager(context = this, onPlayerReady = {
-            Log.i(logTag, "Player is ready")
+            Timber.i("Player is ready")
         })
 
         setContent {
@@ -223,14 +222,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        Log.i(
-            logTag,
+        Timber.i(
             "onStart() called with isPickAndPlayFileRunning: $isPickAndPlayFileRunning \nIntent.action: ${intent.action}"
         )
         authenticationManager.registerLauncher(this)
         if (MyBufferService.isServiceRunning.get()) {
             // Rebind to the existing service
-            Log.i(logTag, "Rebinding to existing service because its flag is set.")
+            Timber.i("Rebinding to existing service because its flag is set.")
             Intent(this, MyBufferService::class.java).also { intent ->
                 bindService(intent, foregroundBufferServiceConn, Context.BIND_AUTO_CREATE)
             }
@@ -239,14 +237,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        Log.i(logTag, "onNewIntent() called")
+        Timber.i("onNewIntent() called")
         handleIntent(intent)
     }
 
     override fun onStop() {
         super.onStop()
         closeMediaPlayer()
-        Log.i(logTag, "onStop() finished")
+        Timber.i("onStop() finished")
     }
 
     override fun onDestroy() {
@@ -255,25 +253,25 @@ class MainActivity : AppCompatActivity() {
             unbindService(foregroundBufferServiceConn)
             foregroundBufferServiceConn.isBound = false
         }
-        Log.i(logTag, "onDestroy() finished")
+        Timber.i("onDestroy() finished")
     }
 
     private fun handleIntent(intent: Intent) {
         // Check if the activity was launched from the notification
         if (intent.action == FileSavingService.ACTION_OPEN_FILE && !isPickAndPlayFileRunning) {
-            Log.d(logTag, "Got external intent to open file")
+            Timber.d("Got external intent to open file")
             val savedFileUri =
                 intent.getParcelableExtra<Uri>(FileSavingService.EXTRA_SAVED_FILE_URI)
             if (savedFileUri != null) {
                 isPickAndPlayFileRunning = true
                 pickAndPlayFile(savedFileUri)
             } else {
-                Log.e(logTag, "savedFileUri is null")
+                Timber.e("savedFileUri is null")
             }
         }
 
         if (intent.action == ACTION_REQUEST_DIRECTORY_PERMISSION) {
-            Log.d(logTag, "Intent to request directory permission received.")
+            Timber.d("Intent to request directory permission received.")
             // Directly trigger the directory picker flow.
             pickDirectory()
             // Clear the action so it doesn't re-trigger on configuration changes
@@ -291,7 +289,7 @@ class MainActivity : AppCompatActivity() {
                     foregroundBufferServiceConn,
                     BIND_AUTO_CREATE
                 )
-                Log.i(logTag, "Buffer service started and bound")
+                Timber.i("Buffer service started and bound")
             } else if (myBufferService!!.isRecording.value) {
                 runOnUiThread {
                     Toast.makeText(
@@ -312,7 +310,7 @@ class MainActivity : AppCompatActivity() {
     private fun onClickStopRecording() {
         if (foregroundBufferServiceConn.isBound) {
             if (myBufferService!!.isRecording.value) {
-                Log.i(logTag, "Stopping recording in MyBufferService")
+                Timber.i("Stopping recording in MyBufferService")
                 myBufferService!!.stopRecording()
                 runOnUiThread {
                     Toast.makeText(
@@ -327,7 +325,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } else {
-            Log.e(logTag, "Buffer service is not running")
+            Timber.e("Buffer service is not running")
             runOnUiThread {
                 Toast.makeText(
                     this, "Buffer service is not running", Toast.LENGTH_SHORT
@@ -352,7 +350,7 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 onClickStopRecording()
                 val prevGrantedUri = FileSavingUtils.getCachedGrantedUri()
-                Log.d(logTag, "MainActivity: prevGrantedUri = $prevGrantedUri")
+                Timber.d("MainActivity: prevGrantedUri = $prevGrantedUri")
                 if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, prevGrantedUri)) {
                     // Use previously permitted cached uri
                     FileSavingUtils.promptSaveFileName(
@@ -457,7 +455,7 @@ class MainActivity : AppCompatActivity() {
     private fun getPermissionsAndThen(
         permissions: List<String>, onPermissionsGranted: () -> Unit
     ) {
-        Log.i(logTag, "getPermissionsAndThen()")
+        Timber.i("getPermissionsAndThen()")
         onPermissionsGrantedCallback = onPermissionsGranted // Store the callback
 
         val permissionsToRequest = permissions.filter {
@@ -470,12 +468,12 @@ class MainActivity : AppCompatActivity() {
         if (permissionsToRequest.isNotEmpty()) {
             multiplePermissionsLauncher.launch(permissionsToRequest)
         } else {
-            Log.i(logTag, "All permissions already granted.")
+            Timber.i("All permissions already granted.")
             onPermissionsGrantedCallback?.invoke() // Call the callback immediately
             onPermissionsGrantedCallback = null // Reset the callback
         }
 
-        Log.i(logTag, "done getPermissionsAndThen()")
+        Timber.i("done getPermissionsAndThen()")
     }
 
 
@@ -484,8 +482,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setUpMediaPlayer(selectedMediaToPlayUri: Uri) {
-        Log.d(
-            logTag,
+        Timber.d(
             "setUpMediaPlayer: selectedMediaToPlayUri = $selectedMediaToPlayUri"
         )
         mediaPlayerManager?.setUpMediaPlayer(selectedMediaToPlayUri)
@@ -496,19 +493,19 @@ class MainActivity : AppCompatActivity() {
             // Prevent duplicate file pickers simultaneously from external intents
             isPickAndPlayFileRunning = false
             if (result.resultCode == RESULT_OK) {
-                Log.d(logTag, "RESULT_OK with data: ${result.data}")
+                Timber.d("RESULT_OK with data: ${result.data}")
                 result.data?.data?.let { selectedMediaToPlayUri ->
-                    Log.i(logTag, "Selected file URI: $selectedMediaToPlayUri")
+                    Timber.i("Selected file URI: $selectedMediaToPlayUri")
                     setUpMediaPlayer(selectedMediaToPlayUri)
                 }
 
             } else {
-                Log.i(logTag, "ERROR selecting file: ${result.resultCode}")
+                Timber.i("ERROR selecting file: ${result.resultCode}")
             }
         }
 
     private fun pickAndPlayFile(initialUri: Uri? = null) {
-        Log.i(logTag, "pickAndPlayFile() with initialUri: $initialUri")
+        Timber.i("pickAndPlayFile() with initialUri: $initialUri")
         val intent = if (initialUri != null) {
             Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)

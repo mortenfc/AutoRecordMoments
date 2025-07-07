@@ -2,7 +2,6 @@ package com.mfc.recentaudiobuffer
 
 import android.content.Context
 import android.media.AudioFormat
-import android.util.Log
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.datastore.core.DataStore
@@ -21,6 +20,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
+import timber.log.Timber
 import javax.inject.Inject
 
 data class BitDepth(val bits: Int, val encodingEnum: Int) {
@@ -54,7 +54,7 @@ data class BitDepth(val bits: Int, val encodingEnum: Int) {
                 }
             } catch (e: Exception) {
                 // Log the error for debugging
-                Log.e("BitDepth", "Error parsing BitDepth from string: $value", e)
+                Timber.e("Error parsing BitDepth from string: $value, $e")
                 // Return null to indicate parsing failure
                 null
             }
@@ -181,7 +181,7 @@ class SettingsRepository @Inject constructor(
 
     // ✅ PUBLIC FUNCTION
     suspend fun getAudioConfig(): AudioConfig {
-        Log.d(logTag, "getAudioConfig() called")
+        Timber.d("getAudioConfig() called")
         return if (isLoggedIn()) {
             val userDocRef = firestore.collection("users").document(getUserId()!!)
             val document = getDocumentSync(userDocRef)
@@ -194,7 +194,7 @@ class SettingsRepository @Inject constructor(
 
     // ✅ PUBLIC FUNCTION
     suspend fun getSettingsConfig(): SettingsConfig {
-        Log.d(logTag, "getSettingsConfig() called")
+        Timber.d("getSettingsConfig() called")
         return if (isLoggedIn()) {
             val userDocRef = firestore.collection("users").document(getUserId()!!)
             val document = getDocumentSync(userDocRef)
@@ -252,7 +252,7 @@ class SettingsRepository @Inject constructor(
     }
 
     suspend fun pullFromFirestore() {
-        Log.d(logTag, "pullFromFirestore() called. auth.currentUser: ${auth.currentUser}")
+        Timber.d("pullFromFirestore() called. auth.currentUser: ${auth.currentUser}")
         if (isLoggedIn()) {
             val userId = getUserId()!!
             val userDocRef = firestore.collection("users").document(userId)
@@ -263,12 +263,12 @@ class SettingsRepository @Inject constructor(
 
                 if (!document.exists()) {
                     // If doc doesn't exist, create it and use the local default object.
-                    Log.d(logTag, "No Firestore doc found, creating default.")
+                    Timber.d("No Firestore doc found, creating default.")
                     settingsToCache = SettingsConfig()
                     userDocRef.set(settingsToCache).await()
                 } else {
                     // If doc exists, parse it.
-                    Log.d(logTag, "Firestore doc found, parsing it.")
+                    Timber.d("Firestore doc found, parsing it.")
                     settingsToCache = document.toSettingsConfig()
                 }
 
@@ -288,7 +288,7 @@ class SettingsRepository @Inject constructor(
         try {
             return userDocRef.get().await()
         } catch (e: FirebaseFirestoreException) {
-            Log.e(logTag, "ERROR in getDocumentSync", e)
+            Timber.e("ERROR in getDocumentSync $e")
             return null
         }
     }
@@ -311,17 +311,17 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
         private set
 
     fun updateBufferTimeLengthTemp(newBufferTimeLength: Int) {
-        Log.d("SettingsScreenState", "updateBufferTimeLengthTemp to $newBufferTimeLength")
+        Timber.d("updateBufferTimeLengthTemp to $newBufferTimeLength")
         bufferTimeLengthTemp.intValue = newBufferTimeLength
     }
 
     fun updateSampleRateTemp(newSampleRateTemp: Int) {
-        Log.d("SettingsScreenState", "updateSampleRateTemp to $newSampleRateTemp")
+        Timber.d("updateSampleRateTemp to $newSampleRateTemp")
         sampleRateTemp.intValue = newSampleRateTemp
     }
 
     fun updateBitDepthTemp(newBitDepthTemp: BitDepth) {
-        Log.d("SettingsScreenState", "updateBitDepthTemp to $newBitDepthTemp")
+        Timber.d("updateBitDepthTemp to $newBitDepthTemp")
         bitDepthTemp.value = newBitDepthTemp
     }
 
@@ -336,11 +336,10 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
         val calculatedValue: Long =
             sampleRateTemp.intValue.toLong() * (bitDepthTemp.value.bits / 8).toLong() * bufferTimeLengthTemp.intValue.toLong()
 
-        Log.d("SettingsScreenState", "calculatedValue:  $calculatedValue")
+        Timber.d("calculatedValue:  $calculatedValue")
         isMaxExceeded.value = calculatedValue > MAX_BUFFER_SIZE
         isBufferTimeLengthNull.value = bufferTimeLengthTemp.intValue == 0
-        Log.d(
-            "SettingsScreenState",
+        Timber.d(
             "isBufferTimeLengthNull, isMaxExceeded: $isBufferTimeLengthNull, $isMaxExceeded"
         )
         isSubmitEnabled.value = !isMaxExceeded.value && !isBufferTimeLengthNull.value
@@ -352,6 +351,6 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
             else -> null
         }
 
-        Log.d("SettingsScreenState", "validateSettings errorMessage: ${errorMessage.value}")
+        Timber.d("validateSettings errorMessage: ${errorMessage.value}")
     }
 }

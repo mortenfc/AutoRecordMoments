@@ -1,11 +1,7 @@
 package com.mfc.recentaudiobuffer
 
 import android.annotation.SuppressLint
-import android.app.Application
-import android.content.Intent
 import android.os.Bundle
-import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.LaunchedEffect
@@ -21,13 +17,11 @@ import com.mfc.recentaudiobuffer.ui.theme.RecentAudioBufferTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import timber.log.Timber
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class SettingsActivity : ComponentActivity() {
-    private val logTag = "SettingsActivity"
-
     @Inject
     lateinit var authenticationManager: AuthenticationManager
 
@@ -42,7 +36,7 @@ class SettingsActivity : ComponentActivity() {
     }
 
     override fun onStart() {
-        Log.i(logTag, "onStart() called")
+        Timber.i("onStart() called")
         super.onStart()
         authenticationManager.registerLauncher(this)
     }
@@ -59,7 +53,7 @@ class SettingsActivity : ComponentActivity() {
 
         // Re-fetch settings when user logs in
         LaunchedEffect(auth.currentUser) {
-            Log.d(logTag, "LaunchedEffect auth.currentUser: ${auth.currentUser}")
+            Timber.d("LaunchedEffect auth.currentUser: ${auth.currentUser}")
             if (auth.currentUser != null) {
                 settingsViewModel.refreshSettings()
             }
@@ -69,13 +63,13 @@ class SettingsActivity : ComponentActivity() {
         LaunchedEffect(config) {
             // When the config from the ViewModel changes,
             // create a new state object with the correct, loaded values.
-            Log.d(logTag, "Config updated from ViewModel, re-creating UI state.")
+            Timber.d("Config updated from ViewModel, re-creating UI state.")
             state.value = SettingsScreenState(config)
         }
 
         // Observe the isSaving state and finish the activity when saving is complete
         LaunchedEffect(isSaving, hasSaved) {
-            Log.d(logTag, "LaunchedEffect isSaving, hasSaved: $isSaving, $hasSaved")
+            Timber.d("LaunchedEffect isSaving, hasSaved: $isSaving, $hasSaved")
             if (!isSaving && hasSaved) {
                 finish()
             }
@@ -86,17 +80,17 @@ class SettingsActivity : ComponentActivity() {
             state = state,
             onSignInClick = { authenticationManager.onSignInClick() },
             onSampleRateChanged = { value ->
-                Log.d(logTag, "onSampleRateChanged to $value")
+                Timber.d("onSampleRateChanged to $value")
                 state.value.updateSampleRateTemp(value)
                 state.value.validateSettings()
             },
             onBitDepthChanged = { value ->
-                Log.d(logTag, "onBitDepthChanged to $value")
+                Timber.d("onBitDepthChanged to $value")
                 state.value.updateBitDepthTemp(value)
                 state.value.validateSettings()
             },
             onBufferTimeLengthChanged = { value ->
-                Log.d(logTag, "onBufferTimeLengthChanged to $value")
+                Timber.d("onBufferTimeLengthChanged to $value")
                 // Temporary value updater for error recompose
                 state.value.updateBufferTimeLengthTemp(value)
                 state.value.validateSettings()
@@ -119,8 +113,7 @@ class SettingsActivity : ComponentActivity() {
                     val isSessionActive = service != null
 
                     if (configBeforeUpdate != configAfterUpdate && isSessionActive) {
-                        Log.d(
-                            logTag,
+                        Timber.d(
                             "onSubmit(): Settings changed, quicksaving and restarting recording"
                         )
                         // The service calls can be run on the main thread if they are fast,
@@ -130,12 +123,11 @@ class SettingsActivity : ComponentActivity() {
                         service.resetBuffer()
                         service.startRecording()
                     } else if (configBeforeUpdate != configAfterUpdate) {
-                        Log.w(
-                            logTag,
+                        Timber.w(
                             "onSubmit(): Settings changed, but no recording session found"
                         )
                     } else {
-                        Log.i(logTag, "onSubmit(): No settings changed")
+                        Timber.i("onSubmit(): No settings changed")
                     }
 
                     hasSaved = true

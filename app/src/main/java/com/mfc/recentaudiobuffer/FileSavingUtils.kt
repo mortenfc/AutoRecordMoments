@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.IBinder
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
 import java.io.IOException
@@ -22,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.media3.common.util.UnstableApi
+import timber.log.Timber
 
 class FileSavingService : Service() {
     companion object {
@@ -40,7 +40,7 @@ class FileSavingService : Service() {
         val grantedUri = intent?.getParcelableExtra<Uri>("grantedUri")
         // Get the big buffer from the static variable. IPC has a limit of 1 MB of data to send with intents
         val audioData = MyBufferService.sharedAudioDataToSave
-        Log.d(logTag, "FileSavingService: grantedUri = $grantedUri")
+        Timber.d("FileSavingService: grantedUri = $grantedUri")
 
         if (grantedUri != null && audioData != null) {
             val notificationManager =
@@ -79,14 +79,13 @@ class FileSavingService : Service() {
                     mainActivityIntent,
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                 )
-                Log.d(
-                    logTag,
+                Timber.d(
                     "PendingIntent $mainActivityPendingIntent \n to launch MainActivity to open file URI: $savedFileUri"
                 )
 
                 notificationBuilder.setContentIntent(mainActivityPendingIntent)
             } else {
-                Log.e(logTag, "Failed to create PendingIntent to open file")
+                Timber.e("Failed to create PendingIntent to open file")
                 // Update the notification text on failure
                 text = "ERROR: Failed to open saved file..."
                 notificationBuilder.setContentText(text)
@@ -97,7 +96,7 @@ class FileSavingService : Service() {
             // Clear the static variable after saving
             MyBufferService.sharedAudioDataToSave = null
         } else {
-            Log.e(logTag, "Failed to save file to $grantedUri, of data: $audioData")
+            Timber.e("Failed to save file to $grantedUri, of data: $audioData")
         }
 
         stopSelf() // Stop the service after saving
@@ -129,21 +128,21 @@ object FileSavingUtils {
                     )
                     stream.write(data)
                     stream.flush()
-                    Log.d(logTag, "File saved successfully")
+                    Timber.d("File saved successfully")
 
                     success = true
                 } catch (e: IOException) {
-                    Log.e(logTag, "Error writing data to stream", e)
+                    Timber.e("Error writing data to stream $e")
                 } finally {
                     stream.close()
                 }
             } ?: run {
-                Log.e(logTag, "Failed to open output stream for $fileUri")
+                Timber.e("Failed to open output stream for $fileUri")
             }
         } catch (e: IOException) {
-            Log.e(logTag, "Failed to save file to $fileUri", e)
+            Timber.e("Failed to save file to $fileUri $e")
         } catch (e: SecurityException) {
-            Log.e(logTag, "Permission denied to access $fileUri", e)
+            Timber.e("Permission denied to access $fileUri $e")
         }
 
         return success
@@ -151,19 +150,18 @@ object FileSavingUtils {
 
     fun isUriValidAndAccessible(context: Context, uri: Uri?): Boolean {
         if (uri == null) {
-            Log.e(logTag, "isUriValidAndAccessible: URI is null")
+            Timber.e("isUriValidAndAccessible: URI is null")
             return false
         }
 
         if (!isUriSaf(uri)) {
-            Log.e(logTag, "isUriValidAndAccessible: URI is not a SAF URI: $uri")
+            Timber.e("isUriValidAndAccessible: URI is not a SAF URI: $uri")
             return false
         }
 
         val documentFile = DocumentFile.fromTreeUri(context, uri)
         if (documentFile == null || !documentFile.exists() || !documentFile.isDirectory) {
-            Log.e(
-                logTag,
+            Timber.e(
                 "isUriValidAndAccessible: DocumentFile is null, does not exist, or is not a directory: $uri"
             )
             return false
@@ -207,7 +205,7 @@ object FileSavingUtils {
 
         val directory = DocumentFile.fromTreeUri(context, grantedDirectoryUri)
         if (directory == null || !directory.exists() || !directory.isDirectory) {
-            Log.e(logTag, "Invalid directory URI or directory does not exist: $grantedDirectoryUri")
+            Timber.e("Invalid directory URI or directory does not exist: $grantedDirectoryUri")
             return null
         }
 
@@ -221,14 +219,14 @@ object FileSavingUtils {
                 .setNegativeButton("Cancel") { dialog, _ -> dialog.cancel() }.create()
             dialog.show()
             if (!overwrite) {
-                Log.i(logTag, "File not overwritten: $filename")
+                Timber.i("File not overwritten: $filename")
                 return null
             }
             file.delete()
         }
         file = directory.createFile("audio/wav", filename)
         if (file == null) {
-            Log.e(logTag, "Failed to create file: $filename")
+            Timber.e("Failed to create file: $filename")
             return null
         }
         val success = saveFile(

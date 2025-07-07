@@ -2,7 +2,6 @@ package com.mfc.recentaudiobuffer
 
 import android.app.AlertDialog
 import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -26,8 +25,10 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONObject
+import timber.log.Timber
 import java.io.IOException
 import javax.inject.Inject
+import com.mfc.recentaudiobuffer.BuildConfig
 
 @AndroidEntryPoint
 class DonationActivity : AppCompatActivity() {
@@ -67,18 +68,22 @@ class DonationActivity : AppCompatActivity() {
         }
     }
 
-    override fun onStart()
-    {
-        Log.i(logTag, "onStart() called")
+    override fun onStart() {
+        Timber.i("onStart() called")
         super.onStart()
         authenticationManager.registerLauncher(this)
     }
 
     private fun setupStripe() {
         PaymentConfiguration.init(this, stripeApiKey)
+        val googlePayEnvironment = if (BuildConfig.DEBUG) {
+            GooglePayEnvironment.Test
+        } else {
+            GooglePayEnvironment.Production
+        }
         googlePayLauncher = GooglePayLauncher(
             activity = this, config = GooglePayLauncher.Config(
-                environment = GooglePayEnvironment.Test,
+                environment = googlePayEnvironment,
                 merchantCountryCode = "SE",
                 merchantName = "Recent Audio Buffer"
             ), readyCallback = ::onGooglePayReady, resultCallback = ::onGooglePayResult
@@ -126,12 +131,12 @@ class DonationActivity : AppCompatActivity() {
     }
 
     private fun handleGooglePayPayment() {
-        Log.d(logTag, "handleGooglePayPayment: Paying with GPay ...")
+        Timber.d("handleGooglePayPayment: Paying with GPay ...")
         googlePayLauncher.presentForPaymentIntent(clientSecret!!)
     }
 
     private fun handleCardPayment() {
-        Log.d(logTag, "handleCardPayment: Paying with Card ...")
+        Timber.d("handleCardPayment: Paying with Card ...")
         presentPaymentSheet(clientSecret!!)
     }
 
@@ -201,33 +206,33 @@ class DonationActivity : AppCompatActivity() {
     }
 
     private fun showPaymentError(message: String, error: Throwable? = null) {
-        error?.let { Log.e(logTag, "Payment Failed", it) }
+        error?.let { Timber.e("Payment Failed $it") }
         Toast.makeText(this, "Payment failed: $message", Toast.LENGTH_SHORT).show()
     }
 
     private fun logNetworkError(e: IOException) {
-        Log.e(logTag, "sendPaymentRequest: Failed to fetch clientSecret", e)
+        Timber.e("sendPaymentRequest: Failed to fetch clientSecret $e")
         runOnUiThread {
             showPaymentError("Failed to connect to server")
         }
     }
 
     private fun logServerError(code: Int) {
-        Log.e(logTag, "sendPaymentRequest: Server returned an error: $code")
+        Timber.e("sendPaymentRequest: Server returned an error: $code")
         runOnUiThread {
             showPaymentError("Server error: $code")
         }
     }
 
     private fun logEmptyResponse() {
-        Log.e(logTag, "sendPaymentRequest: Empty response body")
+        Timber.e("sendPaymentRequest: Empty response body")
         runOnUiThread {
             showPaymentError("Empty response from server")
         }
     }
 
     private fun logJsonError(e: Exception) {
-        Log.e(logTag, "sendPaymentRequest: Failed to parse JSON", e)
+        Timber.e("sendPaymentRequest: Failed to parse JSON $e")
         runOnUiThread {
             showPaymentError("Failed to parse server response")
         }
@@ -237,6 +242,7 @@ class DonationActivity : AppCompatActivity() {
 object DonationConstants {
     const val LOG_TAG = "DonationActivity"
     const val SERVER_URL = "https://us-central1-recent-audio-buffer.cloudfunctions.net"
-    const val STRIPE_API_KEY =
-        "pk_test_51Qb05qH7rOdAu0fXFO9QEU8ygiSSOdlkqDofr9nSI54UHdWbxfIj0Iz0BBKIGlfzxwEUJTUOVILcNEVYs2UNS0Af00yMhr6dX1"
+
+    // ✅ Safe! This will be the live or test key depending on your build.
+    const val STRIPE_API_KEY = BuildConfig.STRIPE_API_KEY
 }

@@ -3,14 +3,12 @@ package com.mfc.recentaudiobuffer
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
+import timber.log.Timber
 
 class NotificationActionReceiver : BroadcastReceiver() {
-    private val logTag = "NotificationActionReceiver"
-
     companion object {
         const val ACTION_STOP_RECORDING = "ACTION_STOP_RECORDING"
         const val ACTION_START_RECORDING = "ACTION_START_RECORDING"
@@ -23,7 +21,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             ACTION_STOP_RECORDING -> {
-                Log.d(logTag, "Received ACTION_STOP_RECORDING")
+                Timber.d("Received ACTION_STOP_RECORDING")
                 if (myBufferService != null) {
                     myBufferService.stopRecording()
                 } else {
@@ -32,7 +30,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
             }
 
             ACTION_START_RECORDING -> {
-                Log.d(logTag, "Received ACTION_START_RECORDING")
+                Timber.d("Received ACTION_START_RECORDING")
                 if (myBufferService != null) {
                     myBufferService.startRecording()
                 } else {
@@ -41,13 +39,13 @@ class NotificationActionReceiver : BroadcastReceiver() {
             }
 
             ACTION_SAVE_RECORDING -> {
-                Log.d(logTag, "Received ACTION_SAVE_RECORDING")
+                Timber.d("Received ACTION_SAVE_RECORDING")
                 val grantedUri = FileSavingUtils.getCachedGrantedUri()
 
                 // ✅ Check if we have a valid, accessible URI permission
                 if (FileSavingUtils.isUriValidAndAccessible(context, grantedUri)) {
                     // Permission exists, proceed with saving as before
-                    Log.d(logTag, "Valid URI permission found. Proceeding with save.")
+                    Timber.d("Valid URI permission found. Proceeding with save.")
                     if (myBufferService != null) {
                         myBufferService.quickSaveBuffer()
                         myBufferService.resetBuffer()
@@ -56,7 +54,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     }
                 } else {
                     // Permission does NOT exist, launch MainActivity to request it
-                    Log.d(logTag, "No valid URI permission. Launching MainActivity to request it.")
+                    Timber.d("No valid URI permission. Launching MainActivity to request it.")
                     val mainActivityIntent = Intent(context, MainActivity::class.java).apply {
                         action = MainActivity.ACTION_REQUEST_DIRECTORY_PERMISSION
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP

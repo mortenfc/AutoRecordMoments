@@ -24,20 +24,32 @@ android {
         }
     }
 
+    def localProperties = new Properties()
+    def localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localProperties.load(new FileInputStream(localPropertiesFile))
+    }
+
     buildTypes {
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_LIVE")}")
+        }
+        debug {
+            buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_TEST")}")
         }
         dev {
             signingConfig signingConfigs.debug
             minifyEnabled true // Enable Proguard even for dev builds
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_LIVE")}")
         }
         devVerbose {
             initWith dev // Inherit settings from 'dev' build type
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_LIVE")}")
         }
     }
 
@@ -51,6 +63,7 @@ android {
     buildFeatures {
         compose true
         viewBinding true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion '1.5.15'

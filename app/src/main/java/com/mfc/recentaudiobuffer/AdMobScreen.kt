@@ -1,7 +1,6 @@
 package com.mfc.recentaudiobuffer
 
 import android.util.DisplayMetrics
-import android.util.Log
 import android.view.ViewGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,6 +17,7 @@ import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
+import timber.log.Timber
 
 @Composable
 fun AdMobBanner(
@@ -42,7 +42,7 @@ fun AdMobBanner(
 
         AndroidView(modifier = modifier, factory = {
             AdView(it).apply {
-                Log.d("AdMobBanner", "AdView created")
+                Timber.d("AdView created")
                 setAdSize(adSize)
                 // Replace with your actual ad unit ID
                 adUnitId = "ca-app-pub-5330230981165217/6883566605"
@@ -51,23 +51,23 @@ fun AdMobBanner(
                 )
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
-                        Log.d("AdMobBanner", "onAdLoaded")
+                        Timber.d("onAdLoaded")
                     }
 
                     override fun onAdFailedToLoad(adError: LoadAdError) {
-                        Log.e("AdMobBanner", "onAdFailedToLoad: ${adError.message}")
+                        Timber.e("onAdFailedToLoad: ${adError.message}")
                     }
 
                     override fun onAdOpened() {
-                        Log.d("AdMobBanner", "onAdOpened")
+                        Timber.d("onAdOpened")
                     }
 
                     override fun onAdClicked() {
-                        Log.d("AdMobBanner", "onAdClicked")
+                        Timber.d("onAdClicked")
                     }
 
                     override fun onAdClosed() {
-                        Log.d("AdMobBanner", "onAdClosed")
+                        Timber.d("onAdClosed")
                     }
                 }
                 loadAd(AdRequest.Builder().build())

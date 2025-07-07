@@ -1,7 +1,6 @@
 package com.mfc.recentaudiobuffer
 
 import android.annotation.SuppressLint
-import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,7 +9,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -73,6 +71,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import timber.log.Timber
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
@@ -100,7 +99,7 @@ fun SettingsScreen(
     val errorMessage = state.value.errorMessage
     val isSubmitEnabled = state.value.isSubmitEnabled
 
-    Log.d("SettingsScreen", "Recompose")
+    Timber.d("SettingsScreen", "Recompose")
 
     Scaffold(
         containerColor = colorResource(id = R.color.teal_100),
@@ -169,7 +168,7 @@ fun SettingsScreen(
                 ) {
                     sampleRates.forEach { (label, value) ->
                         StyledDropdownMenuItem(text = "$label Hz", onClick = {
-                            Log.i(
+                            Timber.i(
                                 "SettingsScreen", "Clicked SampleRate $label with value: $value"
                             )
                             onSampleRateChanged(value)
@@ -198,7 +197,7 @@ fun SettingsScreen(
                 ) {
                     bitDepths.forEach { (label, value) ->
                         StyledDropdownMenuItem(text = "$label bit", onClick = {
-                            Log.i(
+                            Timber.i(
                                 "SettingsScreen", "Clicked BitDepth $label with value: $value"
                             )
                             onBitDepthChanged(value)
@@ -312,7 +311,7 @@ fun MyOutlinedBufferInputField(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focusManager = LocalFocusManager.current
-    Log.d("MyOutlinedBufferInputField", "recompose")
+    Timber.d("MyOutlinedBufferInputField", "recompose")
 
     BasicTextField(
         value = bufferTimeLength.intValue.toString(),
@@ -320,7 +319,7 @@ fun MyOutlinedBufferInputField(
         interactionSource = interactionSource,
         cursorBrush = SolidColor(Color.White),
         onValueChange = { userInput: String ->
-            Log.d("MyOutlinedBufferInputField", "onValueChange to $userInput")
+            Timber.d("MyOutlinedBufferInputField", "onValueChange to $userInput")
             val filteredInput = userInput.filter { it.isDigit() }
             if (filteredInput.isEmpty()) {
                 onValueChange(0)
@@ -331,7 +330,7 @@ fun MyOutlinedBufferInputField(
                         isMaxExceeded.value = true
                         return@BasicTextField
                     }
-                    Log.d("MyOutlinedBufferInputField", "parsedValue: $parsedValue")
+                    Timber.d("MyOutlinedBufferInputField", "parsedValue: $parsedValue")
                     onValueChange(parsedValue)
                 } else {
                     onValueChange(0)
@@ -343,7 +342,7 @@ fun MyOutlinedBufferInputField(
             .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 0.dp)
             .onFocusChanged {
                 if (!it.isFocused) {
-                    Log.v("SettingsScreen", "Focus lost")
+                    Timber.v("SettingsScreen", "Focus lost")
                 }
             },
         textStyle = TextStyle(

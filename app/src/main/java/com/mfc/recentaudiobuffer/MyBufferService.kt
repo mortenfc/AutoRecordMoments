@@ -15,7 +15,6 @@ import android.media.MediaRecorder
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
-import android.util.Log
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.core.app.NotificationCompat
@@ -34,7 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import timber.log.Timber
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -60,7 +59,6 @@ interface MyBufferServiceInterface {
 
 @AndroidEntryPoint
 class MyBufferService : Service(), MyBufferServiceInterface {
-    private val logTag = "MyBufferService"
     private var config: AudioConfig = AudioConfig()
     private lateinit var audioDataStorage: ByteArray
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -110,7 +108,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     override fun onCreate() {
         super.onCreate()
-        Log.i(logTag, "onCreate()")
+        Timber.i("onCreate()")
         isServiceRunning.set(true)
 
         notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -121,7 +119,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i(logTag, "onStartCommand()")
+        Timber.i("onStartCommand()")
 
         when (intent?.action) {
             ACTION_STOP_RECORDING_SERVICE -> {
@@ -133,7 +131,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             }
 
             ACTION_SAVE_RECORDING_SERVICE -> {
-                Log.d(logTag, "Got ACTION_SAVE_RECORDING_SERVICE intent")
+                Timber.d("Got ACTION_SAVE_RECORDING_SERVICE intent")
                 quickSaveBuffer()
                 resetBuffer()
             }
@@ -146,7 +144,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.i(logTag, "onDestroy()")
+        Timber.i("onDestroy()")
         isServiceRunning.set(false)
         stopRecording()
         serviceScope.cancel()
@@ -154,53 +152,52 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.i(logTag, "onTaskRemoved() called with intent: $rootIntent")
+        Timber.i("onTaskRemoved() called with intent: $rootIntent")
         super.onTaskRemoved(rootIntent)
     }
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-        Log.d(logTag, "OnAudioFocusChangeListener() focusChange: $focusChange")
+        Timber.d("OnAudioFocusChangeListener() focusChange: $focusChange")
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS -> {
-                Log.d(logTag, "AUDIOFOCUS_LOSS")
+                Timber.d("AUDIOFOCUS_LOSS")
             }
 
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 // Completely lost focus, likely due to an incoming or outgoing call
-                Log.d(
-                    logTag,
+                Timber.d(
                     "AUDIOFOCUS_LOSS_TRANSIENT, restarting recording for VOICE_COMMUNICATION"
                 )
             }
 
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                Log.d(logTag, "AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK")
+                Timber.d("AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK")
             }
 
             AudioManager.AUDIOFOCUS_GAIN, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK -> {
-                Log.d(
-                    logTag, "AUDIOFOCUS_GAIN, restarting recording for VOICE_RECOGNITION"
+                Timber.d(
+                    "AUDIOFOCUS_GAIN, restarting recording for VOICE_RECOGNITION"
                 )
             }
         }
     }
 
     private fun requestAudioFocus() {
-        Log.d(logTag, "requestAudioFocus()")
+        Timber.d("requestAudioFocus()")
         val result = audioManager.requestAudioFocus(
             audioFocusChangeListener,
             AudioManager.STREAM_VOICE_CALL,
             AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
         )
         if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            Log.d(logTag, "Audio focus granted")
+            Timber.d("Audio focus granted")
         } else {
-            Log.e(logTag, "Audio focus request failed")
+            Timber.e("Audio focus request failed")
         }
     }
 
     private fun abandonAudioFocus() {
-        Log.d(logTag, "abandonAudioFocus()")
+        Timber.d("abandonAudioFocus()")
         audioManager.abandonAudioFocus(audioFocusChangeListener)
     }
 
@@ -218,13 +215,13 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             if (matchResult != null && matchResult.groupValues.size > 1) {
                 try {
                     val freeBytes = matchResult.groupValues[1].toLong()
-                    Log.d(logTag, "Approximate free memory: $freeBytes bytes")
+                    Timber.d("Approximate free memory: $freeBytes bytes")
                     return freeBytes
                 } catch (e: NumberFormatException) {
-                    Log.e(logTag, "Failed to parse free bytes from OutOfMemoryError message", e)
+                    Timber.e("Failed to parse free bytes from OutOfMemoryError message $e")
                 }
             } else {
-                Log.e(logTag, "Failed to find free bytes in OutOfMemoryError message")
+                Timber.e("Failed to find free bytes in OutOfMemoryError message")
             }
         }
         return 0
@@ -235,7 +232,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         var idealBufferSize =
             config.sampleRateHz * (config.bitDepth.bits / 8) * config.bufferTimeLengthS
 
-        Log.d(logTag, "updateTotalBufferSize(): idealBufferSize = $idealBufferSize")
+        Timber.d("updateTotalBufferSize(): idealBufferSize = $idealBufferSize")
 
         val maxDynamicMemory = tryAllocating((idealBufferSize * 1.1).roundToInt())
 
@@ -243,10 +240,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         if (idealBufferSize > maxDynamicMemory) {
             // Calculate the maximum dynamic memory based on available device memory
             val safeLimitPercentage = 0.7 // Reduce to 70%
-            Log.e(
-                logTag,
-                "idealBufferSize > $maxDynamicMemory, setting it to ${safeLimitPercentage * 100}% of $maxDynamicMemory"
-            )
+            Timber.e("idealBufferSize > $maxDynamicMemory, setting it to ${safeLimitPercentage * 100}\\% of $maxDynamicMemory")
             Toast.makeText(
                 applicationContext,
                 "ERROR: Exceeded available RAM (${maxDynamicMemory}) for the buffer size... Clear RAM or reduce settings values. Limiting size.",
@@ -260,7 +254,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         // Check against MAX_BUFFER_SIZE
         if (idealBufferSize > MAX_BUFFER_SIZE) {
-            Log.e(logTag, "idealBufferSize > MAX_BUFFER_SIZE, setting it to MAX_BUFFER_SIZE")
+            Timber.e("idealBufferSize > MAX_BUFFER_SIZE, setting it to MAX_BUFFER_SIZE")
             idealBufferSize = MAX_BUFFER_SIZE
             Toast.makeText(
                 applicationContext,
@@ -271,7 +265,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         // Set the totalRingBufferSize
         totalRingBufferSize.set(idealBufferSize)
-        Log.d(logTag, "updateTotalBufferSize(): totalRingBufferSize = ${totalRingBufferSize.get()}")
+        Timber.d("updateTotalBufferSize(): totalRingBufferSize = ${totalRingBufferSize.get()}")
         audioDataStorage = ByteArray(totalRingBufferSize.get())
     }
 
@@ -279,8 +273,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         val micPermission =
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
         if (micPermission == PackageManager.PERMISSION_DENIED) {
-            Log.e(
-                logTag, "Audio record permission not granted, can't record..."
+            Timber.e(
+                "Audio record permission not granted, can't record..."
             )
             resetBuffer()
             throw SecurityException("Audio record permission not granted.")
@@ -447,7 +441,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     override fun resetBuffer() {
-        Log.d(logTag, "resetBuffer()")
+        Timber.d("resetBuffer()")
         recorderIndex.set(0)
         hasOverflowed.set(false)
         updateDurationToDisplay()
@@ -455,7 +449,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     override fun quickSaveBuffer() {
-        Log.d(logTag, "quickSaveBuffer()")
+        Timber.d("quickSaveBuffer()")
         // Store the buffer in the static variable
         sharedAudioDataToSave = getBuffer()
         val grantedUri = FileSavingUtils.getCachedGrantedUri()
@@ -479,12 +473,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             try {
                 val isNewSession = recorderIndex.get() == 0 && !hasOverflowed.get()
                 if (isNewSession) {
-                    Log.d(logTag, "Starting a new session. Fetching latest config.")
+                    Timber.d("Starting a new session. Fetching latest config.")
                     // If it's new, fetch the latest config and set up the buffer.
                     config = settingsRepository.getAudioConfig()
                     updateTotalBufferSize(config)
                 } else {
-                    Log.d(logTag, "Continuing a paused session. Using existing config.")
+                    Timber.d("Continuing a paused session. Using existing config.")
                 }
                 val initResult = initializeAndBuildRecorder()
                 recorder = initResult.recorder
@@ -498,8 +492,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                         readDataChunk, 0, readChunkSize
                     )
 
-                    Log.d(
-                        logTag,
+                    Timber.d(
                         "readResult: $readResult, recorderIndex before update: ${recorderIndex.get()}"
                     )
                     if (readResult > 0) {
@@ -542,32 +535,29 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                             lock.unlock()
                         }
                     } else if (readResult == AudioRecord.ERROR_INVALID_OPERATION) {
-                        Log.e(
-                            logTag,
+                        Timber.e(
                             "AudioRecord invalid operation. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
                         )
                     } else if (readResult == AudioRecord.ERROR_BAD_VALUE) {
-                        Log.e(
-                            logTag,
+                        Timber.e(
                             "AudioRecord bad value. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
                         )
                     } else if (recorder.state == AudioRecord.RECORDSTATE_STOPPED) {
-                        Log.w(logTag, "AudioRecord stopped unexpectedly")
+                        Timber.w("AudioRecord stopped unexpectedly")
                     } else {
-                        Log.e(
-                            logTag,
+                        Timber.e(
                             "AudioRecord other error state: ${recorder.state}, result: $readResult. Params: (${audioDataStorage.size}, ${recorderIndex.get()}, $readChunkSize)"
                         )
                     }
                 }
             } catch (e: Exception) {
-                Log.e(logTag, "Failed to start or run recording", e)
+                Timber.e("Failed to start or run recording $e")
                 _isRecording.value = false // Revert state on any failure.
             } finally {
                 // This now correctly cleans up only when the coroutine is finished or cancelled.
                 recorder?.stop()
                 recorder?.release()
-                Log.d(logTag, "Recording coroutine finished and cleaned up.")
+                Timber.d("Recording coroutine finished and cleaned up.")
             }
         }
 

@@ -3,7 +3,6 @@ package com.mfc.recentaudiobuffer
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
@@ -28,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import timber.log.Timber
 import javax.inject.Inject
 
 class AuthenticationManager @Inject constructor(
@@ -38,7 +38,6 @@ class AuthenticationManager @Inject constructor(
     val signInButtonText: MutableState<String> = mutableStateOf("Sign In")
     private lateinit var googleSignInClient: GoogleSignInClient
     private lateinit var googleSignInLauncher: ActivityResultLauncher<Intent>
-    private val logTag = "AuthenticationManager"
     private var oneTapLauncher: ActivityResultLauncher<IntentSenderRequest>? = null
     private val oneTapClient: SignInClient = Identity.getSignInClient(applicationContext)
     private var currentActivity: ComponentActivity? = null
@@ -48,18 +47,18 @@ class AuthenticationManager @Inject constructor(
         setupGoogleSignIn()
         updateInitialSignInStatus()
         auth.addAuthStateListener { firebaseAuth ->
-            Log.d(logTag, "AuthStateListener triggered")
+            Timber.d("AuthStateListener triggered")
             onSuccessSignInOut(firebaseAuth.currentUser)
         }
     }
 
     fun registerLauncher(activity: ComponentActivity) {
-        Log.d(logTag, "registerLauncher called")
+        Timber.d("registerLauncher called")
         currentActivity = activity
         oneTapLauncher = activity.registerForActivityResult(
             ActivityResultContracts.StartIntentSenderForResult()
         ) { result ->
-            Log.d(logTag, "One Tap ActivityResult received")
+            Timber.d("One Tap ActivityResult received")
             if (result.resultCode == Activity.RESULT_OK) {
                 try {
                     val credential = oneTapClient.getSignInCredentialFromIntent(result.data)
@@ -73,12 +72,12 @@ class AuthenticationManager @Inject constructor(
                         }
                     }
                 } catch (e: ApiException) {
-                    Log.e(logTag, "Error during One Tap sign-in", e)
+                    Timber.e("Error during One Tap sign-in $e")
                     // Fallback to traditional sign-in
                     signIn()
                 }
             } else {
-                Log.e(logTag, "One Tap sign-in failed with result code: ${result.resultCode}")
+                Timber.e("One Tap sign-in failed with result code: ${result.resultCode}")
                 // Fallback to traditional sign-in
                 signIn()
             }
@@ -87,7 +86,7 @@ class AuthenticationManager @Inject constructor(
         googleSignInLauncher = activity.registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result: ActivityResult ->
-            Log.d(logTag, "Traditional ActivityResult received")
+            Timber.d("Traditional ActivityResult received")
             onSignInResult(result)
         }
     }
@@ -110,31 +109,31 @@ class AuthenticationManager @Inject constructor(
 
     private fun beginOneTapSignIn() {
         val request = BeginSignInRequest.builder().setGoogleIdTokenRequestOptions(
-                BeginSignInRequest.GoogleIdTokenRequestOptions.builder().setSupported(true)
-                    .setServerClientId(applicationContext.getString(R.string.default_web_client_id))
-                    .setFilterByAuthorizedAccounts(false).build()
-            ).setAutoSelectEnabled(true).build()
+            BeginSignInRequest.GoogleIdTokenRequestOptions.builder().setSupported(true)
+                .setServerClientId(applicationContext.getString(R.string.default_web_client_id))
+                .setFilterByAuthorizedAccounts(false).build()
+        ).setAutoSelectEnabled(true).build()
 
         oneTapClient.beginSignIn(request).addOnSuccessListener { result ->
-                Log.d(logTag, "beginSignIn successful")
-                if (currentActivity?.isFinishing == false && currentActivity?.isDestroyed == false) {
-                    try {
-                        val intentSenderRequest =
-                            IntentSenderRequest.Builder(result.pendingIntent.intentSender).build()
-                        oneTapLauncher?.launch(intentSenderRequest)
-                    } catch (e: Exception) {
-                        Log.e(logTag, "Error launching One Tap intent", e)
-                        // Fallback to traditional sign-in
-                        signIn()
-                    }
-                } else {
-                    Log.e(logTag, "Activity is finishing or destroyed, not launching One Tap")
+            Timber.d("beginSignIn successful")
+            if (currentActivity?.isFinishing == false && currentActivity?.isDestroyed == false) {
+                try {
+                    val intentSenderRequest =
+                        IntentSenderRequest.Builder(result.pendingIntent.intentSender).build()
+                    oneTapLauncher?.launch(intentSenderRequest)
+                } catch (e: Exception) {
+                    Timber.e("Error launching One Tap intent $e")
+                    // Fallback to traditional sign-in
+                    signIn()
                 }
-            }.addOnFailureListener { e ->
-                Log.e(logTag, "beginSignIn failed", e)
-                // Fallback to traditional sign-in
-                signIn()
+            } else {
+                Timber.e("Activity is finishing or destroyed, not launching One Tap")
             }
+        }.addOnFailureListener { e ->
+            Timber.e("beginSignIn failed $e")
+            // Fallback to traditional sign-in
+            signIn()
+        }
     }
 
     private fun signIn() {
@@ -156,7 +155,7 @@ class AuthenticationManager @Inject constructor(
                 val user = auth.currentUser
                 onSuccessSignInOut(user)
             } else {
-                logSignInError("signInWithCredential:failure", task.exception)
+                Timber.e("signInWithCredential:failure ${task.exception}")
             }
         }
     }
@@ -181,37 +180,28 @@ class AuthenticationManager @Inject constructor(
             val account = task.getResult(ApiException::class.java)
             firebaseAuthWithGoogle(account)
         } catch (e: ApiException) {
-            logSignInError("Google sign in failed", e)
+            logSignInError(e)
         } catch (e: Exception) {
             logSignInError(result)
         }
     }
 
-    private fun logSignInError(message: String, e: ApiException? = null) {
-        if (e != null) {
-            Log.w(logTag, "Google sign in failed: $message", e)
-            Log.w(logTag, "Statuscode: ${e.statusCode}")
-            Log.w(logTag, "Message: ${e.message}")
-        } else {
-            Log.w(logTag, "Google sign in failed: $message")
-        }
+    private fun logSignInError(e: ApiException) {
+        Timber.w("Google sign in failed: $e")
+        Timber.w("Status Code: ${e.statusCode}")
+        Timber.w("Message: ${e.message}")
     }
 
     private fun logSignInError(result: ActivityResult) {
-        Log.e(
-            logTag,
+        Timber.e(
             "Google sign in failed with error code, data: ${result.resultCode}, ${result.data?.extras}"
         )
         val bundle = result.data?.extras
         if (bundle != null) {
             for (key in bundle.keySet()) {
                 val value = bundle.get(key)
-                Log.e(logTag, "Bundle data - Key: $key, Value: $value")
+                Timber.e("Bundle data - Key: $key, Value: $value")
             }
         }
-    }
-
-    private fun logSignInError(message: String, e: Exception? = null) {
-        Log.w(logTag, message, e)
     }
 }
