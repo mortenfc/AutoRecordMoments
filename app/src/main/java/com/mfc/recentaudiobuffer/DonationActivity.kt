@@ -142,10 +142,17 @@ class DonationActivity : AppCompatActivity() {
 
     private fun fetchClientSecret(amount: Int) {
         val mediaType = "application/json; charset=utf-8".toMediaType()
-        val jsonBody = JSONObject().apply { put("amount", amount * 100) } // Convert to cents
+        // Determine the environment based on the build type
+        val environment = if (BuildConfig.DEBUG) "debug" else "production"
+        // Add the 'environment' key to the JSON body
+        val jsonBody = JSONObject().apply {
+            put("amount", amount * 100) // Convert to cents
+            put("environment", environment)
+        }
         val requestBody = jsonBody.toString().toRequestBody(mediaType)
         val request =
             Request.Builder().url("$serverUrl/createPaymentIntent").post(requestBody).build()
+
         httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 logNetworkError(e)
