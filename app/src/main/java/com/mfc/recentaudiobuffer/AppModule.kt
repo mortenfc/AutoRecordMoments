@@ -35,32 +35,4 @@ object AppModule {
         Timber.d("provideFirebaseFirestore finished")
         return firestore
     }
-
-    @Singleton
-    @Provides
-    fun provideSettingsRepository(
-        @ApplicationContext context: Context,
-        auth: FirebaseAuth,
-        firestore: FirebaseFirestore
-    ): SettingsRepository {
-        return SettingsRepository(context, auth, firestore)
-    }
-
-    @Singleton
-    @Provides
-    fun provideAuthenticationManager(
-        @ApplicationContext applicationContext: Context,
-        auth: FirebaseAuth,
-        settingsRepository: SettingsRepository
-    ): AuthenticationManager {
-        return AuthenticationManager(applicationContext, auth, settingsRepository)
-    }
-
-    @Singleton
-    @Provides
-    fun provideVADProcessor(
-        @ApplicationContext context: Context
-    ): VADProcessor {
-        return VADProcessor(context)
-    }
 }
