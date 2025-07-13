@@ -1,8 +1,9 @@
+package com.mfc.recentaudiobuffer
+
 import android.content.Context
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
-import com.mfc.recentaudiobuffer.AudioConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import java.nio.ByteBuffer
@@ -20,13 +21,11 @@ class VADProcessor @Inject constructor(
 ) {
     private val VAD_MAX_SAMPLE_RATE = 16000f
     private val VAD_MIN_SAMPLE_RATE = 8000f
-    private val session: OrtSession
-    private val ortEnvironment = OrtEnvironment.getEnvironment()
-
-    init {
+    private val session: OrtSession by lazy {
         val modelBytes = context.assets.open("silero_vad_half.onnx").readBytes()
-        session = ortEnvironment.createSession(modelBytes)
+        ortEnvironment.createSession(modelBytes)
     }
+    private val ortEnvironment = OrtEnvironment.getEnvironment()
 
     fun processBuffer(
         fullAudioBuffer: ByteArray, config: AudioConfig, paddingMs: Int = 5000

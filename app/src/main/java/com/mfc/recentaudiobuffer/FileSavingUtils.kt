@@ -33,8 +33,6 @@ class FileSavingService : Service() {
         const val EXTRA_SAVED_FILE_URI = "com.mfc.recentaudiobuffer.EXTRA_SAVED_FILE_URI"
     }
 
-    private val logTag = "FileSavingService"
-
     @OptIn(UnstableApi::class)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val grantedUri = intent?.getParcelableExtra<Uri>("grantedUri")
@@ -111,7 +109,6 @@ class FileSavingService : Service() {
 object FileSavingUtils {
     var showSavingDialog by mutableStateOf(false)
     var showDirectoryPermissionDialog by mutableStateOf(false)
-    private const val logTag = "FileSavingUtils"
     var currentGrantedDirectoryUri: Uri? = null
     var currentData: ByteArray? = null
 

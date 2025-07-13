@@ -99,7 +99,7 @@ fun SettingsScreen(
     val errorMessage = state.value.errorMessage
     val isSubmitEnabled = state.value.isSubmitEnabled
 
-    Timber.d("SettingsScreen", "Recompose")
+    Timber.d("Recompose")
 
     Scaffold(
         containerColor = colorResource(id = R.color.teal_100),
@@ -169,7 +169,7 @@ fun SettingsScreen(
                     sampleRates.forEach { (label, value) ->
                         StyledDropdownMenuItem(text = "$label Hz", onClick = {
                             Timber.i(
-                                "SettingsScreen", "Clicked SampleRate $label with value: $value"
+                                "Clicked SampleRate $label with value: $value"
                             )
                             onSampleRateChanged(value)
                             showSampleRateMenu = false
@@ -198,7 +198,7 @@ fun SettingsScreen(
                     bitDepths.forEach { (label, value) ->
                         StyledDropdownMenuItem(text = "$label bit", onClick = {
                             Timber.i(
-                                "SettingsScreen", "Clicked BitDepth $label with value: $value"
+                                "Clicked BitDepth $label with value: $value"
                             )
                             onBitDepthChanged(value)
                             showBitDepthMenu = false
@@ -239,12 +239,12 @@ fun SettingsScreen(
 
                 Text(
                     text = "Sign In to sync settings with cloud",
-                    color = MaterialTheme.colorScheme.primary,
+                    color = colorResource(id = R.color.purple_accent),
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
                     fontStyle = FontStyle.Italic
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
@@ -311,7 +311,7 @@ fun MyOutlinedBufferInputField(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focusManager = LocalFocusManager.current
-    Timber.d("MyOutlinedBufferInputField", "recompose")
+    Timber.d("recompose")
 
     BasicTextField(
         value = bufferTimeLength.intValue.toString(),
@@ -319,7 +319,7 @@ fun MyOutlinedBufferInputField(
         interactionSource = interactionSource,
         cursorBrush = SolidColor(Color.White),
         onValueChange = { userInput: String ->
-            Timber.d("MyOutlinedBufferInputField", "onValueChange to $userInput")
+            Timber.d("onValueChange to $userInput")
             val filteredInput = userInput.filter { it.isDigit() }
             if (filteredInput.isEmpty()) {
                 onValueChange(0)
@@ -330,7 +330,7 @@ fun MyOutlinedBufferInputField(
                         isMaxExceeded.value = true
                         return@BasicTextField
                     }
-                    Timber.d("MyOutlinedBufferInputField", "parsedValue: $parsedValue")
+                    Timber.d("parsedValue: $parsedValue")
                     onValueChange(parsedValue)
                 } else {
                     onValueChange(0)
@@ -342,7 +342,7 @@ fun MyOutlinedBufferInputField(
             .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 0.dp)
             .onFocusChanged {
                 if (!it.isFocused) {
-                    Timber.v("SettingsScreen", "Focus lost")
+                    Timber.v("Focus lost")
                 }
             },
         textStyle = TextStyle(

@@ -35,7 +35,6 @@ class DonationActivity : AppCompatActivity() {
     @Inject
     lateinit var authenticationManager: AuthenticationManager
     private val httpClient = OkHttpClient()
-    private val logTag = DonationConstants.LOG_TAG
     private val serverUrl = DonationConstants.SERVER_URL
     private lateinit var googlePayLauncher: GooglePayLauncher
     private lateinit var stripePaymentSheet: PaymentSheet

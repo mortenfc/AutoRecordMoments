@@ -107,7 +107,6 @@ class SettingsRepository @Inject constructor(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore
 ) {
-    private val logTag = "SettingsRepository"
     private val dataStore = context.dataStore
 
     // DataStore keys

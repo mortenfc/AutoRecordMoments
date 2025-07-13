@@ -1,11 +1,14 @@
 package com.mfc.recentaudiobuffer
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioFormat
@@ -228,45 +231,60 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     private fun updateTotalBufferSize(config: AudioConfig) {
-        // Calculate the ideal buffer size based on settings
         var idealBufferSize =
-            config.sampleRateHz * (config.bitDepth.bits / 8) * config.bufferTimeLengthS
+            (config.sampleRateHz.toLong() * (config.bitDepth.bits / 8) * config.bufferTimeLengthS).toInt()
 
-        Timber.d("updateTotalBufferSize(): idealBufferSize = $idealBufferSize")
+        Timber.d("Ideal buffer size calculated: $idealBufferSize bytes")
 
-        val maxDynamicMemory = tryAllocating((idealBufferSize * 1.1).roundToInt())
+        // 1. Get the ActivityManager service
+        val activityManager =
+            applicationContext.getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
 
-        // Check against dynamic memory limit first
-        if (idealBufferSize > maxDynamicMemory) {
-            // Calculate the maximum dynamic memory based on available device memory
-            val safeLimitPercentage = 0.7 // Reduce to 70%
-            Timber.e("idealBufferSize > $maxDynamicMemory, setting it to ${safeLimitPercentage * 100}\\% of $maxDynamicMemory")
+        // 2. Check if the device is in a low memory situation
+        if (memoryInfo.lowMemory) {
+            Timber.e("Device is in a low memory state. Aborting large buffer allocation.")
             Toast.makeText(
                 applicationContext,
-                "ERROR: Exceeded available RAM (${maxDynamicMemory}) for the buffer size... Clear RAM or reduce settings values. Limiting size.",
+                "Warning: Low memory detected. Buffer size may be limited.",
                 Toast.LENGTH_LONG
             ).show()
-            idealBufferSize = (maxDynamicMemory.toInt() * safeLimitPercentage).toInt()
-            if (idealBufferSize < 0) {
-                idealBufferSize = 0
+            // You could decide to cap the buffer at a very small "safe" size here
+            if (idealBufferSize > 10 * 1024 * 1024) { // e.g., cap at 10MB if low memory
+                idealBufferSize = 10 * 1024 * 1024
             }
         }
 
-        // Check against MAX_BUFFER_SIZE
+        // 3. Check against your app's absolute max size
         if (idealBufferSize > MAX_BUFFER_SIZE) {
-            Timber.e("idealBufferSize > MAX_BUFFER_SIZE, setting it to MAX_BUFFER_SIZE")
+            Timber.e("Ideal buffer size exceeds app's MAX_BUFFER_SIZE. Capping at $MAX_BUFFER_SIZE.")
             idealBufferSize = MAX_BUFFER_SIZE
             Toast.makeText(
                 applicationContext,
-                "ERROR: Exceeded 200MB for the buffer size... Reduce settings values. Limiting size.",
+                "Buffer size exceeds 100MB limit. Capping size.",
                 Toast.LENGTH_LONG
             ).show()
         }
 
-        // Set the totalRingBufferSize
-        totalRingBufferSize.set(idealBufferSize)
-        Timber.d("updateTotalBufferSize(): totalRingBufferSize = ${totalRingBufferSize.get()}")
-        audioDataStorage = ByteArray(totalRingBufferSize.get())
+        // 4. Safely try to allocate the final calculated size
+        try {
+            totalRingBufferSize.set(idealBufferSize)
+            audioDataStorage = ByteArray(idealBufferSize)
+            Timber.d("Successfully allocated buffer of size: $idealBufferSize bytes")
+        } catch (e: OutOfMemoryError) {
+            Timber.e(
+                "Still failed to allocate buffer of size $idealBufferSize after checks: $e"
+            )
+            Toast.makeText(
+                applicationContext,
+                "Error: Not enough memory to create the audio buffer.",
+                Toast.LENGTH_LONG
+            ).show()
+            // Reset to a zero-size buffer to prevent crashes
+            totalRingBufferSize.set(0)
+            audioDataStorage = ByteArray(0)
+        }
     }
 
     private fun initializeAndBuildRecorder(): RecorderInfo {

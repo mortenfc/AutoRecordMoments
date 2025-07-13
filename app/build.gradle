@@ -1,7 +1,8 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
-    id 'kotlin-kapt'
+    id 'org.jetbrains.kotlin.plugin.compose'
+    id 'com.google.devtools.ksp'
     id 'com.google.dagger.hilt.android'
     id 'com.google.gms.google-services'
     id 'com.google.firebase.crashlytics'
@@ -66,11 +67,11 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = '1.8'
+        jvmTarget = '17'
     }
     buildFeatures {
         compose true
@@ -95,7 +96,7 @@ dependencies {
     implementation 'androidx.core:core-ktx'
     implementation 'androidx.core:core'
     implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.9.0')
+    implementation platform('org.jetbrains.kotlin:kotlin-bom:2.2.0')
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
     implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
     implementation "io.reactivex.rxjava2:rxjava:2.2.3"
@@ -150,8 +151,8 @@ dependencies {
     implementation 'androidx.datastore:datastore-preferences:1.1.7'
 
     // Hilt dependencies
-    implementation("com.google.dagger:hilt-android:2.49")
-    kapt("com.google.dagger:hilt-compiler:2.48.1")
+    implementation("com.google.dagger:hilt-android:2.56.2")
+    ksp("com.google.dagger:hilt-compiler:2.56.2")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // Media
@@ -164,8 +165,4 @@ dependencies {
     implementation 'be.tarsos.dsp:core:2.5'
     implementation 'be.tarsos.dsp:jvm:2.5'
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.22.0'
-}
-
-kapt {
-    correctErrorTypes = true
 }

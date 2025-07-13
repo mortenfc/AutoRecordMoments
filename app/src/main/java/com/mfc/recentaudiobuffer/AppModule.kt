@@ -55,4 +55,12 @@ object AppModule {
     ): AuthenticationManager {
         return AuthenticationManager(applicationContext, auth, settingsRepository)
     }
+
+    @Singleton
+    @Provides
+    fun provideVADProcessor(
+        @ApplicationContext context: Context
+    ): VADProcessor {
+        return VADProcessor(context)
+    }
 }
