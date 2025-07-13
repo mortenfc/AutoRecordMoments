@@ -19,8 +19,15 @@ import be.tarsos.dsp.resample.RateTransposer
 class VADProcessor @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private val VAD_MAX_SAMPLE_RATE = 16000f
-    private val VAD_MIN_SAMPLE_RATE = 8000f
+    companion object {
+        private val VAD_MAX_SAMPLE_RATE = 16000
+        private val VAD_MIN_SAMPLE_RATE = 8000
+
+        private val WINDOW_SIZE_16K = 512
+        private val WINDOW_SIZE_8K = 256
+        private val SPEECH_THRESHOLD = 0.5f
+    }
+
     private val session: OrtSession by lazy {
         val modelBytes = context.assets.open("silero_vad_half.onnx").readBytes()
         ortEnvironment.createSession(modelBytes)
@@ -28,37 +35,41 @@ class VADProcessor @Inject constructor(
     private val ortEnvironment = OrtEnvironment.getEnvironment()
 
     fun processBuffer(
-        fullAudioBuffer: ByteArray, config: AudioConfig, paddingMs: Int = 5000
+        fullAudioBuffer: ByteArray, config: AudioConfig, paddingMs: Int = 3000
     ): ByteArray {
         if (fullAudioBuffer.isEmpty()) return ByteArray(0)
 
         val audioFloats = bytesToFloats(fullAudioBuffer, config.bitDepth.bits)
 
-        val originalSampleRate = config.sampleRateHz.toFloat()
+        val originalSampleRate = config.sampleRateHz
         var processedFloats = audioFloats
         var vadSampleRate = originalSampleRate
 
-        val targetVADRate = if (originalSampleRate >= VAD_MAX_SAMPLE_RATE) {
-            VAD_MAX_SAMPLE_RATE
-        } else if (originalSampleRate >= VAD_MIN_SAMPLE_RATE) {
-            VAD_MIN_SAMPLE_RATE
-        } else {
-            Timber.e("Unsupported sample rate for VAD: $originalSampleRate Hz.")
-            return fullAudioBuffer
+        val targetVADRate = when {
+            originalSampleRate >= VAD_MAX_SAMPLE_RATE -> VAD_MAX_SAMPLE_RATE
+            originalSampleRate >= VAD_MIN_SAMPLE_RATE -> VAD_MIN_SAMPLE_RATE
+            else -> {
+                Timber.e("Unsupported sample rate for VAD: $originalSampleRate Hz.")
+                return fullAudioBuffer
+            }
         }
 
         if (originalSampleRate != targetVADRate) {
             Timber.d("Resampling audio from ${originalSampleRate}Hz to ${targetVADRate}Hz...")
-            processedFloats =
-                resample(processedFloats, originalSampleRate, targetVADRate, config.bitDepth.bits)
+            processedFloats = resample(
+                processedFloats,
+                originalSampleRate.toFloat(),
+                targetVADRate.toFloat(),
+                config.bitDepth.bits
+            )
             vadSampleRate = targetVADRate
         }
 
-        val speechTimestamps = getSpeechTimestamps(processedFloats, vadSampleRate.toInt())
+        val speechTimestamps = getSpeechTimestamps(processedFloats, vadSampleRate)
         val mergedTimestamps = mergeTimestamps(
-            speechTimestamps, paddingMs, vadSampleRate.toInt(), processedFloats.size
+            speechTimestamps, paddingMs, vadSampleRate, processedFloats.size
         )
-        return stitchAudio(fullAudioBuffer, mergedTimestamps, config, vadSampleRate)
+        return stitchAudio(fullAudioBuffer, mergedTimestamps, config, vadSampleRate.toFloat())
     }
 
     /**
@@ -101,73 +112,99 @@ class VADProcessor @Inject constructor(
         return audioEvent.floatBuffer
     }
 
-    // In VADProcessor.kt
-
     private fun getSpeechTimestamps(
         audioFloats: FloatArray, sampleRate: Int
     ): List<Map<String, Int>> {
-        val windowSize = if (sampleRate == 16000) 512 else 256
-        val speechThreshold = 0.5f
+
+        val windowSize = if (sampleRate == VAD_MAX_SAMPLE_RATE) WINDOW_SIZE_16K else WINDOW_SIZE_8K
+        val speechThreshold = SPEECH_THRESHOLD
 
         val speechSegments = mutableListOf<Map<String, Int>>()
         var currentSpeechStart: Int? = null
 
-        for (i in 0 until audioFloats.size step windowSize) {
-            val chunkEnd = i + windowSize
-            if (chunkEnd > audioFloats.size) break
+        // ✅ Create one reusable buffer outside the loop
+        val chunkBuffer = FloatArray(windowSize)
+        val floatBuffer = FloatBuffer.wrap(chunkBuffer)
 
-            val chunk = audioFloats.sliceArray(i until chunkEnd)
-            val inputName = session.inputNames.first()
-            val floatBuffer = FloatBuffer.wrap(chunk)
-            val tensor = OnnxTensor.createTensor(
-                ortEnvironment, floatBuffer, longArrayOf(1, windowSize.toLong())
-            )
+        val hiddenStateShape = longArrayOf(2, 1, 64)
+        var h = OnnxTensor.createTensor(ortEnvironment, FloatBuffer.allocate(128), hiddenStateShape)
+        var c = OnnxTensor.createTensor(ortEnvironment, FloatBuffer.allocate(128), hiddenStateShape)
 
-            try {
-                val result = session.run(mapOf(inputName to tensor))
-                val outputValue = result[0]?.value // Use safe call ?.value
+        try {
+            for (i in 0 until audioFloats.size step windowSize) {
+                val chunkEnd = i + windowSize
+                if (chunkEnd > audioFloats.size) break
 
-                when (outputValue) {
-                    is Array<*> -> {
-                        // The compiler now knows outputValue is an Array.
-                        // We can safely check its contents.
-                        if (outputValue.isNotEmpty() && outputValue[0] is FloatArray) {
-                            // The compiler now smart-casts outputValue[0] to FloatArray
-                            val scoreArray = outputValue[0] as FloatArray
-                            if (scoreArray.isNotEmpty()) {
-                                val score = scoreArray[0]
+                // ✅ Use System.arraycopy to fill the reusable buffer. No new objects created.
+                System.arraycopy(audioFloats, i, chunkBuffer, 0, windowSize)
 
-                                // Your state machine logic
-                                if (score >= speechThreshold && currentSpeechStart == null) {
-                                    currentSpeechStart = i
-                                } else if (score < speechThreshold && currentSpeechStart != null) {
-                                    speechSegments.add(
-                                        mapOf(
-                                            "start" to currentSpeechStart, "end" to i
-                                        )
-                                    )
-                                    currentSpeechStart = null
+                // Reset the position for every read
+                floatBuffer.rewind()
+
+                val tensor = OnnxTensor.createTensor(
+                    ortEnvironment, floatBuffer, longArrayOf(1, windowSize.toLong())
+                )
+                val srTensor =
+                    OnnxTensor.createTensor(ortEnvironment, longArrayOf(sampleRate.toLong()))
+
+                val inputs = mapOf(
+                    "input" to tensor, "sr" to srTensor, "h" to h, "c" to c
+                )
+
+                try {
+                    val result = session.run(inputs)
+                    result.use {
+                        when (val outputValue = it[0]?.value) {
+                            is Array<*> -> {
+                                val score =
+                                    (outputValue.firstOrNull() as? FloatArray)?.firstOrNull()
+                                if (score != null) {
+                                    // The compiler now smart-casts outputValue[0] to FloatArray
+                                    val scoreArray = outputValue[0] as FloatArray
+                                    if (scoreArray.isNotEmpty()) {
+                                        val score = scoreArray[0]
+
+                                        // Your state machine logic
+                                        if (score >= speechThreshold && currentSpeechStart == null) {
+                                            currentSpeechStart = i
+                                        } else if (score < speechThreshold && currentSpeechStart != null) {
+                                            speechSegments.add(
+                                                mapOf(
+                                                    "start" to currentSpeechStart, "end" to i
+                                                )
+                                            )
+                                            currentSpeechStart = null
+                                        }
+                                    }
+                                } else {
+                                    Timber.e("ONNX model output was an array, but not of the expected FloatArray type or was empty.")
                                 }
                             }
-                        } else {
-                            Timber.e("ONNX model output was an array, but not of the expected FloatArray type or was empty.")
+
+                            else -> {
+                                // This block runs if outputValue is null or not an Array at all.
+                                Timber.e("Unexpected ONNX model output type: ${outputValue?.javaClass?.name}")
+                            }
                         }
-                    }
 
-                    else -> {
-                        // This block runs if outputValue is null or not an Array at all.
-                        Timber.e("Unexpected ONNX model output type: ${outputValue?.javaClass?.name}")
+                        h.close() // Close the old state tensor
+                        c.close() // Close the old state tensor
+                        h = it.get("output_h").get() as OnnxTensor
+                        c = it.get("output_c").get() as OnnxTensor
                     }
+                } finally {
+                    tensor.close()
+                    srTensor.close()
                 }
-
-                result.close()
-            } finally {
-                tensor.close()
             }
-        }
 
-        if (currentSpeechStart != null) {
-            speechSegments.add(mapOf("start" to currentSpeechStart, "end" to audioFloats.size))
+            if (currentSpeechStart != null) {
+                speechSegments.add(mapOf("start" to currentSpeechStart, "end" to audioFloats.size))
+            }
+        } finally {
+            // ✅ CRITICAL: Close the final state tensors to prevent a memory leak
+            h.close()
+            c.close()
         }
 
         return speechSegments
