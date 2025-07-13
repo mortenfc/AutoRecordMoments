@@ -258,7 +258,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             idealBufferSize = MAX_BUFFER_SIZE
             Toast.makeText(
                 applicationContext,
-                "ERROR: Exceeded 100MB for the buffer size... Reduce settings values. Limiting size.",
+                "ERROR: Exceeded 200MB for the buffer size... Reduce settings values. Limiting size.",
                 Toast.LENGTH_LONG
             ).show()
         }

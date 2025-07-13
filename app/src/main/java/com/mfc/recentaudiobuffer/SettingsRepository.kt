@@ -94,6 +94,7 @@ data class SettingsConfig(
     var bufferTimeLengthS: Int = DEFAULT_BUFFER_TIME_LENGTH_S,
     var bitDepth: BitDepth = bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
     var areAdsEnabled: Boolean = true,
+    var isAiAutoClipEnabled: Boolean = true,
 )
 
 public const val MAX_BUFFER_SIZE: Int = 200 * 1024 * 1024 // 200 MB
@@ -115,6 +116,8 @@ class SettingsRepository @Inject constructor(
         val BUFFER_TIME_LENGTH_S = intPreferencesKey("buffer_time_length_s")
         val BIT_DEPTH = stringPreferencesKey("bit_depth")
         val ARE_ADS_ENABLED = booleanPreferencesKey("are_ads_enabled")
+
+        val IS_AI_AUTO_CLIP_ENABLED = booleanPreferencesKey("is_ai_auto_clip_enabled")
     }
 
     // Helper function to get the current user ID or null if not logged in
@@ -279,6 +282,7 @@ class SettingsRepository @Inject constructor(
                         settingsToCache.bufferTimeLengthS
                     preferences[PreferencesKeys.BIT_DEPTH] = settingsToCache.bitDepth.toString()
                     preferences[PreferencesKeys.ARE_ADS_ENABLED] = settingsToCache.areAdsEnabled
+                    preferences[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] = settingsToCache.isAiAutoClipEnabled
                 }
             }
         }

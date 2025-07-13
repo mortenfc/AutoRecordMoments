@@ -159,6 +159,11 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     //noinspection GradleDependency Update requires API >= 35
     implementation("androidx.media3:media3-ui:1.4.1")
+
+    // Filtering
+    implementation 'be.tarsos.dsp:core:2.5'
+    implementation 'be.tarsos.dsp:jvm:2.5'
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.22.0'
 }
 
 kapt {

@@ -1,6 +1,7 @@
 package com.mfc.recentaudiobuffer
 
 import MediaPlayerManager
+import VADProcessor
 import android.Manifest
 import android.app.AlertDialog
 import android.app.NotificationChannel
@@ -43,6 +44,12 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var authenticationManager: AuthenticationManager
+
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+
+    @Inject
+    lateinit var vadProcessor: VADProcessor
 
     private var myBufferService: MyBufferServiceInterface? = null
 
@@ -346,30 +353,46 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onClickSaveBuffer() {
-        if (foregroundBufferServiceConn.isBound) {
-            lifecycleScope.launch {
-                onClickStopRecording()
-                val prevGrantedUri = FileSavingUtils.getCachedGrantedUri()
-                Timber.d("MainActivity: prevGrantedUri = $prevGrantedUri")
-                if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, prevGrantedUri)) {
-                    // Use previously permitted cached uri
-                    FileSavingUtils.promptSaveFileName(
-                        prevGrantedUri!!, myBufferService!!.getBuffer()
-                    )
-                } else {
-                    // Otherwise get and store file saving location permission
-                    pickDirectory()
-                }
+        if (!foregroundBufferServiceConn.isBound) {
+            Toast.makeText(this, "ERROR: Buffer service is not running.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        lifecycleScope.launch {
+            // 1. Stop recording (pauses the session)
+            myBufferService?.stopRecording()
+
+            // 2. Get the full audio buffer
+            val originalBuffer = myBufferService!!.getBuffer()
+
+            // 3. Get the latest settings
+            val settings = settingsRepository.getSettingsConfig()
+
+            // 4. Process the buffer ONLY if the feature is enabled
+            val bufferToSave = if (settings.isAiAutoClipEnabled) {
+                Timber.d("Auto-clipping enabled. Processing buffer...")
+                // TODO: Show a loading indicator to the user here
+                val processedBuffer =
+                    vadProcessor.processBuffer(originalBuffer, settings.toAudioConfig())
+                // TODO: Hide loading indicator
+                processedBuffer
+            } else {
+                originalBuffer
             }
-        } else {
-            runOnUiThread {
-                Toast.makeText(
-                    this,
-                    "ERRO}R: Buffer service is not running. There is no recorded data.",
-                    Toast.LENGTH_LONG
-                ).show()
+
+            // 5. Proceed to the save dialog with the correct buffer
+            val prevGrantedUri = FileSavingUtils.getCachedGrantedUri()
+            if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, prevGrantedUri)) {
+                FileSavingUtils.promptSaveFileName(prevGrantedUri!!, bufferToSave)
+            } else {
+                pickDirectory()
             }
         }
+    }
+
+    // Helper to convert SettingsConfig to AudioConfig
+    private fun SettingsConfig.toAudioConfig(): AudioConfig {
+        return AudioConfig(this.sampleRateHz, this.bufferTimeLengthS, this.bitDepth)
     }
 
     private fun onClickPickAndPlayFile() {
