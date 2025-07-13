@@ -78,6 +78,7 @@ import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
@@ -298,10 +299,14 @@ fun PrivacyInfoDialog(onDismissRequest: () -> Unit) {
             Text(
                 "This app continuously records audio to a temporary buffer in your phone's memory (RAM). " +
                         "No audio data (except settings) is saved or sent to the cloud unless you explicitly press the 'Save' button. " +
-                        "Clearing buffer or closing the persistent notification will discard the buffered audio.",
-                style = MaterialTheme.typography.bodyMedium,
+                        "Clearing the buffer or closing the persistent notification will discard the buffered audio.",
+                // Apply a style to enable hyphenation
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    textAlign = TextAlign.Justify,
+                    hyphens = Hyphens.Auto
+                ),
                 color = colorResource(id = R.color.teal_900),
-                lineHeight = 20.sp
+                lineHeight = 20.sp,
             )
         },
         confirmButton = {
