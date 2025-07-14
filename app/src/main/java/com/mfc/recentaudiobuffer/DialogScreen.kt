@@ -30,10 +30,10 @@ import androidx.compose.ui.unit.sp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FileSaveDialog(
-    onDismiss: () -> Unit, onSave: (String) -> Unit
+    suggestedName: String, onDismiss: () -> Unit, onSave: (String) -> Unit
 ) {
     val context = LocalContext.current
-    var filename by remember { mutableStateOf(context.getString(R.string.DefaultRecordingName)) }
+    var filename by remember { mutableStateOf(suggestedName) }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
         Surface(
@@ -43,9 +43,7 @@ fun FileSaveDialog(
                     width = 2.5.dp,
                     color = colorResource(id = R.color.purple_accent),
                     shape = RoundedCornerShape(16.dp)
-                ),
-            shape = RoundedCornerShape(16.dp),
-            color = colorResource(id = R.color.teal_100)
+                ), shape = RoundedCornerShape(16.dp), color = colorResource(id = R.color.teal_100)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
@@ -64,8 +62,7 @@ fun FileSaveDialog(
                 )
                 Spacer(modifier = Modifier.padding(16.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End
                 ) {
                     MainButton(
                         text = stringResource(id = R.string.cancel),
@@ -116,8 +113,7 @@ fun DirectoryPickerDialog(
                 )
                 Spacer(modifier = Modifier.padding(16.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End
                 ) {
                     MainButton(
                         text = stringResource(id = R.string.ok),
@@ -135,7 +131,7 @@ fun DirectoryPickerDialog(
 @Preview(showBackground = true)
 @Composable
 fun FileSaveDialogPreview() {
-    FileSaveDialog(onDismiss = {}, onSave = {})
+    FileSaveDialog(suggestedName = "yeaaahBoi.wav", onDismiss = {}, onSave = {})
 }
 
 @Preview(showBackground = true)

@@ -62,6 +62,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
@@ -103,8 +104,10 @@ fun MainScreen(
     onDonateClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDirectoryAlertDismiss: () -> Unit,
+    onTrimFileClick: () -> Unit,
     mediaPlayerManager: MediaPlayerManager,
     isRecordingFromService: MutableState<Boolean>,
+    isTrimming: MutableState<Boolean>,
     isPreview: Boolean = false
 ) {
     // State to manage if recording is active, controlling the main button's appearance and action
@@ -133,9 +136,7 @@ fun MainScreen(
     // Define colors for the recording button states
     val recordingButtonBackgroundColor by animateValueAsState(
         targetValue = if (isRecording) colorResource(id = R.color.red_pause).copy(
-            alpha = 1f,
-            red = 0.65f,
-            blue = 0.3f
+            alpha = 1f, red = 0.65f, blue = 0.3f
         ) else colorResource(id = R.color.green_start).copy(
             alpha = 1f, green = 0.95f
         ),
@@ -177,8 +178,7 @@ fun MainScreen(
                 ) {
                     // Large, central toggle button for starting/stopping recording
                     Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
+                        modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center
                     ) {
                         // Large, central toggle button for starting/stopping recording
                         RecordingToggleButton(
@@ -187,8 +187,7 @@ fun MainScreen(
                             elementsColor = recordingButtonElementsColor,
                             onClick = {
                                 isRecording = !isRecording
-                            }
-                        )
+                            })
 
                         // Info icon button, offset to the side of the main button
                         IconButton(
@@ -216,6 +215,11 @@ fun MainScreen(
                             text = stringResource(R.string.save_the_buffer_as_a_recording),
                             icon = R.drawable.baseline_save_alt_24,
                             onClick = onSaveBufferClick
+                        )
+                        SecondaryActionButton(
+                            text = "Auto Trim Non-speech",
+                            icon = R.drawable.outline_content_cut_24,
+                            onClick = onTrimFileClick
                         )
                         SecondaryActionButton(
                             text = stringResource(R.string.play_a_recording),
@@ -249,6 +253,10 @@ fun MainScreen(
                     )
 
                 }
+
+                if (isTrimming.value) {
+                    LoadingIndicator()
+                }
             }
         }
     }
@@ -264,6 +272,7 @@ fun MainScreen(
         FileSavingUtils.currentGrantedDirectoryUri?.let { grantedDirectoryUri ->
             FileSavingUtils.currentData?.let { data ->
                 FileSaveDialog(
+                    suggestedName = FileSavingUtils.suggestedFileName,
                     onDismiss = { FileSavingUtils.showSavingDialog = false },
                     onSave = { filename ->
                         FileSavingUtils.fixBaseNameToSave(
@@ -297,13 +306,10 @@ fun PrivacyInfoDialog(onDismissRequest: () -> Unit) {
         },
         text = {
             Text(
-                "This app continuously records audio to a temporary buffer in your phone's memory (RAM). " +
-                        "No audio data (except settings) is saved or sent to the cloud unless you explicitly press the 'Save' button. " +
-                        "Clearing the buffer or closing the persistent notification will discard the buffered audio.",
+                "This app continuously records audio to a temporary buffer in your phone's memory (RAM). " + "No audio data (except settings) is saved or sent to the cloud unless you explicitly press the 'Save' button. " + "Clearing the buffer or closing the persistent notification will discard the buffered audio.",
                 // Apply a style to enable hyphenation
                 style = MaterialTheme.typography.bodyMedium.copy(
-                    textAlign = TextAlign.Justify,
-                    hyphens = Hyphens.Auto
+                    textAlign = TextAlign.Justify, hyphens = Hyphens.Auto
                 ),
                 color = colorResource(id = R.color.teal_900),
                 lineHeight = 20.sp,
@@ -317,8 +323,7 @@ fun PrivacyInfoDialog(onDismissRequest: () -> Unit) {
                     color = colorResource(id = R.color.purple_accent)
                 )
             }
-        }
-    )
+        })
 }
 
 /**
@@ -327,10 +332,7 @@ fun PrivacyInfoDialog(onDismissRequest: () -> Unit) {
  */
 @Composable
 fun RecordingToggleButton(
-    isRecording: Boolean,
-    backgroundColor: Color,
-    elementsColor: Color,
-    onClick: () -> Unit
+    isRecording: Boolean, backgroundColor: Color, elementsColor: Color, onClick: () -> Unit
 ) {
     val buttonText =
         if (isRecording) stringResource(R.string.pause_buffering_in_the_background) else stringResource(
@@ -339,8 +341,7 @@ fun RecordingToggleButton(
     val iconRes = if (isRecording) R.drawable.baseline_mic_off_24 else R.drawable.baseline_mic_24
 
     Button(
-        onClick = onClick,
-        modifier = Modifier
+        onClick = onClick, modifier = Modifier
             .size(180.dp)
             .drawBehind {
                 val shadowColor = Color.Black
@@ -352,31 +353,21 @@ fun RecordingToggleButton(
                     this.color = transparentColor
                     this.isAntiAlias = true
                     this.asFrameworkPaint().setShadowLayer(
-                        shadowRadius,
-                        0f,
-                        offset,
-                        shadowColor.toArgb()
+                        shadowRadius, 0f, offset, shadowColor.toArgb()
                     )
                 }
                 drawIntoCanvas { canvas ->
                     canvas.drawCircle(
-                        radius = size.width / 2,
-                        center = center,
-                        paint = paint
+                        radius = size.width / 2, center = center, paint = paint
                     )
                 }
-            },
-        shape = CircleShape,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = backgroundColor,
-            contentColor = Color.White
-        ),
-        border = ButtonDefaults.outlinedButtonBorder.copy(
+            }, shape = CircleShape, colors = ButtonDefaults.buttonColors(
+            containerColor = backgroundColor, contentColor = Color.White
+        ), border = ButtonDefaults.outlinedButtonBorder.copy(
             brush = androidx.compose.ui.graphics.SolidColor(
                 colorResource(id = R.color.purple_accent)
             ), width = 2.dp
-        ),
-        contentPadding = PaddingValues(0.dp)
+        ), contentPadding = PaddingValues(0.dp)
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -406,9 +397,7 @@ fun RecordingToggleButton(
  */
 @Composable
 fun SecondaryActionButton(
-    text: String,
-    icon: Int,
-    onClick: () -> Unit
+    text: String, icon: Int, onClick: () -> Unit
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -427,10 +416,7 @@ fun SecondaryActionButton(
                         this.color = transparentColor
                         this.isAntiAlias = true
                         this.asFrameworkPaint().setShadowLayer(
-                            shadowRadius,
-                            0f,
-                            offset,
-                            shadowColor.toArgb()
+                            shadowRadius, 0f, offset, shadowColor.toArgb()
                         )
                     }
                     drawIntoCanvas { canvas ->
@@ -499,7 +485,7 @@ fun MainButton(
                 val shadowColor = Color.Black
                 val transparentColor = Color.Transparent
                 val shadowRadius = 6.dp.toPx()
-                val offset = 3.dp.toPx() // Offset downwards
+                val offsetDown = 3.dp.toPx()
 
                 val paint = Paint().apply {
                     this.color = transparentColor
@@ -507,20 +493,26 @@ fun MainButton(
                     this.asFrameworkPaint().setShadowLayer(
                         shadowRadius, // Half of height
                         0f, // No horizontal offset
-                        offset, // Vertical offset
+                        offsetDown, // Vertical offset
                         shadowColor.toArgb()
                     )
                 }
+
+                // --- ADJUSTED OFFSETS ---
+                // Use a smaller horizontal offset by dividing by a larger number
+                val horizontalOffset = (16.dp - contentPadding).toPx() / 3.5f
+                // Use a slightly adjusted vertical offset
+                val verticalOffset = (16.dp - contentPadding).toPx() / 1.9f
+
                 drawIntoCanvas { canvas ->
                     canvas.drawRoundRect(
-                        left = 0f,
-                        top = offset, // Anchor is 0
-                        right = size.width,
-                        bottom = size.height, // Draw to the bottom of the button
+                        left = horizontalOffset, // Apply smaller horizontal offset
+                        top = offsetDown + verticalOffset,
+                        right = size.width - horizontalOffset, // Apply smaller horizontal offset
+                        bottom = size.height - verticalOffset,
                         radiusX = 4.dp.toPx(),
                         radiusY = 4.dp.toPx(),
                         paint = paint
-
                     )
                 }
             },
@@ -564,13 +556,25 @@ fun MainButton(
     }
 }
 
+@Composable
+fun LoadingIndicator() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
+            .clickable(enabled = false, onClick = {}), // Prevent clicks
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(color = colorResource(id = R.color.purple_accent))
+    }
+}
+
 /**
  * A banner at the bottom of the screen for the donation/ad-removal action.
  */
 @Composable
 fun DonateBanner(
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    modifier: Modifier = Modifier, onClick: () -> Unit
 ) {
     Card(
         onClick = onClick, // The Card handles the click and ripple effect itself
@@ -588,8 +592,7 @@ fun DonateBanner(
         ) {
             // ✅ This is the correct and robust way to create an even icon outline.
             Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(28.dp)
+                contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp)
             ) {
                 // 1. The Background Icon (The Outline)
                 // It fills the entire Box.
@@ -665,18 +668,14 @@ fun PlayerControlViewContainer(
                     isClickable = true
                     // Set layout params to fill width but wrap height
                     layoutParams = FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.WRAP_CONTENT
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
                     )
                 }
 
                 val layoutInflater = LayoutInflater.from(context)
-                val closeButtonContainer =
-                    layoutInflater.inflate(
-                        R.layout.exo_close_button,
-                        constraintLayout,
-                        false
-                    ) as FrameLayout
+                val closeButtonContainer = layoutInflater.inflate(
+                    R.layout.exo_close_button, constraintLayout, false
+                ) as FrameLayout
                 closeButtonContainer.id = View.generateViewId()
                 closeButtonContainer.findViewById<ImageButton>(R.id.exo_close).setOnClickListener {
                     mediaPlayerManager.player?.stop()
@@ -740,8 +739,7 @@ fun PlayerControlViewContainer(
                 constraintSet.applyTo(constraintLayout)
 
                 constraintLayout
-            },
-            update = { view ->
+            }, update = { view ->
                 mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
                 val fileNameTextView = view.findViewById<TextView>(R.id.exo_file_name)
                 fileNameTextView?.text = currentFileNameState
@@ -770,8 +768,10 @@ fun MainScreenPreview() {
             onSettingsClick = {},
             onSignInClick = {},
             onDirectoryAlertDismiss = {},
+            onTrimFileClick = {},
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) {},
             isRecordingFromService = mutableStateOf(true),
+            isTrimming = mutableStateOf(true),
             isPreview = true
         )
     }
@@ -786,7 +786,7 @@ fun MainButtonPreview() {
         {},
         Color.White,
         180.dp,
-        false
+        true
     )
 }
 
@@ -801,8 +801,7 @@ fun ToggleButtonPreview() {
         isRecording = true,
         backgroundColor = recordingButtonColor,
         elementsColor = Color.White,
-        onClick = {}
-    )
+        onClick = {})
 }
 
 @Preview(showBackground = true)
@@ -811,16 +810,12 @@ fun SecondaryButtonPreview() {
     SecondaryActionButton(
         text = stringResource(R.string.play_a_recording),
         icon = R.drawable.baseline_play_circle_outline_24,
-        onClick = {}
-    )
+        onClick = {})
 }
 
 @Preview(showBackground = true)
 @Composable
 fun DonateBannerPreview() {
     DonateBanner(
-        modifier = Modifier
-            .padding(16.dp),
-        onClick = {}
-    )
+        modifier = Modifier.padding(16.dp), onClick = {})
 }

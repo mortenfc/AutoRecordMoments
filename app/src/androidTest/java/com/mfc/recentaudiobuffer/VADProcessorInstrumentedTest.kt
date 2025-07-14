@@ -2,11 +2,16 @@ package com.mfc.recentaudiobuffer
 
 import android.content.Context
 import android.media.AudioFormat
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.mfc.recentaudiobuffer.VADProcessor.Companion.readWavHeader
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.BeforeClass
 import org.junit.Test
 import org.junit.runner.RunWith
 import timber.log.Timber
@@ -21,7 +26,7 @@ import java.nio.ByteOrder
  *
  * Pre-requisites for running this test:
  * 1. This file must be in the `src/androidTest/java` directory.
- * 2. The ONNX model (`silero_vad_half.onnx`) must be in `src/main/assets`.
+ * 2. The ONNX model (`silero_vad.onnx`) must be in `src/main/assets`.
  * 3. The following test audio files must be in `src/androidTest/assets`:
  * - silence_5s.wav
  * - talking_24s.wav
@@ -34,142 +39,66 @@ class VADProcessorInstrumentedTest {
     private lateinit var context: Context
     private lateinit var vadProcessor: VADProcessor
 
-    // Standard WAV header size is 44 bytes. We skip this to get to the raw PCM data.
+    // Standard WAV header size is 44 bytes.
     private val WAV_HEADER_SIZE = 44L
 
+    // --- HELPER FUNCTIONS ---
+
+    companion object {
+        @BeforeClass
+        @JvmStatic
+        fun clearDownloadsBeforeAllTests() {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            Timber.plant(Timber.DebugTree())
+            Timber.w("!!! CLEARING DEBUG FILES IN DOWNLOADS DIRECTORY !!!")
+            val contentResolver = context.contentResolver
+
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Files.getContentUri("external")
+            }
+
+            // --- REVISED DELETION LOGIC ---
+            // Query for files with names starting with "debug_"
+            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf("debug_%")
+            var deletedCount = 0
+
+            try {
+                contentResolver.query(
+                    collection, arrayOf(MediaStore.MediaColumns._ID), selection, selectionArgs, null
+                )?.use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val id =
+                            cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+                        val fileUri = Uri.withAppendedPath(collection, id.toString())
+                        if (contentResolver.delete(fileUri, null, null) > 0) {
+                            deletedCount++
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error while clearing debug files.")
+            }
+            Timber.w("Deleted $deletedCount debug files from Downloads.")
+        }
+    }
+
     /**
-     * Reads the sample rate and bit depth from a WAV file's header.
-     * Assumes the input ByteArray contains at least 44 bytes of header.
-     * @return A Pair containing Sample Rate (Int) and Bit Depth (Int).
+     * Loads a test asset file, parses its WAV header, and returns the config and raw audio data.
      */
-    private fun readWavHeader(wavBytes: ByteArray): AudioConfig {
-        if (wavBytes.size < WAV_HEADER_SIZE) {
-            throw IllegalArgumentException("Invalid WAV header: file is too small.")
-        }
-        val buffer = ByteBuffer.wrap(wavBytes).order(ByteOrder.LITTLE_ENDIAN)
-        val sampleRate = buffer.getInt(24)
-        val bitDepthValue = buffer.getShort(34).toInt()
-
-        Timber.d("Read from WAV: sampleRate: $sampleRate, bitDepth: $bitDepthValue")
-
-        // Safely look up the bit depth
-        val bitDepth = bitDepths["$bitDepthValue"]
-            ?: throw IllegalArgumentException("Unsupported bit depth found in WAV header: $bitDepthValue")
-
-        return AudioConfig(sampleRate, 0, bitDepth)
-    }
-
-    @Before
-    fun setUp() {
-        // Get the context of the application under test. This is a real context.
-        context = InstrumentationRegistry.getInstrumentation().targetContext
-        // Instantiate the VADProcessor with the real context. It will load the real ONNX model.
-        vadProcessor = VADProcessor(context)
-    }
-
-    @Test
-    fun processBuffer_withSilenceFile_returnsEmptyOrVerySmallBuffer() {
-        // Given: A real audio file containing only silence.
-        val silenceAudioBytes = loadAudioFromTestAssets("silence_5s.wav", skipHeader = true)
-        val config = readWavHeader(silenceAudioBytes)
-        assertEquals(config.sampleRateHz, 16000)
-        assertEquals(config.bitDepth, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
-
-        // When: The buffer is processed by the real VAD model
-        val result = vadProcessor.processBuffer(silenceAudioBytes, config, paddingMs = 200)
-
-        // Then: The resulting buffer should be empty or extremely small, as no speech is detected.
-        val maxTolerableBytes =
-            config.sampleRateHz / 10 * (config.bitDepth.bits / 8) // 100ms tolerance
-        assertTrue(
-            "Buffer from silence file should be nearly empty.", result.size < maxTolerableBytes
-        )
-    }
-
-    @Test
-    fun processBuffer_withSpeechFile44100Hz_resample_returnsSignificantNonEmptyBuffer() {
-        // Given: A real audio file containing speech.
-        val speechAudioBytes = loadAudioFromTestAssets("talking_24s.wav", skipHeader = true)
-        val config = readWavHeader(speechAudioBytes)
-        assertEquals(config.sampleRateHz, 44100)
-        assertEquals(config.bitDepth, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
-        assertTrue("Test setup failed: Speech audio file is empty.", speechAudioBytes.isNotEmpty())
-
-        // When: The buffer is processed by the real VAD model
-        val result = vadProcessor.processBuffer(speechAudioBytes, config, paddingMs = 300)
-
-        // Then: The resulting buffer should contain significant data.
-        assertTrue("Resulting buffer should not be empty for a speech file.", result.isNotEmpty())
-        assertTrue(
-            "Resulting buffer should be smaller than the original.",
-            result.size < speechAudioBytes.size
-        )
-    }
-
-    @Test
-    fun processBuffer_withMusicFile_returnsVerySmallBuffer() {
-        // Given: A file containing music. The VAD should ideally ignore this
-        val audioBytes = loadAudioFromTestAssets("music_30s.wav", skipHeader = true)
-        val config = readWavHeader(audioBytes)
-        assertEquals(config.sampleRateHz, 16000)
-        assertEquals(config.bitDepth, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
-
-        // When: The buffer is processed
-        val result = vadProcessor.processBuffer(audioBytes, config, paddingMs = 300)
-
-        // Then: The result should be very small. If the music has vocals, some detection is expected.
-        // We'll assert that less than 25% of the file is classified as speech.
-        val maxTolerableBytes = audioBytes.size / 4
-        assertTrue(
-            "Music file should result in very little or no detected speech. Found ${result.size} bytes.",
-            result.size < maxTolerableBytes
-        )
-    }
-
-    @Test
-    fun processBuffer_withNoisySilenceFile_returnsSmallBuffer() {
-        // Given: A long file with mostly silence but some background noise.
-        val audioBytes = loadAudioFromTestAssets("mostly_silence_noise_5min.wav", skipHeader = true)
-        val config = readWavHeader(audioBytes)
-        assertEquals(config.sampleRateHz, 16000)
-        assertEquals(config.bitDepth, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
-
-        // When: The buffer is processed
-        val result = vadProcessor.processBuffer(audioBytes, config, paddingMs = 300)
-
-        // Then: The result should be small relative to the original file size,
-        // demonstrating robustness to noise.
-        val maxTolerableBytes =
-            audioBytes.size / 10 // Expect less than 10% of the file to be detected
-        assertTrue(
-            "Noisy silence file should result in little detected speech. Found ${result.size} bytes.",
-            result.size < maxTolerableBytes
-        )
-    }
-
-    @Test
-    fun processBuffer_withBufferSmallerThanWindowSize_doesNotCrash() {
-        // Given: A tiny audio buffer, smaller than the VAD's 512-sample window.
-        val config = AudioConfig(16000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
-        val tinyBuffer = ByteArray(500 * 2) // 500 samples, 16-bit
-        val bb = ByteBuffer.wrap(tinyBuffer).order(ByteOrder.LITTLE_ENDIAN)
-        for (i in 0 until 500) {
-            bb.putShort(100)
-        }
-
-        // When: The buffer is processed
-        val result = vadProcessor.processBuffer(tinyBuffer, config)
-
-        // Then: The processor should handle it gracefully and not crash. The result should be empty.
-        assertEquals("Result for a tiny buffer should be empty", 0, result.size)
+    private fun loadAudioAndConfig(fileName: String): Pair<AudioConfig, ByteArray> {
+        val fullFileBytes = loadAudioFromTestAssets(fileName, skipHeader = false)
+        val config = readWavHeader(fullFileBytes)
+        val audioBytes = fullFileBytes.copyOfRange(WAV_HEADER_SIZE.toInt(), fullFileBytes.size)
+        return Pair(config, audioBytes)
     }
 
     /**
      * Helper function to load raw PCM data from a test asset file.
-     * @param fileName The name of the file in `src/androidTest/assets`.
-     * @param skipHeader If true, skips the first 44 bytes, assuming a standard WAV header.
      */
-    private fun loadAudioFromTestAssets(fileName: String, skipHeader: Boolean = false): ByteArray {
+    private fun loadAudioFromTestAssets(fileName: String, skipHeader: Boolean): ByteArray {
         val testContext = InstrumentationRegistry.getInstrumentation().context
         val inputStream: InputStream = testContext.assets.open(fileName)
         val byteStream = ByteArrayOutputStream()
@@ -185,5 +114,124 @@ class VADProcessorInstrumentedTest {
             byteStream.write(buffer, 0, len)
         }
         return byteStream.toByteArray()
+    }
+
+
+    // --- TEST SETUP ---
+    @Before
+    fun setUp() {
+        // This ensures Timber is always active for your tests.
+        Timber.plant(Timber.DebugTree())
+
+        context = InstrumentationRegistry.getInstrumentation().targetContext
+        vadProcessor = VADProcessor(context)
+    }
+
+
+    // --- TESTS ---
+
+    @Test
+    fun processBuffer_withSilenceFile_returnsEmptyOrVerySmallBuffer() {
+        // Given
+        val (config, audioBytes) = loadAudioAndConfig("silence_5s.wav")
+        assertEquals("Expected sample rate for silence file", 22050, config.sampleRateHz)
+        assertEquals(
+            "Expected bit depth for silence file",
+            BitDepth(16, AudioFormat.ENCODING_PCM_16BIT),
+            config.bitDepth
+        )
+
+        // When
+        val result =
+            vadProcessor.processBuffer(audioBytes, config, debugFileBaseName = "silence_5s")
+
+        // Then
+        val maxTolerableBytes =
+            config.sampleRateHz / 10 * (config.bitDepth.bits / 8) // 100ms tolerance
+        assertTrue(
+            "Buffer from silence file should be nearly empty.", result.size < maxTolerableBytes
+        )
+    }
+
+    @Test
+    fun processBuffer_withSpeechFile44100Hz_resample_returnsSignificantNonEmptyBuffer() {
+        // Given
+        val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
+        assertEquals("Expected sample rate for speech file", 44100, config.sampleRateHz)
+        assertEquals(
+            "Expected bit depth for speech file",
+            BitDepth(16, AudioFormat.ENCODING_PCM_16BIT),
+            config.bitDepth
+        )
+        assertTrue("Test setup failed: Speech audio file is empty.", audioBytes.isNotEmpty())
+
+        // When
+
+        val result =
+            vadProcessor.processBuffer(audioBytes, config, paddingMs = 0, debugFileBaseName = "talking_24s")
+        // Then
+        assertTrue("Resulting buffer should not be empty for a speech file.", result.isNotEmpty())
+        assertTrue(
+            "Resulting buffer should be smaller than the original.", result.size < audioBytes.size
+        )
+    }
+
+    @Test
+    fun processBuffer_withMusicFile_returnsVerySmallBuffer() {
+        // Given
+        val (config, audioBytes) = loadAudioAndConfig("music_30s.wav")
+        assertEquals("Expected sample rate for music file", 22050, config.sampleRateHz)
+        assertEquals(
+            "Expected bit depth for music file",
+            BitDepth(16, AudioFormat.ENCODING_PCM_16BIT),
+            config.bitDepth
+        )
+
+        // When
+        val result = vadProcessor.processBuffer(audioBytes, config, debugFileBaseName = "music_30s")
+
+        // Then
+        val maxTolerableBytes = audioBytes.size / 4
+        assertTrue(
+            "Music file should result in very little detected speech. Found ${result.size} bytes.",
+            result.size < maxTolerableBytes
+        )
+    }
+
+    @Test
+    fun processBuffer_withNoisySilenceFile_returnsSmallBuffer() {
+        // Given
+        val (config, audioBytes) = loadAudioAndConfig("mostly_silence_noise_5min.wav")
+        assertEquals("Expected sample rate for noisy file", 22050, config.sampleRateHz)
+        assertEquals(
+            "Expected bit depth for noisy file",
+            BitDepth(16, AudioFormat.ENCODING_PCM_16BIT),
+            config.bitDepth
+        )
+
+        // When
+        val result = vadProcessor.processBuffer(
+            audioBytes, config, debugFileBaseName = "mostly_silence_noise_5min"
+        )
+
+        // Then
+        val maxTolerableBytes = audioBytes.size / 10 // Expect less than 10%
+        assertTrue(
+            "Noisy silence file should result in little detected speech. Found ${result.size} bytes.",
+            result.size < maxTolerableBytes
+        )
+    }
+
+    @Test
+    fun processBuffer_withBufferSmallerThanWindowSize_doesNotCrash() {
+        // Given
+        val config = AudioConfig(16000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
+        val tinyBuffer = ByteArray(500 * 2) // 500 samples, 16-bit
+
+        // When
+        val result = vadProcessor.processBuffer(tinyBuffer, config)
+
+        // Then
+        assertEquals("Result for a tiny buffer should be empty", 0, result.size)
     }
 }

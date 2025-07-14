@@ -177,6 +177,18 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    suspend fun updateIsAiAutoClipEnabled(isAiAutoClipEnabled: Boolean) {
+        if (isLoggedIn()) {
+            val userId = getUserId()!!
+            val userDocRef = firestore.collection("users").document(userId)
+            userDocRef.update("IS_AI_AUTO_CLIP_ENABLED", isAiAutoClipEnabled).await()
+        } else {
+            dataStore.edit { preferences ->
+                preferences[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] = isAiAutoClipEnabled
+            }
+        }
+    }
+
     private fun getBitDepth(key: String): BitDepth {
         return BitDepth.fromString(key) ?: BitDepth(8, AudioFormat.ENCODING_PCM_8BIT)
     }
@@ -221,11 +233,13 @@ class SettingsRepository @Inject constructor(
     private fun DocumentSnapshot.toSettingsConfig(): SettingsConfig {
         val audioConfig = this.toAudioConfig() // Reuse the other helper!
         val areAdsEnabled = getBoolean("ARE_ADS_ENABLED") ?: true
+        val isAiAutoClipEnabled = getBoolean("IS_AI_AUTO_CLIP_ENABLED") ?: true
         return SettingsConfig(
             sampleRateHz = audioConfig.sampleRateHz,
             bufferTimeLengthS = audioConfig.bufferTimeLengthS,
             bitDepth = audioConfig.bitDepth,
-            areAdsEnabled = areAdsEnabled
+            areAdsEnabled = areAdsEnabled,
+            isAiAutoClipEnabled = isAiAutoClipEnabled
         )
     }
 
@@ -245,11 +259,13 @@ class SettingsRepository @Inject constructor(
         val audioConfig = loadAudioFromDatastore() // Reuse the other helper!
         val preferences = dataStore.data.first()
         val areAdsEnabled = preferences[PreferencesKeys.ARE_ADS_ENABLED] ?: true
+        val isAiAutoClipEnabled = preferences[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] ?: true
         return SettingsConfig(
             sampleRateHz = audioConfig.sampleRateHz,
             bufferTimeLengthS = audioConfig.bufferTimeLengthS,
             bitDepth = audioConfig.bitDepth,
-            areAdsEnabled = areAdsEnabled
+            areAdsEnabled = areAdsEnabled,
+            isAiAutoClipEnabled = isAiAutoClipEnabled
         )
     }
 
@@ -281,7 +297,8 @@ class SettingsRepository @Inject constructor(
                         settingsToCache.bufferTimeLengthS
                     preferences[PreferencesKeys.BIT_DEPTH] = settingsToCache.bitDepth.toString()
                     preferences[PreferencesKeys.ARE_ADS_ENABLED] = settingsToCache.areAdsEnabled
-                    preferences[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] = settingsToCache.isAiAutoClipEnabled
+                    preferences[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] =
+                        settingsToCache.isAiAutoClipEnabled
                 }
             }
         }
@@ -312,6 +329,8 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
         private set
     var bitDepthTemp = mutableStateOf(initialConfig.bitDepth)
         private set
+    var isAiAutoClipEnabled = mutableStateOf(initialConfig.isAiAutoClipEnabled)
+        private set
 
     fun updateBufferTimeLengthTemp(newBufferTimeLength: Int) {
         Timber.d("updateBufferTimeLengthTemp to $newBufferTimeLength")
@@ -328,11 +347,17 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
         bitDepthTemp.value = newBitDepthTemp
     }
 
-    fun updateSettings(settingsViewModel: SettingsViewModel): List<Job> {
+    fun updateIsAiAutoClipEnabled(newIsAiAutoClipEnabled: Boolean) {
+        Timber.d("updateIsAiAutoClipEnabled to $newIsAiAutoClipEnabled")
+        isAiAutoClipEnabled.value = newIsAiAutoClipEnabled
+    }
+
+    fun uploadSettingsToAppView(settingsViewModel: SettingsViewModel): List<Job> {
         val job1 = settingsViewModel.updateBufferTimeLength(bufferTimeLengthTemp.intValue)
         val job2 = settingsViewModel.updateSampleRate(sampleRateTemp.intValue)
         val job3 = settingsViewModel.updateBitDepth(bitDepthTemp.value)
-        return listOf(job1, job2, job3)
+        val job4 = settingsViewModel.updateIsAiAutoClipEnabled(isAiAutoClipEnabled.value)
+        return listOf(job1, job2, job3, job4)
     }
 
     fun validateSettings() {

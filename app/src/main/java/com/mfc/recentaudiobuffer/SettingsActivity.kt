@@ -95,13 +95,18 @@ class SettingsActivity : ComponentActivity() {
                 state.value.updateBufferTimeLengthTemp(value)
                 state.value.validateSettings()
             },
+            onAiAutoClipChanged = { value ->
+                Timber.d("onBufferTimeLengthChanged to $value")
+                // Temporary value updater for error recompose
+                state.value.updateIsAiAutoClipEnabled(value)
+            },
             onSubmit = {
                 // Launch a coroutine for the save and restart logic
                 scope.launch {
                     val configBeforeUpdate = settingsViewModel.config.value
 
                     // 1. Call updateSettings and get the list of jobs
-                    val updateJobs = state.value.updateSettings(settingsViewModel)
+                    val updateJobs = state.value.uploadSettingsToAppView(settingsViewModel)
 
                     // 2. Wait for all save operations to complete
                     updateJobs.joinAll()
@@ -116,9 +121,7 @@ class SettingsActivity : ComponentActivity() {
                         Timber.d(
                             "onSubmit(): Settings changed, quicksaving and restarting recording"
                         )
-                        // The service calls can be run on the main thread if they are fast,
-                        // or you can ensure they are safe to call from this coroutine context.
-                        service!!.stopRecording()
+                        service.stopRecording()
                         service.quickSaveBuffer()
                         service.resetBuffer()
                         service.startRecording()

@@ -50,6 +50,9 @@ android {
             buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_LIVE")}")
         }
         debug {
+            ndk {
+                abiFilters 'x86_64'
+            }
             buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_TEST")}")
         }
         dev {

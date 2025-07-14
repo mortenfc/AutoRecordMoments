@@ -67,7 +67,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -82,6 +85,7 @@ fun SettingsScreen(
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
     onBufferTimeLengthChanged: (Int) -> Unit,
+    onAiAutoClipChanged: (Boolean) -> Unit,
     onSubmit: (Int) -> Unit,
     justExit: () -> Unit
 ) {
@@ -214,7 +218,53 @@ fun SettingsScreen(
                     isNull = isBufferTimeLengthNull
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = colorResource(id = R.color.purple_accent).copy(alpha = 0.5f)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(fraction = 0.9f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "AI Auto-Trimming",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colorResource(id = R.color.teal_900)
+                    )
+                    Switch(
+                        checked = state.value.isAiAutoClipEnabled.value, // Get value from state
+                        onCheckedChange = { isEnabled ->
+                            onAiAutoClipChanged(isEnabled) // New callback
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = colorResource(id = R.color.purple_accent),
+                            checkedTrackColor = colorResource(id = R.color.teal_350)
+                        )
+                    )
+                }
+                Text(
+                    text = "When enabled, saving the buffer will automatically trim away all non-speech (including music).\n" +
+                            "WARNING: This resamples down to 16 kHz and can take some time to run for really long buffers.",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        textAlign = TextAlign.Justify, hyphens = Hyphens.Auto
+                    ),
+                    color = colorResource(id = R.color.teal_700),
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .fillMaxWidth(fraction = 0.9f),
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = colorResource(id = R.color.purple_accent).copy(alpha = 0.5f)
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
 
                 // Error Message
                 if (errorMessage.value != null) {
@@ -753,6 +803,7 @@ fun SettingsScreenPreview() {
         SettingsScreen(
             mutableStateOf(SettingsScreenState(SettingsConfig())),
             signInButtonText = mutableStateOf("Sign In"),
+            {},
             {},
             {},
             {},

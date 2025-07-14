@@ -1,14 +1,12 @@
 package com.mfc.recentaudiobuffer
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioFormat
@@ -16,7 +14,6 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Binder
-import android.os.Build
 import android.os.IBinder
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -51,7 +48,7 @@ import kotlin.math.roundToInt
 
 interface MyBufferServiceInterface {
     fun getBuffer(): ByteArray
-    fun writeWavHeader(out: OutputStream, audioDataLen: Int)
+    fun writeWavHeader(out: OutputStream, audioDataLen: Int, configIn: AudioConfig?)
     fun stopRecording()
     fun startRecording()
     fun resetBuffer()
@@ -374,10 +371,11 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         recorded_duration.set(durationFormatted)
     }
 
-    override fun writeWavHeader(out: OutputStream, audioDataLen: Int) {
+    override fun writeWavHeader(out: OutputStream, audioDataLen: Int, configIn: AudioConfig?) {
+        val localConfig = configIn ?: this.config
         val channels = 1.toShort() // Recording is in mono
-        val sampleRate = config.sampleRateHz
-        val bitsPerSample = config.bitDepth.bits.toShort()
+        val sampleRate = localConfig.sampleRateHz
+        val bitsPerSample = localConfig.bitDepth.bits.toShort()
 
         // WAV constants
         val sampleSize = bitsPerSample / 8
@@ -609,18 +607,16 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     private fun createNotificationChannels() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHRONIC_NOTIFICATION_CHANNEL_ID,
-                CHRONIC_NOTIFICATION_CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = CHRONIC_NOTIFICATION_CHANNEL_DESCRIPTION
-            }
-            val notificationManager: NotificationManager =
-                getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHRONIC_NOTIFICATION_CHANNEL_ID,
+            CHRONIC_NOTIFICATION_CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = CHRONIC_NOTIFICATION_CHANNEL_DESCRIPTION
         }
+        val notificationManager: NotificationManager =
+            getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannel(channel)
     }
 
     @OptIn(UnstableApi::class)

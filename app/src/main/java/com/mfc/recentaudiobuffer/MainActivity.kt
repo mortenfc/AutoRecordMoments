@@ -26,8 +26,10 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
+import com.mfc.recentaudiobuffer.VADProcessor.Companion.readWavHeader
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import dagger.hilt.android.AndroidEntryPoint
@@ -53,6 +55,8 @@ class MainActivity : AppCompatActivity() {
     private var myBufferService: MyBufferServiceInterface? = null
 
     private var isRecording = mutableStateOf(false)
+
+    private var isTrimming = mutableStateOf(false)
 
     private var isPickAndPlayFileRunning = false
     private var wasStartRecordingButtonPress = false
@@ -94,8 +98,7 @@ class MainActivity : AppCompatActivity() {
             this.service = binder.getService()
             myBufferService = this.service
             this.isBound = true
-            RecentAudioBufferApplication.getSharedViewModel().myBufferService =
-                this.service
+            RecentAudioBufferApplication.getSharedViewModel().myBufferService = this.service
             if (wasStartRecordingButtonPress) {
                 myBufferService!!.startRecording()
                 wasStartRecordingButtonPress = false
@@ -201,11 +204,13 @@ class MainActivity : AppCompatActivity() {
                 onPickAndPlayFileClick = { onClickPickAndPlayFile() },
                 onDonateClick = { onClickDonate() },
                 onSettingsClick = { onClickSettings() },
+                onTrimFileClick = { onClickTrimFile() },
                 onDirectoryAlertDismiss = {
                     FileSavingUtils.showDirectoryPermissionDialog = false
                     pickDirectory()
                 },
                 mediaPlayerManager = mediaPlayerManager!!,
+                isTrimming = isTrimming,
                 isRecordingFromService = isRecording
             )
         }
@@ -370,10 +375,10 @@ class MainActivity : AppCompatActivity() {
             // 4. Process the buffer ONLY if the feature is enabled
             val bufferToSave = if (settings.isAiAutoClipEnabled) {
                 Timber.d("Auto-clipping enabled. Processing buffer...")
-                // TODO: Show a loading indicator to the user here
+                isTrimming.value = true
                 val processedBuffer =
                     vadProcessor.processBuffer(originalBuffer, settings.toAudioConfig())
-                // TODO: Hide loading indicator
+                isTrimming.value = false
                 processedBuffer
             } else {
                 originalBuffer
@@ -482,8 +487,7 @@ class MainActivity : AppCompatActivity() {
 
         val permissionsToRequest = permissions.filter {
             ContextCompat.checkSelfPermission(
-                this,
-                it
+                this, it
             ) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
 
@@ -549,4 +553,83 @@ class MainActivity : AppCompatActivity() {
         filePickerLauncher.launch(intent)
     }
 
+    private val trimFileLauncher =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+            uri?.let { fileUri ->
+                lifecycleScope.launch {
+                    // We'll define this function next
+                    trimAndSaveFile(fileUri)
+                }
+            }
+        }
+
+    // 2. Add the click handler function
+    private fun onClickTrimFile() {
+        // This launches the system file picker to select an audio file
+        trimFileLauncher.launch("audio/wav")
+    }
+
+    private suspend fun trimAndSaveFile(fileUri: Uri) {
+        isTrimming.value = true
+        Timber.d("Trimming file: $fileUri")
+
+        try {
+            // Read the original file bytes
+            val inputStream = contentResolver.openInputStream(fileUri)
+            val originalBytes = inputStream?.readBytes() ?: run {
+                runOnUiThread {
+                    Toast.makeText(this, "Failed to read file", Toast.LENGTH_SHORT).show()
+                }
+                return
+            }
+            inputStream.close()
+
+            // Get the config from the file's header
+            val config = readWavHeader(originalBytes)
+
+            // Process the buffer
+            val processedBytes = vadProcessor.processBuffer(originalBytes, config)
+
+            // Save the new, processed file
+            val prevGrantedUri = FileSavingUtils.getCachedGrantedUri()
+            if (FileSavingUtils.isUriValidAndAccessible(this, prevGrantedUri)) {
+                // Suggest a new name for the processed file
+                val originalFileName =
+                    DocumentFile.fromSingleUri(this, fileUri)?.name ?: "processed_file.wav"
+                val newFileName = originalFileName.replace(".wav", "_clipped.wav")
+
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Processing complete! Saving new file...",
+                        Toast.LENGTH_LONG
+                    )
+                        .show()
+                }
+                FileSavingUtils.promptSaveFileName(prevGrantedUri!!, processedBytes, newFileName)
+            } else {
+                // If we don't have a valid save directory, ask for one
+                pickDirectory()
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Please select a directory to save the processed file.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to process file")
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    "Error during processing: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        } finally {
+            isTrimming.value = false
+        }
+    }
 }

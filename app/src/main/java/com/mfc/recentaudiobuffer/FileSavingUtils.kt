@@ -16,12 +16,20 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.app.PendingIntent
+import android.content.ContentValues
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.media3.common.util.UnstableApi
 import timber.log.Timber
+import java.io.File
+import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class FileSavingService : Service() {
     companion object {
@@ -111,6 +119,7 @@ object FileSavingUtils {
     var showDirectoryPermissionDialog by mutableStateOf(false)
     var currentGrantedDirectoryUri: Uri? = null
     var currentData: ByteArray? = null
+    var suggestedFileName by mutableStateOf("")
 
     private fun saveFile(
         context: Context, myBufferService: MyBufferServiceInterface, data: ByteArray, fileUri: Uri
@@ -121,7 +130,7 @@ object FileSavingUtils {
             outputStream?.let { stream ->
                 try {
                     myBufferService.writeWavHeader(
-                        stream, data.size
+                        stream, data.size, null
                     )
                     stream.write(data)
                     stream.flush()
@@ -236,10 +245,82 @@ object FileSavingUtils {
     }
 
     fun promptSaveFileName(
-        grantedDirectoryUri: Uri, data: ByteArray
+        grantedDirectoryUri: Uri, data: ByteArray,
+        suggestedName: String? = null
     ) {
         currentGrantedDirectoryUri = grantedDirectoryUri
         currentData = data
+        suggestedFileName = suggestedName ?: "recording.wav"
         showSavingDialog = true
+    }
+
+    private fun writeWavHeader(out: OutputStream, audioDataLen: Int, config: AudioConfig) {
+        val channels: Short = 1
+        val sampleRate = config.sampleRateHz
+        val bitsPerSample = config.bitDepth.bits.toShort()
+        val sampleSize = bitsPerSample / 8
+        val chunkSize = audioDataLen + 36
+        val byteRate = sampleRate * channels * sampleSize
+
+        fun intToBytes(i: Int): ByteArray =
+            ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(i).array()
+
+        fun shortToBytes(s: Short): ByteArray =
+            ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN).putShort(s).array()
+
+        try {
+            out.write("RIFF".toByteArray())
+            out.write(intToBytes(chunkSize))
+            out.write("WAVE".toByteArray())
+            out.write("fmt ".toByteArray())
+            out.write(intToBytes(16))
+            out.write(shortToBytes(1.toShort()))
+            out.write(shortToBytes(channels))
+            out.write(intToBytes(sampleRate))
+            out.write(intToBytes(byteRate))
+            out.write(shortToBytes((channels * sampleSize).toShort()))
+            out.write(shortToBytes(bitsPerSample))
+            out.write("data".toByteArray())
+            out.write(intToBytes(audioDataLen))
+        } catch (e: IOException) {
+            Timber.e(e, "Failed to write WAV header")
+        }
+    }
+
+    fun saveDebugFile(context: Context, fileName: String, data: ByteArray, config: AudioConfig) {
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+        }
+
+        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        } else {
+            MediaStore.Files.getContentUri("external")
+        }
+
+        val contentResolver = context.contentResolver
+        var fileUri: Uri? = null
+
+        try {
+            fileUri = contentResolver.insert(collection, values)
+            if (fileUri == null) {
+                throw IOException("Failed to create new MediaStore record for $fileName")
+            }
+
+            contentResolver.openOutputStream(fileUri)?.use { stream ->
+                writeWavHeader(stream, data.size, config) // Call the new helper
+                stream.write(data)
+                stream.flush()
+                Timber.d("DEBUG file saved successfully to URI: $fileUri")
+            } ?: throw IOException("Failed to open output stream for $fileUri")
+
+        } catch (e: Exception) {
+            Timber.e(e, "Error writing debug file with MediaStore: $fileName")
+            fileUri?.let { contentResolver.delete(it, null, null) }
+        }
     }
 }
