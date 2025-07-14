@@ -71,6 +71,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -240,18 +241,19 @@ fun SettingsScreen(
                         checked = state.value.isAiAutoClipEnabled.value, // Get value from state
                         onCheckedChange = { isEnabled ->
                             onAiAutoClipChanged(isEnabled) // New callback
-                        },
-                        colors = SwitchDefaults.colors(
+                        }, colors = SwitchDefaults.colors(
                             checkedThumbColor = colorResource(id = R.color.purple_accent),
                             checkedTrackColor = colorResource(id = R.color.teal_350)
                         )
                     )
                 }
                 Text(
-                    text = "When enabled, saving the buffer will automatically trim away all non-speech (including music).\n" +
-                            "WARNING: This resamples down to 16 kHz and can take some time to run for really long buffers.",
+                    text = "When enabled, saving the buffer will automatically trim away all non-speech (including music).\n" + "WARNING: This resamples down to 16 kHz and can take some time to run for really long buffers.",
                     style = MaterialTheme.typography.bodyMedium.copy(
-                        textAlign = TextAlign.Justify, hyphens = Hyphens.Auto
+                        textAlign = TextAlign.Justify,
+                        hyphens = Hyphens.Auto,
+                        lineBreak = LineBreak.Paragraph,
+                        fontStyle = FontStyle.Italic
                     ),
                     color = colorResource(id = R.color.teal_700),
                     modifier = Modifier
@@ -650,8 +652,11 @@ fun ComprehensiveHelpDialog(
                 }
                 Text(
                     text = "*Estimates are relative. Actual device performance will vary.",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontStyle = FontStyle.Italic,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontStyle = FontStyle.Italic,
+                        hyphens = Hyphens.Auto,
+                        lineBreak = LineBreak.Paragraph,
+                    ),
                     modifier = Modifier
                         .padding(top = 8.dp)
                         .fillMaxWidth(),
@@ -675,7 +680,10 @@ fun ComprehensiveHelpDialog(
                 )
                 Text(
                     "How many times per second the microphone listens. Higher values mean clearer, higher-fidelity sound (like more frames-per-second in a video). Lower values use less battery.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        hyphens = Hyphens.Auto,
+                        lineBreak = LineBreak.Paragraph,
+                    ),
                     color = textColor
                 )
 
@@ -689,7 +697,10 @@ fun ComprehensiveHelpDialog(
                 )
                 Text(
                     "The amount of detail in each audio sample. Higher bit depth provides a wider dynamic range (difference between loud and quiet sounds) and a cleaner recording.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        hyphens = Hyphens.Auto,
+                        lineBreak = LineBreak.Paragraph,
+                    ),
                     color = textColor
                 )
 
@@ -703,7 +714,10 @@ fun ComprehensiveHelpDialog(
                 )
                 Text(
                     "The total duration of audio the app keeps in memory (RAM). A longer buffer requires significantly more RAM and can increase battery drain.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        hyphens = Hyphens.Auto,
+                        lineBreak = LineBreak.Paragraph,
+                    ),
                     color = textColor
                 )
 
@@ -731,7 +745,10 @@ fun ComprehensiveHelpDialog(
                 )
                 Text(
                     "Best for recording lectures or voice memos with maximum efficiency.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        hyphens = Hyphens.Auto,
+                        lineBreak = LineBreak.Paragraph,
+                    ),
                     color = textColor
                 )
                 Text(
@@ -752,7 +769,10 @@ fun ComprehensiveHelpDialog(
                 )
                 Text(
                     "The recommended setting for great quality and performance. Perfect for capturing unexpected moments clearly.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        hyphens = Hyphens.Auto,
+                        lineBreak = LineBreak.Paragraph,
+                    ),
                     color = textColor
                 )
                 Text(
@@ -773,7 +793,10 @@ fun ComprehensiveHelpDialog(
                 )
                 Text(
                     "For capturing music or detailed environmental sounds with the highest fidelity. Note: this uses significantly more resources.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        hyphens = Hyphens.Auto,
+                        lineBreak = LineBreak.Paragraph,
+                    ),
                     color = textColor
                 )
                 Text(

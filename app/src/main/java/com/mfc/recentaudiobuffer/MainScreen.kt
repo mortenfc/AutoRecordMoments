@@ -80,6 +80,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
@@ -217,7 +218,7 @@ fun MainScreen(
                             onClick = onSaveBufferClick
                         )
                         SecondaryActionButton(
-                            text = "Auto Trim Non-speech",
+                            text = "Trim Non-Speech\nFrom File",
                             icon = R.drawable.outline_content_cut_24,
                             onClick = onTrimFileClick
                         )
@@ -309,7 +310,9 @@ fun PrivacyInfoDialog(onDismissRequest: () -> Unit) {
                 "This app continuously records audio to a temporary buffer in your phone's memory (RAM). " + "No audio data (except settings) is saved or sent to the cloud unless you explicitly press the 'Save' button. " + "Clearing the buffer or closing the persistent notification will discard the buffered audio.",
                 // Apply a style to enable hyphenation
                 style = MaterialTheme.typography.bodyMedium.copy(
-                    textAlign = TextAlign.Justify, hyphens = Hyphens.Auto
+                    textAlign = TextAlign.Justify,
+                    hyphens = Hyphens.Auto,
+                    lineBreak = LineBreak.Paragraph,
                 ),
                 color = colorResource(id = R.color.teal_900),
                 lineHeight = 20.sp,
@@ -663,88 +666,88 @@ fun PlayerControlViewContainer(
     if (isContainerVisible) {
         AndroidView(
             factory = {
-                val constraintLayout = ConstraintLayout(context).apply {
-                    id = View.generateViewId()
-                    isClickable = true
-                    // Set layout params to fill width but wrap height
-                    layoutParams = FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
-                    )
-                }
+            val constraintLayout = ConstraintLayout(context).apply {
+                id = View.generateViewId()
+                isClickable = true
+                // Set layout params to fill width but wrap height
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
 
-                val layoutInflater = LayoutInflater.from(context)
-                val closeButtonContainer = layoutInflater.inflate(
-                    R.layout.exo_close_button, constraintLayout, false
-                ) as FrameLayout
-                closeButtonContainer.id = View.generateViewId()
-                closeButtonContainer.findViewById<ImageButton>(R.id.exo_close).setOnClickListener {
-                    mediaPlayerManager.player?.stop()
-                    mediaPlayerManager.playerControlView?.hide()
-                    mediaPlayerManager.closeMediaPlayer()
-                    isContainerVisible = false
-                }
+            val layoutInflater = LayoutInflater.from(context)
+            val closeButtonContainer = layoutInflater.inflate(
+                R.layout.exo_close_button, constraintLayout, false
+            ) as FrameLayout
+            closeButtonContainer.id = View.generateViewId()
+            closeButtonContainer.findViewById<ImageButton>(R.id.exo_close).setOnClickListener {
+                mediaPlayerManager.player?.stop()
+                mediaPlayerManager.playerControlView?.hide()
+                mediaPlayerManager.closeMediaPlayer()
+                isContainerVisible = false
+            }
 
-                val playerControlView = PlayerControlView(it).apply {
-                    id = View.generateViewId()
-                    setShowFastForwardButton(true)
-                    setShowRewindButton(true)
-                    isAnimationEnabled = true
-                    showTimeoutMs = 0
-                    player = mediaPlayerManager.player
-                    hide()
-                }
-                mediaPlayerManager.playerControlView = playerControlView
+            val playerControlView = PlayerControlView(it).apply {
+                id = View.generateViewId()
+                setShowFastForwardButton(true)
+                setShowRewindButton(true)
+                isAnimationEnabled = true
+                showTimeoutMs = 0
+                player = mediaPlayerManager.player
+                hide()
+            }
+            mediaPlayerManager.playerControlView = playerControlView
 
-                constraintLayout.addView(playerControlView)
-                constraintLayout.addView(closeButtonContainer)
+            constraintLayout.addView(playerControlView)
+            constraintLayout.addView(closeButtonContainer)
 
-                val constraintSet = ConstraintSet().apply {
-                    clone(constraintLayout)
+            val constraintSet = ConstraintSet().apply {
+                clone(constraintLayout)
 
-                    connect(
-                        playerControlView.id,
-                        ConstraintSet.BOTTOM,
-                        ConstraintSet.PARENT_ID,
-                        ConstraintSet.BOTTOM
-                    )
-                    connect(
-                        playerControlView.id,
-                        ConstraintSet.START,
-                        ConstraintSet.PARENT_ID,
-                        ConstraintSet.START
-                    )
-                    connect(
-                        playerControlView.id,
-                        ConstraintSet.END,
-                        ConstraintSet.PARENT_ID,
-                        ConstraintSet.END
-                    )
+                connect(
+                    playerControlView.id,
+                    ConstraintSet.BOTTOM,
+                    ConstraintSet.PARENT_ID,
+                    ConstraintSet.BOTTOM
+                )
+                connect(
+                    playerControlView.id,
+                    ConstraintSet.START,
+                    ConstraintSet.PARENT_ID,
+                    ConstraintSet.START
+                )
+                connect(
+                    playerControlView.id,
+                    ConstraintSet.END,
+                    ConstraintSet.PARENT_ID,
+                    ConstraintSet.END
+                )
 
-                    // REMOVED: This is no longer necessary as the parent wraps content
-                    // constrainPercentHeight(playerControlView.id, 0.25f)
+                // REMOVED: This is no longer necessary as the parent wraps content
+                // constrainPercentHeight(playerControlView.id, 0.25f)
 
-                    connect(
-                        closeButtonContainer.id,
-                        ConstraintSet.TOP,
-                        playerControlView.id,
-                        ConstraintSet.TOP
-                    )
-                    connect(
-                        closeButtonContainer.id,
-                        ConstraintSet.END,
-                        ConstraintSet.PARENT_ID,
-                        ConstraintSet.END
-                    )
-                }
-                constraintSet.applyTo(constraintLayout)
+                connect(
+                    closeButtonContainer.id,
+                    ConstraintSet.TOP,
+                    playerControlView.id,
+                    ConstraintSet.TOP
+                )
+                connect(
+                    closeButtonContainer.id,
+                    ConstraintSet.END,
+                    ConstraintSet.PARENT_ID,
+                    ConstraintSet.END
+                )
+            }
+            constraintSet.applyTo(constraintLayout)
 
-                constraintLayout
-            }, update = { view ->
-                mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
-                val fileNameTextView = view.findViewById<TextView>(R.id.exo_file_name)
-                fileNameTextView?.text = currentFileNameState
-                mediaPlayerManager.playerControlView?.show()
-            },
+            constraintLayout
+        }, update = { view ->
+            mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
+            val fileNameTextView = view.findViewById<TextView>(R.id.exo_file_name)
+            fileNameTextView?.text = currentFileNameState
+            mediaPlayerManager.playerControlView?.show()
+        },
             // MODIFIED: Use the passed-in modifier, removing fillMaxSize
             modifier = modifier
         )
