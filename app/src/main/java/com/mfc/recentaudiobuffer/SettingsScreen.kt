@@ -243,8 +243,12 @@ fun SettingsScreen(
                             onAiAutoClipChanged(isEnabled) // New callback
                         }, colors = SwitchDefaults.colors(
                             checkedThumbColor = colorResource(id = R.color.purple_accent),
-                            checkedTrackColor = colorResource(id = R.color.teal_350)
-                        )
+                            checkedBorderColor = colorResource(id = R.color.teal_350),
+                            checkedTrackColor = colorResource(id = R.color.teal_350),
+                            uncheckedThumbColor = colorResource(id = R.color.purple_accent),
+                            uncheckedTrackColor = colorResource(id = R.color.teal_100),
+                            uncheckedBorderColor = colorResource(id = R.color.teal_350),
+                        ),
                     )
                 }
                 Text(
@@ -655,6 +659,7 @@ fun ComprehensiveHelpDialog(
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontStyle = FontStyle.Italic,
                         hyphens = Hyphens.Auto,
+                        textAlign = TextAlign.Justify,
                         lineBreak = LineBreak.Paragraph,
                     ),
                     modifier = Modifier
@@ -682,6 +687,7 @@ fun ComprehensiveHelpDialog(
                     "How many times per second the microphone listens. Higher values mean clearer, higher-fidelity sound (like more frames-per-second in a video). Lower values use less battery.",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         hyphens = Hyphens.Auto,
+                        textAlign = TextAlign.Justify,
                         lineBreak = LineBreak.Paragraph,
                     ),
                     color = textColor
@@ -699,6 +705,7 @@ fun ComprehensiveHelpDialog(
                     "The amount of detail in each audio sample. Higher bit depth provides a wider dynamic range (difference between loud and quiet sounds) and a cleaner recording.",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         hyphens = Hyphens.Auto,
+                        textAlign = TextAlign.Justify,
                         lineBreak = LineBreak.Paragraph,
                     ),
                     color = textColor
@@ -716,6 +723,7 @@ fun ComprehensiveHelpDialog(
                     "The total duration of audio the app keeps in memory (RAM). A longer buffer requires significantly more RAM and can increase battery drain.",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         hyphens = Hyphens.Auto,
+                        textAlign = TextAlign.Justify,
                         lineBreak = LineBreak.Paragraph,
                     ),
                     color = textColor
@@ -747,6 +755,7 @@ fun ComprehensiveHelpDialog(
                     "Best for recording lectures or voice memos with maximum efficiency.",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         hyphens = Hyphens.Auto,
+                        textAlign = TextAlign.Justify,
                         lineBreak = LineBreak.Paragraph,
                     ),
                     color = textColor
@@ -771,6 +780,7 @@ fun ComprehensiveHelpDialog(
                     "The recommended setting for great quality and performance. Perfect for capturing unexpected moments clearly.",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         hyphens = Hyphens.Auto,
+                        textAlign = TextAlign.Justify,
                         lineBreak = LineBreak.Paragraph,
                     ),
                     color = textColor
@@ -795,6 +805,7 @@ fun ComprehensiveHelpDialog(
                     "For capturing music or detailed environmental sounds with the highest fidelity. Note: this uses significantly more resources.",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         hyphens = Hyphens.Auto,
+                        textAlign = TextAlign.Justify,
                         lineBreak = LineBreak.Paragraph,
                     ),
                     color = textColor

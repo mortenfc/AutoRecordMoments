@@ -218,7 +218,7 @@ fun MainScreen(
                             onClick = onSaveBufferClick
                         )
                         SecondaryActionButton(
-                            text = "Trim Non-Speech\nFrom File",
+                            text = "Remove All Non-\nSpeech From File",
                             icon = R.drawable.outline_content_cut_24,
                             onClick = onTrimFileClick
                         )
