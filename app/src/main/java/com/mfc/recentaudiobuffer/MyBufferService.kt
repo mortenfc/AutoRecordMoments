@@ -381,10 +381,11 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         // WAV constants
         val sampleSize = bitsPerSample / 8
-        val headerSize = 44
+        val chunkSize = audioDataLen + 36
+//        val headerSize = 44
 
         // Calculate sizes
-        val totalDataLen = audioDataLen + headerSize
+//        val totalDataLen = audioDataLen + headerSize
         val byteRate = sampleRate * channels * sampleSize
 
         // Write the header
@@ -393,7 +394,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 'R'.code.toByte(), 'I'.code.toByte(), 'F'.code.toByte(), 'F'.code.toByte()
             )
         )
-        out.write(intToBytes(totalDataLen), 0, 4)
+//        out.write(intToBytes(totalDataLen), 0, 4)
+        out.write(intToBytes(chunkSize), 0, 4)
         out.write(
             byteArrayOf(
                 'W'.code.toByte(), 'A'.code.toByte(), 'V'.code.toByte(), 'E'.code.toByte()
