@@ -23,7 +23,10 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
@@ -62,6 +65,8 @@ class MainActivity : AppCompatActivity() {
 
     private var isPickAndPlayFileRunning = false
     private var wasStartRecordingButtonPress = false
+
+    private var showRecentFilesDialog = mutableStateOf(false)
 
     private val basePermissions = mutableListOf(
         Manifest.permission.RECORD_AUDIO,
@@ -203,7 +208,12 @@ class MainActivity : AppCompatActivity() {
                 onStopBufferingClick = { onClickStopRecording() },
                 onResetBufferClick = { onClickResetBuffer() },
                 onSaveBufferClick = { onClickSaveBuffer() },
-                onPickAndPlayFileClick = { onClickPickAndPlayFile() },
+                onPickAndPlayFileClick = { onClickBrowseRecentFiles() },
+                showRecentFilesDialog = showRecentFilesDialog,
+                onFileSelected = { uri ->
+                    showRecentFilesDialog.value = false
+                    setUpMediaPlayer(uri)
+                },
                 onDonateClick = { onClickDonate() },
                 onSettingsClick = { onClickSettings() },
                 onTrimFileClick = { onClickTrimFile() },
@@ -270,13 +280,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleIntent(intent: Intent) {
         // Check if the activity was launched from the notification
-        if (intent.action == FileSavingService.ACTION_OPEN_FILE && !isPickAndPlayFileRunning) {
+        if (intent.action == FileSavingService.ACTION_OPEN_FILE) {
             Timber.d("Got external intent to open file")
             val savedFileUri =
                 intent.getParcelableExtra<Uri>(FileSavingService.EXTRA_SAVED_FILE_URI)
             if (savedFileUri != null) {
-                isPickAndPlayFileRunning = true
-                pickAndPlayFile(savedFileUri)
+                // Call setUpMediaPlayer directly, bypassing any pickers
+                setUpMediaPlayer(savedFileUri)
             } else {
                 Timber.e("savedFileUri is null")
             }
@@ -400,8 +410,10 @@ class MainActivity : AppCompatActivity() {
         return AudioConfig(this.sampleRateHz, this.bufferTimeLengthS, this.bitDepth)
     }
 
-    private fun onClickPickAndPlayFile() {
-        getPermissionsAndThen(requiredPermissions) { pickAndPlayFile() }
+    private fun onClickBrowseRecentFiles() {
+        getPermissionsAndThen(requiredPermissions) {
+            showRecentFilesDialog.value = true
+        }
     }
 
     private fun onClickDonate() {
@@ -508,45 +520,6 @@ class MainActivity : AppCompatActivity() {
             "setUpMediaPlayer: selectedMediaToPlayUri = $selectedMediaToPlayUri"
         )
         mediaPlayerManager?.setUpMediaPlayer(selectedMediaToPlayUri)
-    }
-
-    private val filePickerLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            // Prevent duplicate file pickers simultaneously from external intents
-            isPickAndPlayFileRunning = false
-            if (result.resultCode == RESULT_OK) {
-                Timber.d("RESULT_OK with data: ${result.data}")
-                result.data?.data?.let { selectedMediaToPlayUri ->
-                    Timber.i("Selected file URI: $selectedMediaToPlayUri")
-                    setUpMediaPlayer(selectedMediaToPlayUri)
-                }
-
-            } else {
-                Timber.i("ERROR selecting file: ${result.resultCode}")
-            }
-        }
-
-    private fun pickAndPlayFile(initialUri: Uri? = null) {
-        Timber.i("pickAndPlayFile() with initialUri: $initialUri")
-        val intent = if (initialUri != null) {
-            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "audio/*"
-                putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-        } else {
-            val recordingsDirFile =
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS)
-            val recordingsDirUrl = Uri.fromFile(recordingsDirFile)
-            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "audio/*"
-                putExtra(DocumentsContract.EXTRA_INITIAL_URI, recordingsDirUrl)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-        }
-        filePickerLauncher.launch(intent)
     }
 
     private val trimFileLauncher =

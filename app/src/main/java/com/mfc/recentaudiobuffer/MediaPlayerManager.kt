@@ -1,5 +1,6 @@
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -45,14 +46,15 @@ class MediaPlayerManager(
     fun setUpMediaPlayer(selectedMediaToPlayUri: Uri) {
         Timber.d("setUpMediaPlayer: selectedMediaToPlayUri = $selectedMediaToPlayUri")
         try {
+            closeMediaPlayer()
+
+            selectedUri = selectedMediaToPlayUri
             player = ExoPlayer.Builder(context).build().apply {
-                selectedUri = selectedMediaToPlayUri
                 val mediaItem = MediaItem.fromUri(selectedMediaToPlayUri)
-                Timber.d("setUpMediaPlayer: mediaItem = $mediaItem")
                 setMediaItem(mediaItem)
+                addListener(playerListener)
                 prepare()
                 play()
-                addListener(playerListener)
                 playerControlView?.player = this
                 playerControlView?.show()
             }
@@ -71,11 +73,18 @@ class MediaPlayerManager(
     }
 
     private fun getFileNameFromSelectedUri(): String {
-        return try {
-            val file = File(selectedUri?.path ?: "")
-            file.name
-        } catch (e: Exception) {
-            "Unknown File"
+        if (selectedUri == null) return "Unknown File"
+        var fileName = "Unknown File"
+
+        // Use a ContentResolver query to get the file's display name
+        context.contentResolver.query(selectedUri!!, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1) {
+                    fileName = cursor.getString(nameIndex)
+                }
+            }
         }
+        return fileName
     }
 }

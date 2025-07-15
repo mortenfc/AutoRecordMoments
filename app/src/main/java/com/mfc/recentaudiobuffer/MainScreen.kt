@@ -2,6 +2,7 @@ package com.mfc.recentaudiobuffer
 
 import MediaPlayerManager
 import android.annotation.SuppressLint
+import android.net.Uri
 import android.view.LayoutInflater
 import android.view.View
 import android.view.Gravity
@@ -71,7 +72,6 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
@@ -83,13 +83,10 @@ import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.constraintlayout.widget.ConstraintSet
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import timber.log.Timber
 
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -102,6 +99,8 @@ fun MainScreen(
     onResetBufferClick: () -> Unit,
     onSaveBufferClick: () -> Unit,
     onPickAndPlayFileClick: () -> Unit,
+    showRecentFilesDialog: MutableState<Boolean>,
+    onFileSelected: (Uri) -> Unit,
     onDonateClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDirectoryAlertDismiss: () -> Unit,
@@ -271,6 +270,13 @@ fun MainScreen(
     }
 
     // --- Dialogs ---
+    if (showRecentFilesDialog.value) {
+        RecentFilesDialog(
+            onDismiss = { showRecentFilesDialog.value = false },
+            onFileSelected = onFileSelected
+        )
+    }
+
     if (showPrivacyInfoDialog) {
         PrivacyInfoDialog(onDismissRequest = { showPrivacyInfoDialog = false })
     }
@@ -697,7 +703,6 @@ fun PlayerControlViewContainer(
                 isContainerVisible = false // Hide the container on close
             }
 
-            // --- THIS IS THE FIX ---
             // Create LayoutParams to position the close button in the top-right
             val marginInPx = (16 * context.resources.displayMetrics.density).toInt()
             val closeButtonLayoutParams = FrameLayout.LayoutParams(
@@ -709,7 +714,6 @@ fun PlayerControlViewContainer(
                 rightMargin = marginInPx / 2
             }
             closeButtonContainer.layoutParams = closeButtonLayoutParams
-            // --- END FIX ---
 
             // Add both to a FrameLayout to overlay them
             FrameLayout(context).apply {
@@ -744,6 +748,8 @@ fun MainScreenPreview() {
             onResetBufferClick = {},
             onSaveBufferClick = {},
             onPickAndPlayFileClick = {},
+            showRecentFilesDialog = mutableStateOf(true),
+            onFileSelected = {},
             onDonateClick = {},
             onSettingsClick = {},
             onSignInClick = {},
