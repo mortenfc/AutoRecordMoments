@@ -7,14 +7,14 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.VectorConverter
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.EaseInOutCubic
-import androidx.compose.animation.core.EaseOutSine
-import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateValueAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -37,7 +37,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -65,7 +64,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -108,10 +106,11 @@ fun MainScreen(
     onTrimFileClick: () -> Unit,
     mediaPlayerManager: MediaPlayerManager,
     isRecordingFromService: MutableState<Boolean>,
-    isTrimming: MutableState<Boolean>,
+    isLoading: MutableState<Boolean>,
     isPreview: Boolean = false
 ) {
     // State to manage if recording is active, controlling the main button's appearance and action
+    var isLoadingState by remember { isLoading }
     var isRecording by remember { isRecordingFromService }
     var isInitialComposition by remember { mutableStateOf(true) }
     var showPrivacyInfoDialog by remember { mutableStateOf(false) }
@@ -162,18 +161,20 @@ fun MainScreen(
         AdMobBanner()
 
         Scaffold { innerPadding ->
+            // --- REVISED LAYOUT ---
+            // The Box now acts as a container for layers.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
                     .background(colorResource(id = R.color.teal_100))
             ) {
-                // Main content area
+                // LAYER 1: The main content is always present in the composition.
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.Center)
-                        .padding(bottom = 80.dp), // Pushed up to make space for the donate banner
+                        .padding(bottom = 80.dp), // Pushed up for donate banner
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -252,11 +253,16 @@ fun MainScreen(
                         mediaPlayerManager = mediaPlayerManager,
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
-
                 }
 
-                if (isTrimming.value) {
-                    LoadingIndicator()
+                Column {
+                    AnimatedVisibility(
+                        visible = isLoadingState,
+                        enter = fadeIn(animationSpec = tween(durationMillis = 300)),
+                        exit = fadeOut(animationSpec = tween(durationMillis = 300))
+                    ) {
+                        LoadingIndicator()
+                    }
                 }
             }
         }
@@ -267,20 +273,20 @@ fun MainScreen(
         PrivacyInfoDialog(onDismissRequest = { showPrivacyInfoDialog = false })
     }
 
-
     if (FileSavingUtils.showSavingDialog) {
         val context = LocalContext.current
         FileSavingUtils.currentGrantedDirectoryUri?.let { grantedDirectoryUri ->
             FileSavingUtils.currentData?.let { data ->
-                FileSaveDialog(
-                    suggestedName = FileSavingUtils.suggestedFileName,
-                    onDismiss = { FileSavingUtils.showSavingDialog = false },
-                    onSave = { filename ->
-                        FileSavingUtils.fixBaseNameToSave(
-                            context, grantedDirectoryUri, data, filename
-                        )
-                        FileSavingUtils.showSavingDialog = false
-                    })
+                FileSaveDialog(suggestedName = FileSavingUtils.suggestedFileName, onDismiss = {
+                    FileSavingUtils.showSavingDialog = false
+                    isLoading.value = false
+                }, onSave = { filename ->
+                    FileSavingUtils.fixBaseNameToSave(
+                        context, grantedDirectoryUri, data, filename
+                    )
+                    FileSavingUtils.showSavingDialog = false
+                    isLoading.value = false
+                })
             }
         }
     }
@@ -565,8 +571,13 @@ fun LoadingIndicator() {
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.5f))
-            .clickable(enabled = false, onClick = {}), // Prevent clicks
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = {}
+            ),
         contentAlignment = Alignment.Center
+
     ) {
         CircularProgressIndicator(color = colorResource(id = R.color.purple_accent))
     }
@@ -666,88 +677,88 @@ fun PlayerControlViewContainer(
     if (isContainerVisible) {
         AndroidView(
             factory = {
-            val constraintLayout = ConstraintLayout(context).apply {
-                id = View.generateViewId()
-                isClickable = true
-                // Set layout params to fill width but wrap height
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
-                )
-            }
+                val constraintLayout = ConstraintLayout(context).apply {
+                    id = View.generateViewId()
+                    isClickable = true
+                    // Set layout params to fill width but wrap height
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
+                    )
+                }
 
-            val layoutInflater = LayoutInflater.from(context)
-            val closeButtonContainer = layoutInflater.inflate(
-                R.layout.exo_close_button, constraintLayout, false
-            ) as FrameLayout
-            closeButtonContainer.id = View.generateViewId()
-            closeButtonContainer.findViewById<ImageButton>(R.id.exo_close).setOnClickListener {
-                mediaPlayerManager.player?.stop()
-                mediaPlayerManager.playerControlView?.hide()
-                mediaPlayerManager.closeMediaPlayer()
-                isContainerVisible = false
-            }
+                val layoutInflater = LayoutInflater.from(context)
+                val closeButtonContainer = layoutInflater.inflate(
+                    R.layout.exo_close_button, constraintLayout, false
+                ) as FrameLayout
+                closeButtonContainer.id = View.generateViewId()
+                closeButtonContainer.findViewById<ImageButton>(R.id.exo_close).setOnClickListener {
+                    mediaPlayerManager.player?.stop()
+                    mediaPlayerManager.playerControlView?.hide()
+                    mediaPlayerManager.closeMediaPlayer()
+                    isContainerVisible = false
+                }
 
-            val playerControlView = PlayerControlView(it).apply {
-                id = View.generateViewId()
-                setShowFastForwardButton(true)
-                setShowRewindButton(true)
-                isAnimationEnabled = true
-                showTimeoutMs = 0
-                player = mediaPlayerManager.player
-                hide()
-            }
-            mediaPlayerManager.playerControlView = playerControlView
+                val playerControlView = PlayerControlView(it).apply {
+                    id = View.generateViewId()
+                    setShowFastForwardButton(true)
+                    setShowRewindButton(true)
+                    isAnimationEnabled = true
+                    showTimeoutMs = 0
+                    player = mediaPlayerManager.player
+                    hide()
+                }
+                mediaPlayerManager.playerControlView = playerControlView
 
-            constraintLayout.addView(playerControlView)
-            constraintLayout.addView(closeButtonContainer)
+                constraintLayout.addView(playerControlView)
+                constraintLayout.addView(closeButtonContainer)
 
-            val constraintSet = ConstraintSet().apply {
-                clone(constraintLayout)
+                val constraintSet = ConstraintSet().apply {
+                    clone(constraintLayout)
 
-                connect(
-                    playerControlView.id,
-                    ConstraintSet.BOTTOM,
-                    ConstraintSet.PARENT_ID,
-                    ConstraintSet.BOTTOM
-                )
-                connect(
-                    playerControlView.id,
-                    ConstraintSet.START,
-                    ConstraintSet.PARENT_ID,
-                    ConstraintSet.START
-                )
-                connect(
-                    playerControlView.id,
-                    ConstraintSet.END,
-                    ConstraintSet.PARENT_ID,
-                    ConstraintSet.END
-                )
+                    connect(
+                        playerControlView.id,
+                        ConstraintSet.BOTTOM,
+                        ConstraintSet.PARENT_ID,
+                        ConstraintSet.BOTTOM
+                    )
+                    connect(
+                        playerControlView.id,
+                        ConstraintSet.START,
+                        ConstraintSet.PARENT_ID,
+                        ConstraintSet.START
+                    )
+                    connect(
+                        playerControlView.id,
+                        ConstraintSet.END,
+                        ConstraintSet.PARENT_ID,
+                        ConstraintSet.END
+                    )
 
-                // REMOVED: This is no longer necessary as the parent wraps content
-                // constrainPercentHeight(playerControlView.id, 0.25f)
+                    // REMOVED: This is no longer necessary as the parent wraps content
+                    // constrainPercentHeight(playerControlView.id, 0.25f)
 
-                connect(
-                    closeButtonContainer.id,
-                    ConstraintSet.TOP,
-                    playerControlView.id,
-                    ConstraintSet.TOP
-                )
-                connect(
-                    closeButtonContainer.id,
-                    ConstraintSet.END,
-                    ConstraintSet.PARENT_ID,
-                    ConstraintSet.END
-                )
-            }
-            constraintSet.applyTo(constraintLayout)
+                    connect(
+                        closeButtonContainer.id,
+                        ConstraintSet.TOP,
+                        playerControlView.id,
+                        ConstraintSet.TOP
+                    )
+                    connect(
+                        closeButtonContainer.id,
+                        ConstraintSet.END,
+                        ConstraintSet.PARENT_ID,
+                        ConstraintSet.END
+                    )
+                }
+                constraintSet.applyTo(constraintLayout)
 
-            constraintLayout
-        }, update = { view ->
-            mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
-            val fileNameTextView = view.findViewById<TextView>(R.id.exo_file_name)
-            fileNameTextView?.text = currentFileNameState
-            mediaPlayerManager.playerControlView?.show()
-        },
+                constraintLayout
+            }, update = { view ->
+                mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
+                val fileNameTextView = view.findViewById<TextView>(R.id.exo_file_name)
+                fileNameTextView?.text = currentFileNameState
+                mediaPlayerManager.playerControlView?.show()
+            },
             // MODIFIED: Use the passed-in modifier, removing fillMaxSize
             modifier = modifier
         )
@@ -774,7 +785,7 @@ fun MainScreenPreview() {
             onTrimFileClick = {},
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) {},
             isRecordingFromService = mutableStateOf(true),
-            isTrimming = mutableStateOf(true),
+            isLoading = mutableStateOf(true),
             isPreview = true
         )
     }

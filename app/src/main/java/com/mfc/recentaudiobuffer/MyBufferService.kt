@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.OutputStream
 import java.nio.ByteBuffer
@@ -52,9 +53,10 @@ interface MyBufferServiceInterface {
     fun stopRecording()
     fun startRecording()
     fun resetBuffer()
-    fun quickSaveBuffer()
+    suspend fun quickSaveBuffer()
 
     val isRecording: StateFlow<Boolean>
+    val isLoading: StateFlow<Boolean>
 }
 
 @AndroidEntryPoint
@@ -77,7 +79,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         private const val REQUEST_CODE_STOP = 1
         private const val REQUEST_CODE_START = 2
         private const val REQUEST_CODE_SAVE = 3
-        private const val NOTIFICATION_UPDATE_INTERVAL_MS = 1000L
 
         // Static variable to hold the buffer
         var sharedAudioDataToSave: ByteArray? = null
@@ -87,11 +88,17 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    @Inject
+    lateinit var vadProcessor: VADProcessor
+
     // 1. Create a private, mutable state flow that the service controls.
     private val _isRecording = MutableStateFlow(false)
 
     // 2. Expose it publicly as a read-only StateFlow, fulfilling the interface.
     override val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(false)
+    override val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val hasOverflowed: AtomicReference<Boolean> = AtomicReference(false)
 
@@ -132,8 +139,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
             ACTION_SAVE_RECORDING_SERVICE -> {
                 Timber.d("Got ACTION_SAVE_RECORDING_SERVICE intent")
-                quickSaveBuffer()
-                resetBuffer()
+                serviceScope.launch {
+                    quickSaveBuffer()
+                }
             }
         }
 
@@ -380,10 +388,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         // WAV constants
         val sampleSize = bitsPerSample / 8
         val chunkSize = audioDataLen + 36
-//        val headerSize = 44
 
         // Calculate sizes
-//        val totalDataLen = audioDataLen + headerSize
         val byteRate = sampleRate * channels * sampleSize
 
         // Write the header
@@ -392,7 +398,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 'R'.code.toByte(), 'I'.code.toByte(), 'F'.code.toByte(), 'F'.code.toByte()
             )
         )
-//        out.write(intToBytes(totalDataLen), 0, 4)
         out.write(intToBytes(chunkSize), 0, 4)
         out.write(
             byteArrayOf(
@@ -466,16 +471,50 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         updateNotification()
     }
 
-    override fun quickSaveBuffer() {
-        Timber.d("quickSaveBuffer()")
-        // Store the buffer in the static variable
-        sharedAudioDataToSave = getBuffer()
-        val grantedUri = FileSavingUtils.getCachedGrantedUri()
-        // Null of grantedUri is handled in the file saving service
-        val quickSaveIntent = Intent(
-            this, FileSavingService::class.java
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("grantedUri", grantedUri)
-        this.startService(quickSaveIntent)
+    override suspend fun quickSaveBuffer() {
+        if (_isLoading.value) {
+            Timber.w("quickSaveBuffer called while already saving. Ignoring.")
+            return
+        }
+
+        try {
+            val settings = settingsRepository.getSettingsConfig()
+            if (settings.isAiAutoClipEnabled) {
+                _isLoading.value = true
+            }
+            updateNotification() // Show "Auto-Trimming..." state
+
+            val originalBuffer = getBuffer()
+
+            val bufferToSave = if (settings.isAiAutoClipEnabled) {
+                Timber.d("Auto-clipping enabled. Processing buffer...")
+                // Run heavy processing on a background thread
+                withContext(Dispatchers.Default) {
+                    vadProcessor.processBuffer(originalBuffer, this@MyBufferService.config)
+                }
+            } else {
+                Timber.d("Auto-clipping disabled. Saving raw buffer.")
+                originalBuffer
+            }
+
+            // Pass the final buffer to the FileSavingService
+            sharedAudioDataToSave = bufferToSave
+            val grantedUri = FileSavingUtils.getCachedGrantedUri()
+            val quickSaveIntent =
+                Intent(this, FileSavingService::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .putExtra("grantedUri", grantedUri)
+            startService(quickSaveIntent)
+        } catch (e: Exception) {
+            Timber.e("Error during quick save process: $e")
+            Toast.makeText(
+                applicationContext, "ERROR: Could not trim and save file: $e", Toast.LENGTH_LONG
+            ).show()
+            _isLoading.value = false
+            resetBuffer()
+        } finally {
+            _isLoading.value = false
+            resetBuffer()
+        }
     }
 
     data class RecorderInfo(val recorder: AudioRecord, val readChunkSize: Int)
@@ -647,42 +686,45 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val recordingNotification =
-            NotificationCompat.Builder(this, CHRONIC_NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("Buffered Recent Audio")
-                .setContentText(if (_isRecording.value) "Running...\n" else "Stopped.\n")
-                .setContentText(
-                    "${
-                        if (hasOverflowed.get()) "100%" else "${
-                            ((recorderIndex.get()
-                                .toFloat() / totalRingBufferSize.get()) * 100).roundToInt()
-                        }%"
-                    } - ${recorded_duration.get()}"
-                ).setSmallIcon(R.drawable.baseline_record_voice_over_24)
-                .setProgress(  // Bar visualization
-                    totalRingBufferSize.get(), if (hasOverflowed.get()) {
-                        totalRingBufferSize.get()
-                    } else {
-                        recorderIndex.get()
-                    }, false
-                ).addAction(
-                    if (_isRecording.value) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24,
-                    if (_isRecording.value) "Pause" else "Continue", // Update action text
-                    if (_isRecording.value) stopIntent else startIntent // Update PendingIntent
-                ).addAction(
-                    if (_isRecording.value) R.drawable.baseline_save_alt_24 else 0,
-                    if (_isRecording.value) "Save and clear" else null,
-                    if (_isRecording.value) saveIntent else null
-                ).setAutoCancel(false) // Keep notification after being tapped
-                .setSmallIcon(R.drawable.baseline_record_voice_over_24) // Set the small icon
-                .setOngoing(true) // Make it a chronic notification
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setOnlyAlertOnce(true) // IMPORTANCE_DEFAULT otherwise notifies on each update
-                .setSilent(true) // Don't make sounds
-                .setContentIntent(contentIntent) // Onclick open MainScreen
-                .setCategory(NotificationCompat.CATEGORY_SERVICE).build()
+        val builder = NotificationCompat.Builder(this, CHRONIC_NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Buffered Recent Audio")
+            .setSmallIcon(R.drawable.baseline_record_voice_over_24)
+            .setAutoCancel(false) // Keep notification after being tapped
+            .setSmallIcon(R.drawable.baseline_record_voice_over_24) // Set the small icon
+            .setOngoing(true) // Make it a chronic notification
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOnlyAlertOnce(true) // IMPORTANCE_DEFAULT otherwise notifies on each update
+            .setSilent(true) // Don't make sounds
+            .setContentIntent(contentIntent) // Onclick open MainScreen
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
 
-        return recordingNotification
+        if (_isLoading.value) {
+            builder.setContentText("Processing and saving...")
+                .setProgress(0, 0, true) // Indeterminate progress bar
+        } else {
+            builder.setContentText(
+                "${
+                    if (hasOverflowed.get()) "100%" else "${
+                        ((recorderIndex.get()
+                            .toFloat() / totalRingBufferSize.get()) * 100).roundToInt()
+                    }%"
+                } - ${recorded_duration.get()}"
+            ).setProgress(
+                totalRingBufferSize.get(),
+                if (hasOverflowed.get()) totalRingBufferSize.get() else recorderIndex.get(),
+                false
+            ).addAction(
+                if (_isRecording.value) R.drawable.baseline_mic_24 else R.drawable.baseline_mic_off_24,
+                if (_isRecording.value) "Pause" else "Continue",
+                if (_isRecording.value) stopIntent else startIntent
+            ).addAction(
+                R.drawable.baseline_save_alt_24,
+                "Save and Clear",
+                if (_isRecording.value) saveIntent else null // Action is available only when recording
+            )
+        }
+
+        return builder.build()
     }
 
     private fun updateNotification() {

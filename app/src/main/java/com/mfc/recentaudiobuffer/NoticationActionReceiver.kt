@@ -6,6 +6,9 @@ import android.content.Intent
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 class NotificationActionReceiver : BroadcastReceiver() {
@@ -47,8 +50,14 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     // Permission exists, proceed with saving as before
                     Timber.d("Valid URI permission found. Proceeding with save.")
                     if (myBufferService != null) {
-                        myBufferService.quickSaveBuffer()
-                        myBufferService.resetBuffer()
+                        val pendingResult = goAsync()
+                        CoroutineScope(Dispatchers.IO).launch {
+                            try {
+                                myBufferService.quickSaveBuffer()
+                            } finally {
+                                pendingResult.finish()
+                            }
+                        }
                     } else {
                         startService(context, MyBufferService.ACTION_SAVE_RECORDING_SERVICE)
                     }

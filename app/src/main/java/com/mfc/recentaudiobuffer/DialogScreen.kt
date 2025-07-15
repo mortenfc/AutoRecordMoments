@@ -36,7 +36,6 @@ import androidx.compose.ui.unit.sp
 fun FileSaveDialog(
     suggestedName: String, onDismiss: () -> Unit, onSave: (String) -> Unit
 ) {
-    val context = LocalContext.current
     var filename by remember { mutableStateOf(suggestedName) }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {

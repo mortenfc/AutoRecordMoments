@@ -33,6 +33,8 @@ import com.mfc.recentaudiobuffer.VADProcessor.Companion.readWavHeader
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 @AndroidEntryPoint
@@ -56,7 +58,7 @@ class MainActivity : AppCompatActivity() {
 
     private var isRecording = mutableStateOf(false)
 
-    private var isTrimming = mutableStateOf(false)
+    private var isLoading = mutableStateOf(false)
 
     private var isPickAndPlayFileRunning = false
     private var wasStartRecordingButtonPress = false
@@ -210,7 +212,7 @@ class MainActivity : AppCompatActivity() {
                     pickDirectory()
                 },
                 mediaPlayerManager = mediaPlayerManager!!,
-                isTrimming = isTrimming,
+                isLoading = isLoading,
                 isRecordingFromService = isRecording
             )
         }
@@ -362,29 +364,29 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        isLoading.value = true // Show loading indicator
+
         lifecycleScope.launch {
-            // 1. Stop recording (pauses the session)
-            myBufferService?.stopRecording()
+            // 1. Get settings FIRST, before changing any state
+            val settings = settingsRepository.getSettingsConfig()
 
             // 2. Get the full audio buffer
             val originalBuffer = myBufferService!!.getBuffer()
 
-            // 3. Get the latest settings
-            val settings = settingsRepository.getSettingsConfig()
-
-            // 4. Process the buffer ONLY if the feature is enabled
+            // 3. Trim the buffer in a separate thread, if enabled
             val bufferToSave = if (settings.isAiAutoClipEnabled) {
                 Timber.d("Auto-clipping enabled. Processing buffer...")
-                isTrimming.value = true
-                val processedBuffer =
+                // Offload the heavy work to a background thread for smooth UI
+                val processedBuffer = withContext(Dispatchers.Default) {
                     vadProcessor.processBuffer(originalBuffer, settings.toAudioConfig())
-                isTrimming.value = false
+                }
+
                 processedBuffer
             } else {
                 originalBuffer
             }
 
-            // 5. Proceed to the save dialog with the correct buffer
+            // 4. Proceed to save
             val prevGrantedUri = FileSavingUtils.getCachedGrantedUri()
             if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, prevGrantedUri)) {
                 FileSavingUtils.promptSaveFileName(prevGrantedUri!!, bufferToSave)
@@ -569,8 +571,8 @@ class MainActivity : AppCompatActivity() {
         trimFileLauncher.launch("audio/wav")
     }
 
-    private suspend fun trimAndSaveFile(fileUri: Uri) {
-        isTrimming.value = true
+    private fun trimAndSaveFile(fileUri: Uri) {
+        isLoading.value = true
         Timber.d("Trimming file: $fileUri")
 
         try {
@@ -629,7 +631,7 @@ class MainActivity : AppCompatActivity() {
                 ).show()
             }
         } finally {
-            isTrimming.value = false
+            isLoading.value = false
         }
     }
 }

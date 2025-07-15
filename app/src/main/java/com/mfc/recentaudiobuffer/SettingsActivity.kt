@@ -123,7 +123,6 @@ class SettingsActivity : ComponentActivity() {
                         )
                         service.stopRecording()
                         service.quickSaveBuffer()
-                        service.resetBuffer()
                         service.startRecording()
                     } else if (configBeforeUpdate != configAfterUpdate) {
                         Timber.w(
