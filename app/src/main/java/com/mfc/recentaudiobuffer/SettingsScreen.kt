@@ -252,7 +252,7 @@ fun SettingsScreen(
                     )
                 }
                 Text(
-                    text = "When enabled, saving the buffer will automatically trim away all non-speech (including music).\n" + "WARNING: This resamples down to 16 kHz and can take some time to run for really long buffers.",
+                    text = "When enabled, saving the buffer will automatically trim away all non-speech (including music).\n" + "WARNING: This resamples down to 16 kHz and can take some time to run for long buffers.",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         textAlign = TextAlign.Justify,
                         hyphens = Hyphens.Auto,
