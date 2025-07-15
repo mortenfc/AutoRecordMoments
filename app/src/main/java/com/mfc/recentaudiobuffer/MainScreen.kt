@@ -4,6 +4,7 @@ import MediaPlayerManager
 import android.annotation.SuppressLint
 import android.view.LayoutInflater
 import android.view.View
+import android.view.Gravity
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
@@ -88,6 +89,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -574,9 +576,7 @@ fun LoadingIndicator() {
             .clickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
-                onClick = {}
-            ),
-        contentAlignment = Alignment.Center
+                onClick = {}), contentAlignment = Alignment.Center
 
     ) {
         CircularProgressIndicator(color = colorResource(id = R.color.purple_accent))
@@ -659,109 +659,75 @@ fun PlayerControlViewContainer(
     mediaPlayerManager: MediaPlayerManager,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    var currentFileName by remember { mutableStateOf("") }
     var isContainerVisible by remember { mutableStateOf(false) }
-    val currentFileNameState by rememberUpdatedState(newValue = currentFileName)
+    var currentFileName by remember { mutableStateOf("") }
 
     DisposableEffect(mediaPlayerManager) {
+        // Set up the callback to update our local state when the player is ready
         mediaPlayerManager.onPlayerReady = { fileName ->
             isContainerVisible = true
             currentFileName = fileName
         }
+
+        // This is called when the composable leaves the screen
         onDispose {
-            mediaPlayerManager.onPlayerReady = {}
+            mediaPlayerManager.closeMediaPlayer()
         }
     }
 
-    if (isContainerVisible) {
-        AndroidView(
-            factory = {
-                val constraintLayout = ConstraintLayout(context).apply {
-                    id = View.generateViewId()
-                    isClickable = true
-                    // Set layout params to fill width but wrap height
-                    layoutParams = FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
-                    )
-                }
+    AnimatedVisibility(
+        visible = isContainerVisible,
+        modifier = modifier,
+        enter = fadeIn(animationSpec = tween(durationMillis = 200)),
+        exit = fadeOut(animationSpec = tween(durationMillis = 200))
+    ) {
+        AndroidView(factory = { context ->
+            // This factory logic is correct
+            val playerView = PlayerControlView(context).apply {
+                id = View.generateViewId()
+                player = mediaPlayerManager.player
+                showTimeoutMs = 0 // Keep controls visible
+            }
 
-                val layoutInflater = LayoutInflater.from(context)
-                val closeButtonContainer = layoutInflater.inflate(
-                    R.layout.exo_close_button, constraintLayout, false
-                ) as FrameLayout
-                closeButtonContainer.id = View.generateViewId()
-                closeButtonContainer.findViewById<ImageButton>(R.id.exo_close).setOnClickListener {
-                    mediaPlayerManager.player?.stop()
-                    mediaPlayerManager.playerControlView?.hide()
-                    mediaPlayerManager.closeMediaPlayer()
-                    isContainerVisible = false
-                }
+            // Inflate and set up your custom close button
+            val layoutInflater = LayoutInflater.from(context)
+            val closeButtonContainer = layoutInflater.inflate(R.layout.exo_close_button, null)
+            closeButtonContainer.findViewById<ImageButton>(R.id.exo_close).setOnClickListener {
+                mediaPlayerManager.closeMediaPlayer()
+                isContainerVisible = false // Hide the container on close
+            }
 
-                val playerControlView = PlayerControlView(it).apply {
-                    id = View.generateViewId()
-                    setShowFastForwardButton(true)
-                    setShowRewindButton(true)
-                    isAnimationEnabled = true
-                    showTimeoutMs = 0
-                    player = mediaPlayerManager.player
-                    hide()
-                }
-                mediaPlayerManager.playerControlView = playerControlView
+            // --- THIS IS THE FIX ---
+            // Create LayoutParams to position the close button in the top-right
+            val marginInPx = (16 * context.resources.displayMetrics.density).toInt()
+            val closeButtonLayoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.END // Position to top-right
+                topMargin = marginInPx / 2 // Add some margin
+                rightMargin = marginInPx / 2
+            }
+            closeButtonContainer.layoutParams = closeButtonLayoutParams
+            // --- END FIX ---
 
-                constraintLayout.addView(playerControlView)
-                constraintLayout.addView(closeButtonContainer)
+            // Add both to a FrameLayout to overlay them
+            FrameLayout(context).apply {
+                addView(playerView)
+                addView(closeButtonContainer)
+            }
+        }, update = { view ->
+            // Update the player and the file name text
+            val playerView =
+                view.findViewWithTag<PlayerControlView>(PlayerControlView::class.java.simpleName)
+            playerView?.player = mediaPlayerManager.player
 
-                val constraintSet = ConstraintSet().apply {
-                    clone(constraintLayout)
+            val fileNameTextView = view.findViewById<TextView>(R.id.exo_file_name)
+            fileNameTextView?.text = currentFileName
 
-                    connect(
-                        playerControlView.id,
-                        ConstraintSet.BOTTOM,
-                        ConstraintSet.PARENT_ID,
-                        ConstraintSet.BOTTOM
-                    )
-                    connect(
-                        playerControlView.id,
-                        ConstraintSet.START,
-                        ConstraintSet.PARENT_ID,
-                        ConstraintSet.START
-                    )
-                    connect(
-                        playerControlView.id,
-                        ConstraintSet.END,
-                        ConstraintSet.PARENT_ID,
-                        ConstraintSet.END
-                    )
-
-                    // REMOVED: This is no longer necessary as the parent wraps content
-                    // constrainPercentHeight(playerControlView.id, 0.25f)
-
-                    connect(
-                        closeButtonContainer.id,
-                        ConstraintSet.TOP,
-                        playerControlView.id,
-                        ConstraintSet.TOP
-                    )
-                    connect(
-                        closeButtonContainer.id,
-                        ConstraintSet.END,
-                        ConstraintSet.PARENT_ID,
-                        ConstraintSet.END
-                    )
-                }
-                constraintSet.applyTo(constraintLayout)
-
-                constraintLayout
-            }, update = { view ->
-                mediaPlayerManager.playerControlView?.player = mediaPlayerManager.player
-                val fileNameTextView = view.findViewById<TextView>(R.id.exo_file_name)
-                fileNameTextView?.text = currentFileNameState
-                mediaPlayerManager.playerControlView?.show()
-            },
-            // MODIFIED: Use the passed-in modifier, removing fillMaxSize
-            modifier = modifier
-        )
+            // Ensure the controls are shown when the view updates
+            playerView?.show()
+        })
     }
 }
 

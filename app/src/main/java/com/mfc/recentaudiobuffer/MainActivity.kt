@@ -256,7 +256,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        closeMediaPlayer()
         Timber.i("onStop() finished")
     }
 
@@ -502,11 +501,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         Timber.i("done getPermissionsAndThen()")
-    }
-
-
-    private fun closeMediaPlayer() {
-        mediaPlayerManager?.closeMediaPlayer()
     }
 
     private fun setUpMediaPlayer(selectedMediaToPlayUri: Uri) {
