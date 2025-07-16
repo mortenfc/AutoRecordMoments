@@ -699,7 +699,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
 
         if (_isLoading.value) {
-            builder.setContentText("Processing and saving...")
+            builder.setContentText("Trimming and saving...")
                 .setProgress(0, 0, true) // Indeterminate progress bar
         } else {
             builder.setContentText(
