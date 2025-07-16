@@ -12,7 +12,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.FloatBuffer
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,9 +22,11 @@ class VADProcessor @Inject constructor(
     companion object {
         private const val VAD_MAX_SAMPLE_RATE = 16000
         private const val VAD_MIN_SAMPLE_RATE = 8000
-        private const val DEFAULT_PADDING_MS = 1000
-        private const val SPEECH_THRESHOLD = 0.5f
         private const val WAV_HEADER_SIZE = 44
+
+        // TUNINGS:
+        private const val DEFAULT_PADDING_MS = 2000
+        private const val SPEECH_THRESHOLD = 0.4f
 
         /**
          * Reads the sample rate and bit depth from a WAV file's header.
