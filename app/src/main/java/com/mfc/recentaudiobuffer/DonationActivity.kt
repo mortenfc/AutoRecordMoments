@@ -28,7 +28,6 @@ import org.json.JSONObject
 import timber.log.Timber
 import java.io.IOException
 import javax.inject.Inject
-import com.mfc.recentaudiobuffer.BuildConfig
 
 @AndroidEntryPoint
 class DonationActivity : AppCompatActivity() {
@@ -246,9 +245,6 @@ class DonationActivity : AppCompatActivity() {
 }
 
 object DonationConstants {
-    const val LOG_TAG = "DonationActivity"
     const val SERVER_URL = "https://us-central1-recent-audio-buffer.cloudfunctions.net"
-
-    // ✅ Safe! This will be the live or test key depending on your build.
     const val STRIPE_API_KEY = BuildConfig.STRIPE_API_KEY
 }
