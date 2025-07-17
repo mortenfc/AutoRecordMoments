@@ -16,8 +16,8 @@ android {
         applicationId "com.mfc.recentaudiobuffer"
         minSdk 32
         targetSdk 34
-        versionCode 2
-        versionName "1.0.1"
+        versionCode 3
+        versionName "1.0.2"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -44,6 +44,7 @@ android {
 
     buildTypes {
         release {
+            debuggable false
             signingConfig signingConfigs.release
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -54,15 +55,13 @@ android {
         }
         dev {
             signingConfig signingConfigs.debug
-            minifyEnabled true // Enable Proguard even for dev builds
+            minifyEnabled true
+            // Enable Proguard even for dev builds
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_LIVE")}")
         }
         devVerbose {
             initWith dev // Inherit settings from 'dev' build type
-            minifyEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_LIVE")}")
         }
     }
 
