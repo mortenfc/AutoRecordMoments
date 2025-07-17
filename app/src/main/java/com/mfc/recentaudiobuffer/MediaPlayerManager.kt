@@ -1,3 +1,5 @@
+package com.mfc.recentaudiobuffer
+
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -8,12 +10,12 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerControlView
 import timber.log.Timber
-import java.io.File
 
 @OptIn(UnstableApi::class)
 class MediaPlayerManager(
     private val context: Context,
-    var onPlayerReady: (String) -> Unit
+    // ✅ FIX 1: The callback now expects both a Uri and a String.
+    var onPlayerReady: (uri: Uri, fileName: String) -> Unit
 ) {
     var player: ExoPlayer? = null
     var playerControlView: PlayerControlView? = null
@@ -29,7 +31,10 @@ class MediaPlayerManager(
 
                 Player.STATE_READY -> {
                     Timber.d("Player STATE_READY")
-                    onPlayerReady(getFileNameFromSelectedUri())
+                    // ✅ FIX 2: Call the updated callback with both pieces of data.
+                    selectedUri?.let { uri ->
+                        onPlayerReady(uri, getFileNameFromSelectedUri())
+                    }
                 }
 
                 Player.STATE_BUFFERING -> {
@@ -76,7 +81,6 @@ class MediaPlayerManager(
         if (selectedUri == null) return "Unknown File"
         var fileName = "Unknown File"
 
-        // Use a ContentResolver query to get the file's display name
         context.contentResolver.query(selectedUri!!, null, null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)

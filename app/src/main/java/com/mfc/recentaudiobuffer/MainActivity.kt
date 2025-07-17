@@ -1,6 +1,5 @@
 package com.mfc.recentaudiobuffer
 
-import MediaPlayerManager
 import android.Manifest
 import android.app.AlertDialog
 import android.app.NotificationChannel
@@ -13,7 +12,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
-
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.ActivityResultLauncher
@@ -23,10 +21,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
@@ -196,9 +191,11 @@ class MainActivity : AppCompatActivity() {
 
         createNotificationChannels()
 
-        mediaPlayerManager = MediaPlayerManager(context = this, onPlayerReady = {
-            Timber.i("Player is ready")
-        })
+        mediaPlayerManager = MediaPlayerManager(context = this) { uri, fileName ->
+            // The UI state is handled inside PlayerControlViewContainer.
+            // We just need to satisfy the constructor here. Logging is great for debugging.
+            Timber.i("Player is ready for file: $fileName")
+        }
 
         setContent {
             MainScreen(

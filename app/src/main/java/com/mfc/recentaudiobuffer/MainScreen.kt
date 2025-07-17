@@ -1,12 +1,8 @@
 package com.mfc.recentaudiobuffer
 
-import MediaPlayerManager
 import android.annotation.SuppressLint
 import android.net.Uri
 import android.view.LayoutInflater
-import android.view.View
-import android.view.Gravity
-import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.compose.animation.AnimatedVisibility
@@ -70,6 +66,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -83,6 +80,7 @@ import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
 import kotlinx.coroutines.Dispatchers
@@ -272,8 +270,7 @@ fun MainScreen(
     // --- Dialogs ---
     if (showRecentFilesDialog.value) {
         RecentFilesDialog(
-            onDismiss = { showRecentFilesDialog.value = false },
-            onFileSelected = onFileSelected
+            onDismiss = { showRecentFilesDialog.value = false }, onFileSelected = onFileSelected
         )
     }
 
@@ -665,75 +662,97 @@ fun PlayerControlViewContainer(
     mediaPlayerManager: MediaPlayerManager,
     modifier: Modifier = Modifier,
 ) {
-    var isContainerVisible by remember { mutableStateOf(false) }
+    var isVisible by remember { mutableStateOf(false) }
     var currentFileName by remember { mutableStateOf("") }
+    // This state variable is the key to forcing a reset.
+    var currentUri by remember { mutableStateOf<Uri?>(null) }
 
     DisposableEffect(mediaPlayerManager) {
-        // Set up the callback to update our local state when the player is ready
-        mediaPlayerManager.onPlayerReady = { fileName ->
-            isContainerVisible = true
+        mediaPlayerManager.onPlayerReady = { uri, fileName ->
+            isVisible = true
+            currentUri = uri
             currentFileName = fileName
         }
-
-        // This is called when the composable leaves the screen
         onDispose {
             mediaPlayerManager.closeMediaPlayer()
         }
     }
 
     AnimatedVisibility(
-        visible = isContainerVisible,
+        visible = isVisible,
         modifier = modifier,
         enter = fadeIn(animationSpec = tween(durationMillis = 200)),
         exit = fadeOut(animationSpec = tween(durationMillis = 200))
     ) {
-        AndroidView(factory = { context ->
-            // This factory logic is correct
-            val playerView = PlayerControlView(context).apply {
-                id = View.generateViewId()
-                player = mediaPlayerManager.player
-                showTimeoutMs = 0 // Keep controls visible
+        // The key will force this entire Box to be recreated when the URI changes.
+        key(currentUri) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // This single background provides a consistent look and opacity.
+                    .background(Color.Black.copy(alpha = 0.2f))
+            ) {
+                // ConstraintLayout allows us to overlay views with precision.
+                ConstraintLayout(modifier = Modifier.fillMaxWidth()) {
+                    val (playerViewRef, fileNameRef) = createRefs()
+
+                    // The PlayerControlView fills the entire space.
+                    AndroidView(modifier = Modifier.constrainAs(playerViewRef) {
+                        top.linkTo(parent.top)
+                        start.linkTo(parent.start)
+                        end.linkTo(parent.end)
+                        bottom.linkTo(parent.bottom)
+                    }, factory = { context ->
+                        PlayerControlView(context).apply {
+                            player = mediaPlayerManager.player
+                            showTimeoutMs = 0 // Keep controls always visible
+                        }
+                    }, update = { view ->
+                        // Make the view's own background transparent.
+                        view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        view.player = mediaPlayerManager.player
+                        view.show()
+                    })
+
+                    // The filename is constrained to the bottom of the layout,
+                    // appearing just above the progress bar.
+                    Text(
+                        text = currentFileName,
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.constrainAs(fileNameRef) {
+                            start.linkTo(parent.start, margin = 16.dp)
+                            end.linkTo(parent.end, margin = 16.dp)
+                            // This pins the text to the bottom of the container,
+                            // just above the progress bar's default location.
+                            bottom.linkTo(parent.bottom, margin = 16.dp)
+                        })
+                }
+
+                // The close button remains aligned to the top-right corner of the Box.
+                IconButton(
+                    onClick = {
+                        mediaPlayerManager.closeMediaPlayer()
+                        isVisible = false
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp) // Visual padding from the corner
+                        .size(40.dp)   // Sets a consistent touch target
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.exo_icon_close),
+                        contentDescription = stringResource(R.string.close_media_player),
+                        tint = Color.White
+                    )
+                }
             }
-
-            // Inflate and set up your custom close button
-            val layoutInflater = LayoutInflater.from(context)
-            val closeButtonContainer = layoutInflater.inflate(R.layout.exo_close_button, null)
-            closeButtonContainer.findViewById<ImageButton>(R.id.exo_close).setOnClickListener {
-                mediaPlayerManager.closeMediaPlayer()
-                isContainerVisible = false // Hide the container on close
-            }
-
-            // Create LayoutParams to position the close button in the top-right
-            val marginInPx = (16 * context.resources.displayMetrics.density).toInt()
-            val closeButtonLayoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.TOP or Gravity.END // Position to top-right
-                topMargin = marginInPx / 2 // Add some margin
-                rightMargin = marginInPx / 2
-            }
-            closeButtonContainer.layoutParams = closeButtonLayoutParams
-
-            // Add both to a FrameLayout to overlay them
-            FrameLayout(context).apply {
-                addView(playerView)
-                addView(closeButtonContainer)
-            }
-        }, update = { view ->
-            // Update the player and the file name text
-            val playerView =
-                view.findViewWithTag<PlayerControlView>(PlayerControlView::class.java.simpleName)
-            playerView?.player = mediaPlayerManager.player
-
-            val fileNameTextView = view.findViewById<TextView>(R.id.exo_file_name)
-            fileNameTextView?.text = currentFileName
-
-            // Ensure the controls are shown when the view updates
-            playerView?.show()
-        })
+        }
     }
 }
+
 
 // --- Previews ---
 @SuppressLint("UnrememberedMutableState")
@@ -755,7 +774,7 @@ fun MainScreenPreview() {
             onSignInClick = {},
             onDirectoryAlertDismiss = {},
             onTrimFileClick = {},
-            mediaPlayerManager = MediaPlayerManager(LocalContext.current) {},
+            mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
             isRecordingFromService = mutableStateOf(true),
             isLoading = mutableStateOf(true),
             isPreview = true
