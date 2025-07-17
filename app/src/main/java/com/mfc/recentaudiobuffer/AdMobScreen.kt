@@ -44,7 +44,6 @@ fun AdMobBanner(
             AdView(it).apply {
                 Timber.d("AdView created")
                 setAdSize(adSize)
-                // Replace with your actual ad unit ID
                 adUnitId = "ca-app-pub-5330230981165217/6883566605"
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT

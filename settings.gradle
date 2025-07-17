@@ -17,5 +17,5 @@ dependencyResolutionManagement {
         }
     }
 }
-rootProject.name = "Recent Audio Buffer"
+rootProject.name = "Auto Record Moments"
 include ':app'

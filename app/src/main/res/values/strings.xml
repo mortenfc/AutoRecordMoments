@@ -1,6 +1,6 @@
 <resources>
     <string name="main">Home</string>
-    <string name="app_name">Recent Audio Buffer</string>
+    <string name="app_name">Auto Record Moments</string>
     <string name="default_web_client_id">341850391115-esant6sul9ghjb3k96gqfgr7rg8sr0ca.apps.googleusercontent.com</string>
 
     <string name="start_buffering_in_the_background">Start\nrecording</string>

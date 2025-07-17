@@ -84,7 +84,7 @@ class DonationActivity : AppCompatActivity() {
             activity = this, config = GooglePayLauncher.Config(
                 environment = googlePayEnvironment,
                 merchantCountryCode = "SE",
-                merchantName = "Recent Audio Buffer"
+                merchantName = "Auto Record Moments"
             ), readyCallback = ::onGooglePayReady, resultCallback = ::onGooglePayResult
         )
         stripePaymentSheet = PaymentSheet(this, ::onPaymentSheetResult)
@@ -92,7 +92,7 @@ class DonationActivity : AppCompatActivity() {
 
     private fun presentPaymentSheet(clientSecret: String) {
         val configuration = PaymentSheet.Configuration(
-            merchantDisplayName = "Recent Audio Buffer", allowsDelayedPaymentMethods = true
+            merchantDisplayName = "Auto Record Moments", allowsDelayedPaymentMethods = true
         )
         stripePaymentSheet.presentWithPaymentIntent(clientSecret, configuration)
     }
