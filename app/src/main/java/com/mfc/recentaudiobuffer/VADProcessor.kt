@@ -25,7 +25,7 @@ class VADProcessor @Inject constructor(
         private const val WAV_HEADER_SIZE = 44
 
         // TUNINGS:
-        private const val DEFAULT_PADDING_MS = 2000
+        private const val DEFAULT_PADDING_MS = 1300
         private const val SPEECH_THRESHOLD = 0.4f
 
         /**

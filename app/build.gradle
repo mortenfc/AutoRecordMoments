@@ -16,8 +16,8 @@ android {
         applicationId "com.mfc.recentaudiobuffer"
         minSdk 32
         targetSdk 34
-        versionCode 3
-        versionName "1.0.2"
+        versionCode 6
+        versionName "1.0.6"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -51,17 +51,10 @@ android {
             buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_LIVE")}")
         }
         debug {
-            buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_TEST")}")
-        }
-        dev {
+            applicationIdSuffix ".debug"
+            debuggable true
             signingConfig signingConfigs.debug
-            minifyEnabled true
-            // Enable Proguard even for dev builds
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_LIVE")}")
-        }
-        devVerbose {
-            initWith dev // Inherit settings from 'dev' build type
+            buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_TEST")}")
         }
     }
 
@@ -100,7 +93,7 @@ dependencies {
     implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
     implementation "io.reactivex.rxjava2:rxjava:2.2.3"
     implementation 'io.reactivex.rxjava2:rxkotlin:2.3.0'
-    implementation 'com.jakewharton.timber:timber:4.7.0'
+    implementation 'com.jakewharton.timber:timber:5.0.1'
     implementation 'androidx.test.ext:junit-ktx:1.2.1'
 
     // Test

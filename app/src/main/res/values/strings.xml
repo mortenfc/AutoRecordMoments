@@ -49,8 +49,7 @@
     <string name="enter_filename">Select Filename</string>
     <string name="cancel">Cancel</string>
     <string name="ok">OK</string>
-    <string name="select_directory">This app requires a default saving directory for quick saves through the notification.
-        You will be prompted to pick one. </string>
+    <string name="select_directory">You will be prompted to select a default saving directory for quick saves through the persistent notification, that\'s created when you start recording to buffer.</string>
     <string name="go_back_to_main">Return</string>
 
 </resources>
