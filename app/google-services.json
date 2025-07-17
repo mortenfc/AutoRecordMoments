@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "341850391115-o2fh7vhthbbpjt4l63ogqc9jbp6mod9f.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mfc.recentaudiobuffer",
+            "certificate_hash": "ea02b4f541febc1ca5ea567e576a26ac45f7359f"
+          }
+        },
+        {
           "client_id": "341850391115-esant6sul9ghjb3k96gqfgr7rg8sr0ca.apps.googleusercontent.com",
           "client_type": 3
         }
