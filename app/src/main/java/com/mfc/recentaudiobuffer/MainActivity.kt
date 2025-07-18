@@ -63,6 +63,8 @@ class MainActivity : AppCompatActivity() {
 
     private var showRecentFilesDialog = mutableStateOf(false)
 
+    private var showTrimFileDialog = mutableStateOf(false)
+
     private val basePermissions = mutableListOf(
         Manifest.permission.RECORD_AUDIO,
         Manifest.permission.FOREGROUND_SERVICE,
@@ -214,6 +216,13 @@ class MainActivity : AppCompatActivity() {
                 onDonateClick = { onClickDonate() },
                 onSettingsClick = { onClickSettings() },
                 onTrimFileClick = { onClickTrimFile() },
+                showTrimFileDialog = showTrimFileDialog,
+                onTrimFileSelected = { uri ->
+                    showTrimFileDialog.value = false
+                    lifecycleScope.launch {
+                        trimAndSaveFile(uri)
+                    }
+                },
                 onDirectoryAlertDismiss = {
                     FileSavingUtils.showDirectoryPermissionDialog = false
                     pickDirectory()
@@ -519,20 +528,10 @@ class MainActivity : AppCompatActivity() {
         mediaPlayerManager?.setUpMediaPlayer(selectedMediaToPlayUri)
     }
 
-    private val trimFileLauncher =
-        registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-            uri?.let { fileUri ->
-                lifecycleScope.launch {
-                    // We'll define this function next
-                    trimAndSaveFile(fileUri)
-                }
-            }
-        }
-
     // 2. Add the click handler function
     private fun onClickTrimFile() {
         // This launches the system file picker to select an audio file
-        trimFileLauncher.launch("audio/wav")
+        showTrimFileDialog.value = true
     }
 
     private fun trimAndSaveFile(fileUri: Uri) {

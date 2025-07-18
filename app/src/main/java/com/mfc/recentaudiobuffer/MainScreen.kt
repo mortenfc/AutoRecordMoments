@@ -103,6 +103,8 @@ fun MainScreen(
     onSettingsClick: () -> Unit,
     onDirectoryAlertDismiss: () -> Unit,
     onTrimFileClick: () -> Unit,
+    showTrimFileDialog: MutableState<Boolean>,
+    onTrimFileSelected: (Uri) -> Unit,
     mediaPlayerManager: MediaPlayerManager,
     isRecordingFromService: MutableState<Boolean>,
     isLoading: MutableState<Boolean>,
@@ -271,6 +273,13 @@ fun MainScreen(
     if (showRecentFilesDialog.value) {
         RecentFilesDialog(
             onDismiss = { showRecentFilesDialog.value = false }, onFileSelected = onFileSelected
+        )
+    }
+
+    if (showTrimFileDialog.value) {
+        RecentFilesDialog(
+            onDismiss = { showTrimFileDialog.value = false },
+            onFileSelected = onTrimFileSelected
         )
     }
 
@@ -773,6 +782,8 @@ fun MainScreenPreview() {
             onSignInClick = {},
             onDirectoryAlertDismiss = {},
             onTrimFileClick = {},
+            showTrimFileDialog = mutableStateOf(true),
+            onTrimFileSelected = {},
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
             isRecordingFromService = mutableStateOf(true),
             isLoading = mutableStateOf(true),
