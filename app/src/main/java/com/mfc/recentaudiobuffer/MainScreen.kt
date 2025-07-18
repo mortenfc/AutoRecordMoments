@@ -159,7 +159,9 @@ fun MainScreen(
             onSignInClick = onSignInClick,
             onSettingsClick = onSettingsClick
         )
-        AdMobBanner()
+        if (!isPreview) {
+            AdMobBanner()
+        }
 
         Scaffold { innerPadding ->
             // --- REVISED LAYOUT ---
@@ -278,8 +280,7 @@ fun MainScreen(
 
     if (showTrimFileDialog.value) {
         RecentFilesDialog(
-            onDismiss = { showTrimFileDialog.value = false },
-            onFileSelected = onTrimFileSelected
+            onDismiss = { showTrimFileDialog.value = false }, onFileSelected = onTrimFileSelected
         )
     }
 
@@ -764,7 +765,7 @@ fun PlayerControlViewContainer(
 
 // --- Previews ---
 @SuppressLint("UnrememberedMutableState")
-@Preview(showBackground = true, device = "id:pixel_6")
+@Preview(showBackground = true)
 @Composable
 fun MainScreenPreview() {
     MaterialTheme {
@@ -775,18 +776,18 @@ fun MainScreenPreview() {
             onResetBufferClick = {},
             onSaveBufferClick = {},
             onPickAndPlayFileClick = {},
-            showRecentFilesDialog = mutableStateOf(true),
+            showRecentFilesDialog = mutableStateOf(false),
             onFileSelected = {},
             onDonateClick = {},
             onSettingsClick = {},
             onSignInClick = {},
             onDirectoryAlertDismiss = {},
             onTrimFileClick = {},
-            showTrimFileDialog = mutableStateOf(true),
+            showTrimFileDialog = mutableStateOf(false),
             onTrimFileSelected = {},
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
             isRecordingFromService = mutableStateOf(true),
-            isLoading = mutableStateOf(true),
+            isLoading = mutableStateOf(false),
             isPreview = true
         )
     }
