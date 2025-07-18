@@ -12,6 +12,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.stripe.android.PaymentConfiguration
 import com.stripe.android.googlepaylauncher.GooglePayEnvironment
@@ -52,6 +53,8 @@ class DonationActivity : AppCompatActivity() {
         setContent {
             // Collect the error state from the AuthenticationManager
             val authError by authenticationManager.authError.collectAsState()
+            // Track if a sign-in attempt has been made and failed
+            var signInAttempted = remember { mutableStateOf(false) }
 
             MaterialTheme {
                 Surface(
@@ -64,11 +67,14 @@ class DonationActivity : AppCompatActivity() {
                         onCardPayClick = { amount -> sendPaymentRequest(amount) },
                         onBackClick = { this.finish() },
                         signInButtonViewState = signInButtonViewState,
-                        isGooglePayReady = isGooglePayReady
+                        isGooglePayReady = isGooglePayReady,
+                        signInAttempted = signInAttempted
                     )
 
                     // When authError is not null, display the AlertDialog
                     authError?.let {
+                        // A sign-in attempt has now officially failed
+                        signInAttempted.value = true
                         SignInErrorDialog(
                             errorMessage = it,
                             onDismiss = { authenticationManager.clearAuthError() })

@@ -60,7 +60,8 @@ fun DonationScreen(
     onCardPayClick: (Int) -> Unit,
     onBackClick: () -> Unit,
     signInButtonViewState: MutableState<SignInButtonViewState>,
-    isGooglePayReady: MutableState<Boolean>
+    isGooglePayReady: MutableState<Boolean>,
+    signInAttempted: MutableState<Boolean>
 ) {
     var donationAmount by remember { mutableStateOf("") }
     var isDonationAmountError by rememberSaveable { mutableStateOf(false) }
@@ -93,7 +94,12 @@ fun DonationScreen(
                 DonationHeader()
                 Spacer(modifier = Modifier.height(16.dp))
 
-                if (isGooglePayReady.value && isLoggedIn) {
+                val showGooglePay = isGooglePayReady.value && isLoggedIn
+                // Show card payment if Google Pay isn't ready, OR if sign-in has failed.
+                val showCardPay = !isGooglePayReady.value || signInAttempted.value
+
+                if (showGooglePay) {
+                    // User is logged in and GPay is ready. Show GPay button.
                     when (signInButtonViewState.value) {
                         SignInButtonViewState.Hidden -> {}
                         SignInButtonViewState.Ready -> {
@@ -118,13 +124,13 @@ fun DonationScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
 
                                 GoogleSignInButton(
-                                    onClick = onSignInClick,
-                                    signInButtonText
+                                    onClick = onSignInClick, signInButtonText
                                 )
                             }
                         }
                     }
-                } else if (!isGooglePayReady.value) {
+                } else if (showCardPay) {
+                    // Fallback to card payment.
                     DonationAmountTextField(
                         donationAmount = donationAmount, onValueChange = {
                             donationAmount = it
@@ -141,12 +147,12 @@ fun DonationScreen(
                             isDonationAmountError = true
                         }
                     })
-                } else { // Google pay is ready but not logged in
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                } else {
+                    // Initial state: GPay is ready, user is not logged in, and hasn't tried yet.
+                    // Prompt them to sign in.
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "Google Pay is ready, sign in to pay with Google Pay",
+                            text = "Google Pay is ready, sign in to use it",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.fillMaxWidth(),
@@ -155,8 +161,7 @@ fun DonationScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         GoogleSignInButton(
-                            onClick = onSignInClick,
-                            signInButtonText
+                            onClick = onSignInClick, signInButtonText
                         )
                     }
                 }
@@ -272,44 +277,43 @@ fun PaymentButton(
     text: String,
     isGooglePay: Boolean
 ) {
-    Button(onClick = onClick, modifier = Modifier // Common button styling
-        .width(if (isGooglePay) 150.dp else 200.dp)
-        .height(48.dp)
-        .drawBehind {
-            val shadowColor = Color.White
-            val transparentColor = Color.Transparent
-            val shadowRadius = 4.dp.toPx()
-            val offset = 2.dp.toPx() // Offset downwards
+    Button(
+        onClick = onClick, modifier = Modifier // Common button styling
+            .width(if (isGooglePay) 150.dp else 200.dp)
+            .height(48.dp)
+            .drawBehind {
+                val shadowColor = Color.White
+                val transparentColor = Color.Transparent
+                val shadowRadius = 4.dp.toPx()
+                val offset = 2.dp.toPx() // Offset downwards
 
-            val paint = Paint().apply {
-                this.color = transparentColor
-                this.isAntiAlias = true
-                this
-                    .asFrameworkPaint()
-                    .setShadowLayer(
+                val paint = Paint().apply {
+                    this.color = transparentColor
+                    this.isAntiAlias = true
+                    this.asFrameworkPaint().setShadowLayer(
                         shadowRadius, // Half of height
                         0f, // No horizontal offset
                         offset, // Vertical offset
                         shadowColor.toArgb()
                     )
+                }
+                drawIntoCanvas { canvas ->
+                    canvas.drawRoundRect(
+                        left = 0f,
+                        top = offset, // Anchor is 0
+                        right = size.width,
+                        bottom = size.height, // Draw to the bottom of the button
+                        radiusX = size.height / 2, // Half the height for rounded corners
+                        radiusY = size.height / 2, // Half the height for rounded corners
+                        paint = paint
+                    )
+                }
             }
-            drawIntoCanvas { canvas ->
-                canvas.drawRoundRect(
-                    left = 0f,
-                    top = offset, // Anchor is 0
-                    right = size.width,
-                    bottom = size.height, // Draw to the bottom of the button
-                    radiusX = size.height / 2, // Half the height for rounded corners
-                    radiusY = size.height / 2, // Half the height for rounded corners
-                    paint = paint
-                )
-            }
-        }
-        .clip(CircleShape) // Fully rounded corners
-        .background(Color.Black), colors = ButtonDefaults.buttonColors(
-        containerColor = Color.Transparent, // Make container transparent
-        contentColor = Color.White // Text color
-    ), shape = CircleShape) {
+            .clip(CircleShape) // Fully rounded corners
+            .background(Color.Black), colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Transparent, // Make container transparent
+            contentColor = Color.White // Text color
+        ), shape = CircleShape) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp)
@@ -334,7 +338,15 @@ fun DonationScreenGooglePayPreview() {
     val signInTextState = remember { mutableStateOf("Sign Out") }
     val signInButtonViewState = remember { mutableStateOf(SignInButtonViewState.Ready) }
     val isGooglePayReady = remember { mutableStateOf(true) }
-    DonationScreen(signInTextState, {}, {}, {}, {}, signInButtonViewState, isGooglePayReady)
+    DonationScreen(
+        signInTextState,
+        {},
+        {},
+        {},
+        {},
+        signInButtonViewState,
+        isGooglePayReady,
+        remember { mutableStateOf(true) })
 }
 
 @Preview(showBackground = true)
@@ -343,7 +355,32 @@ fun DonationScreenGooglePaySignInPreview() {
     val signInTextState = remember { mutableStateOf("Sign In") }
     val signInButtonViewState = remember { mutableStateOf(SignInButtonViewState.Ready) }
     val isGooglePayReady = remember { mutableStateOf(true) }
-    DonationScreen(signInTextState, {}, {}, {}, {}, signInButtonViewState, isGooglePayReady)
+    DonationScreen(
+        signInTextState,
+        {},
+        {},
+        {},
+        {},
+        signInButtonViewState,
+        isGooglePayReady,
+        remember { mutableStateOf(false) })
+}
+
+@Preview(showBackground = true)
+@Composable
+fun DonationScreenGooglePaySignInFailedPreview() {
+    val signInTextState = remember { mutableStateOf("Sign In") }
+    val signInButtonViewState = remember { mutableStateOf(SignInButtonViewState.Ready) }
+    val isGooglePayReady = remember { mutableStateOf(true) }
+    DonationScreen(
+        signInTextState,
+        {},
+        {},
+        {},
+        {},
+        signInButtonViewState,
+        isGooglePayReady,
+        remember { mutableStateOf(true) })
 }
 
 @Preview(showBackground = true)
@@ -352,5 +389,13 @@ fun DonationScreenCardPaymentPreview() {
     val signInTextState = remember { mutableStateOf("Sign In") }
     val signInButtonViewState = remember { mutableStateOf(SignInButtonViewState.Ready) }
     val isGooglePayReady = remember { mutableStateOf(false) }
-    DonationScreen(signInTextState, {}, {}, {}, {}, signInButtonViewState, isGooglePayReady)
+    DonationScreen(
+        signInTextState,
+        {},
+        {},
+        {},
+        {},
+        signInButtonViewState,
+        isGooglePayReady,
+        remember { mutableStateOf(true) })
 }
