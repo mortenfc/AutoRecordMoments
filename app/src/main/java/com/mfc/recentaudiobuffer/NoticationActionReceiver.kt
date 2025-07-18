@@ -45,7 +45,6 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 Timber.d("Received ACTION_SAVE_RECORDING")
                 val grantedUri = FileSavingUtils.getCachedGrantedUri()
 
-                // ✅ Check if we have a valid, accessible URI permission
                 if (FileSavingUtils.isUriValidAndAccessible(context, grantedUri)) {
                     // Permission exists, proceed with saving as before
                     Timber.d("Valid URI permission found. Proceeding with save.")

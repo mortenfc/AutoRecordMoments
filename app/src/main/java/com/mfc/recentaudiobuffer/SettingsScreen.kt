@@ -568,7 +568,6 @@ fun ComprehensiveHelpDialog(
         val megabytes = totalBytes / (1024.0 * 1024.0)
         val ram = String.format("~%.0f", megabytes)
 
-        // ✅ Return a Pair containing the RAM string and the full estimate object
         Pair(ram, estimateAudioImpact(sampleRate, bitDepth, bufferTimeLength))
     }
 

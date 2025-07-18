@@ -377,14 +377,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             return
         }
 
-        // ✅ This value is the number of BYTES recorded.
         val totalRecordedBytes: Int = if (hasOverflowed.get()) {
             totalRingBufferSize.get()
         } else {
             recorderIndex.get()
         }
 
-        // ✅ This is the correct formula: total bytes / (bytes per second)
         val bytesPerSecond = sampleRate * (bitsPerSample / 8) * channels
         val durationInSeconds = totalRecordedBytes.toDouble() / bytesPerSecond
 

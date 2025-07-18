@@ -225,7 +225,6 @@ class SettingsRepository @Inject constructor(
         return AudioConfig(sampleRate, bufferTimeLength, bitDepth)
     }
 
-    // ✅ PRIVATE HELPER for Firestore
     private fun DocumentSnapshot.toSettingsConfig(): SettingsConfig {
         val audioConfig = this.toAudioConfig() // Reuse the other helper!
         val areAdsEnabled = getBoolean("areAdsEnabled") ?: true

@@ -18,6 +18,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -25,6 +26,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
@@ -36,6 +39,16 @@ class AuthenticationManager @Inject constructor(
     private val settingsRepository: SettingsRepository
 ) {
     val signInButtonText: MutableState<String> = mutableStateOf("Sign In")
+
+    // Expose an error state that the UI can observe.
+    private val _authError = MutableStateFlow<String?>(null)
+    val authError = _authError.asStateFlow()
+
+    // Public method for the UI to call to clear the error (e.g., when a dialog is dismissed).
+    fun clearAuthError() {
+        _authError.value = null
+    }
+
     private lateinit var googleSignInClient: GoogleSignInClient
     private lateinit var googleSignInLauncher: ActivityResultLauncher<Intent>
     private var oneTapLauncher: ActivityResultLauncher<IntentSenderRequest>? = null
@@ -73,8 +86,8 @@ class AuthenticationManager @Inject constructor(
                     }
                 } catch (e: ApiException) {
                     Timber.e("Error during One Tap sign-in $e")
-                    // Fallback to traditional sign-in
-                    signIn()
+                    _authError.value = "Sign-in failed. Please try again." // Update error state
+                    signIn() // Fallback to traditional sign-in
                 }
             } else {
                 Timber.e("One Tap sign-in failed with result code: ${result.resultCode}")
@@ -131,8 +144,10 @@ class AuthenticationManager @Inject constructor(
             }
         }.addOnFailureListener { e ->
             Timber.e("beginSignIn failed $e")
-            // Fallback to traditional sign-in
-            signIn()
+            // Provide a more user-friendly error
+            _authError.value =
+                "Google Sign-In is currently unavailable. Please check your network or Google Play Services."
+            signIn() // Fallback to traditional sign-in
         }
     }
 
@@ -155,6 +170,8 @@ class AuthenticationManager @Inject constructor(
                 val user = auth.currentUser
                 onSuccessSignInOut(user)
             } else {
+                // Provide a detailed error from Firebase
+                _authError.value = "Authentication failed: ${task.exception?.message}"
                 Timber.e("signInWithCredential:failure ${task.exception}")
             }
         }
@@ -175,16 +192,41 @@ class AuthenticationManager @Inject constructor(
     }
 
     private fun onSignInResult(result: ActivityResult) {
-        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-        try {
-            val account = task.getResult(ApiException::class.java)
-            firebaseAuthWithGoogle(account)
-        } catch (e: ApiException) {
-            logSignInError(e)
-        } catch (e: Exception) {
-            logSignInError(result)
+    val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+    try {
+        val account = task.getResult(ApiException::class.java)
+        firebaseAuthWithGoogle(account)
+    } catch (e: ApiException) {
+        val errorMessage = when (e.statusCode) {
+            // Most common codes first
+            CommonStatusCodes.NETWORK_ERROR -> "A network error occurred. Please check your connection and try again."
+            CommonStatusCodes.SIGN_IN_REQUIRED-> "Sign-in failed. Please try again."
+            CommonStatusCodes.DEVELOPER_ERROR -> "App is misconfigured. Please contact support (Developer Error)."
+
+            // Other useful codes from your list
+            CommonStatusCodes.INTERNAL_ERROR -> "An internal error occurred with Google's services. Please try again later."
+            CommonStatusCodes.INVALID_ACCOUNT -> "The selected Google account is invalid. Please try another one."
+            CommonStatusCodes.RESOLUTION_REQUIRED -> "An additional action is required. Please re-attempt the sign-in."
+
+            // Grouping timeout-related errors
+            CommonStatusCodes.TIMEOUT,
+            CommonStatusCodes.RECONNECTION_TIMED_OUT,
+            CommonStatusCodes.RECONNECTION_TIMED_OUT_DURING_UPDATE -> "The connection timed out. Please check your network and try again."
+
+            // General catch-alls
+            CommonStatusCodes.CANCELED -> "The sign-in was canceled."
+            CommonStatusCodes.ERROR -> "An unknown error occurred. (Code: ${e.statusCode})"
+
+            else -> "An unexpected error occurred. (Code: ${e.statusCode})"
         }
+        _authError.value = errorMessage // Update the error state
+        logSignInError(e)
+
+    } catch (e: Exception) {
+        _authError.value = "A critical error occurred: ${e.localizedMessage}"
+        logSignInError(result)
     }
+}
 
     private fun logSignInError(e: ApiException) {
         Timber.w("Google sign in failed: $e")

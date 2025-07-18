@@ -9,6 +9,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import com.stripe.android.PaymentConfiguration
@@ -48,6 +50,9 @@ class DonationActivity : AppCompatActivity() {
 
         setupStripe()
         setContent {
+            // Collect the error state from the AuthenticationManager
+            val authError by authenticationManager.authError.collectAsState()
+
             MaterialTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background
@@ -61,6 +66,13 @@ class DonationActivity : AppCompatActivity() {
                         signInButtonViewState = signInButtonViewState,
                         isGooglePayReady = isGooglePayReady
                     )
+
+                    // When authError is not null, display the AlertDialog
+                    authError?.let {
+                        SignInErrorDialog(
+                            errorMessage = it,
+                            onDismiss = { authenticationManager.clearAuthError() })
+                    }
                 }
             }
         }

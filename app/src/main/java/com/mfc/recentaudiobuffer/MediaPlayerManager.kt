@@ -14,7 +14,6 @@ import timber.log.Timber
 @OptIn(UnstableApi::class)
 class MediaPlayerManager(
     private val context: Context,
-    // ✅ FIX 1: The callback now expects both a Uri and a String.
     var onPlayerReady: (uri: Uri, fileName: String) -> Unit
 ) {
     var player: ExoPlayer? = null
@@ -31,7 +30,6 @@ class MediaPlayerManager(
 
                 Player.STATE_READY -> {
                     Timber.d("Player STATE_READY")
-                    // ✅ FIX 2: Call the updated callback with both pieces of data.
                     selectedUri?.let { uri ->
                         onPlayerReady(uri, getFileNameFromSelectedUri())
                     }

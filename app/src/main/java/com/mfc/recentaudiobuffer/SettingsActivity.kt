@@ -51,14 +51,6 @@ class SettingsActivity : ComponentActivity() {
         val isSaving by settingsViewModel.isSaving.collectAsState()
         var hasSaved by remember { mutableStateOf(false) }
 
-        // Re-fetch settings when user logs in
-        LaunchedEffect(auth.currentUser) {
-            Timber.d("LaunchedEffect auth.currentUser: ${auth.currentUser}")
-            if (auth.currentUser != null) {
-                settingsViewModel.refreshSettings()
-            }
-        }
-
         // Sync config with state of BUFFER_TIME_LENGTH_S
         LaunchedEffect(config) {
             // When the config from the ViewModel changes,

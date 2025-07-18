@@ -136,6 +136,69 @@ fun DirectoryPickerDialog(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SignInErrorDialog(
+    errorMessage: String,
+    onDismiss: () -> Unit
+) {
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    width = 2.5.dp,
+                    color = colorResource(id = R.color.purple_accent),
+                    shape = RoundedCornerShape(16.dp)
+                ),
+            shape = RoundedCornerShape(16.dp),
+            color = colorResource(id = R.color.teal_100)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Title
+                Text(
+                    text = "Sign-In Failed",
+                    color = colorResource(id = R.color.teal_900),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                )
+                Spacer(modifier = Modifier.padding(8.dp))
+
+                // Error Message Body
+                Text(
+                    text = errorMessage,
+                    color = colorResource(id = R.color.teal_900),
+                    fontSize = 16.sp
+                )
+                Spacer(modifier = Modifier.padding(16.dp))
+
+                // OK Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    MainButton(
+                        text = stringResource(id = R.string.ok),
+                        onClick = onDismiss,
+                        icon = R.drawable.baseline_playlist_add_check_24,
+                        width = 80.dp,
+                        contentPadding = 4.dp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun SignInErrorDialogPreview() {
+    SignInErrorDialog(
+        errorMessage = "A network error occurred. Please check your connection and try again.",
+        onDismiss = {}
+    )
+}
+
 @Preview(showBackground = true)
 @Composable
 fun FileSaveDialogPreview() {

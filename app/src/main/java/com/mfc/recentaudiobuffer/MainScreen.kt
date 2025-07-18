@@ -122,7 +122,7 @@ fun MainScreen(
             return@LaunchedEffect
         }
 
-        // ✅ Force the work onto a dedicated background thread
+        // Force the work onto a dedicated background thread
         withContext(Dispatchers.IO) {
             if (isRecording) {
                 onStartBufferingClick()
@@ -607,7 +607,6 @@ fun DonateBanner(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            // ✅ This is the correct and robust way to create an even icon outline.
             Box(
                 contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp)
             ) {
