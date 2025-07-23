@@ -21,6 +21,8 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -203,6 +205,8 @@ class MainActivity : AppCompatActivity() {
             MainScreen(
                 signInButtonText = authenticationManager.signInButtonText,
                 onSignInClick = { authenticationManager.onSignInClick() },
+                authError = authenticationManager.authError.collectAsState().value,
+                onDismissSignInErrorDialog = { authenticationManager.clearAuthError() },
                 onStartBufferingClick = { onClickStartRecording() },
                 onStopBufferingClick = { onClickStopRecording() },
                 onResetBufferClick = { onClickResetBuffer() },

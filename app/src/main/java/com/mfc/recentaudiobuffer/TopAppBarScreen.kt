@@ -17,12 +17,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.Paint
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,9 +38,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.drawscope.Fill
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
@@ -99,11 +93,22 @@ fun TopAppBar(
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
     onIconClick: (() -> Unit)? = null,
-    onBackButtonClicked: (() -> Unit)? = null, // Optional back button
-    onSettingsClick: (() -> Unit)? = null // Optional settings button
+    onBackButtonClicked: (() -> Unit)? = null,
+    onSettingsClick: (() -> Unit)? = null,
+    authError: String? = null, // New parameter for auth error message
+    onDismissErrorDialog: () -> Unit = {} // New lambda to handle dismissal
 ) {
+    // When authError is not null, display the dialog.
+    // The dialog is a full-screen overlay, so it's invoked here at the top level
+    // of the composable. It won't interfere with the TopAppBar's layout.
+    if (authError != null) {
+        SignInErrorDialog(errorMessage = authError, onDismiss = onDismissErrorDialog)
+    }
+
     val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
     val toolbarBackgroundColor = colorResource(id = R.color.teal_350)
+
+    // The visual TopAppBar component's implementation remains the same.
     TopAppBar(title = {
         Text(
             text = title, color = colorResource(id = R.color.teal_900)
@@ -215,4 +220,17 @@ fun TopAppBarNoSettingsButtonPreview() {
         signInButtonText = signInButtonText,
         onSignInClick = {},
         onBackButtonClicked = {})
+}
+
+@Preview(showBackground = true)
+@Composable
+fun TopAppBarWithErrorDialogPreview() {
+    val signInButtonText = remember { mutableStateOf("Sign In") }
+    TopAppBar(
+        title = "Error Preview",
+        signInButtonText = signInButtonText,
+        onSignInClick = {},
+        authError = "Network connection failed. Please try again.",
+        onDismissErrorDialog = {}
+    )
 }

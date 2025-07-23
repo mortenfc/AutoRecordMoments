@@ -83,6 +83,8 @@ fun SettingsScreen(
     state: MutableState<SettingsScreenState>,
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
+    authError: String?,
+    onDismissSignInErrorDialog: () -> Unit,
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
     onBufferTimeLengthChanged: (Int) -> Unit,
@@ -124,7 +126,9 @@ fun SettingsScreen(
                     } else {
                         justExit()
                     }
-                })
+                },
+                authError = authError,
+                onDismissErrorDialog = onDismissSignInErrorDialog)
         }) { innerPadding ->
         // The Box is now the single, styled container. It acts as our "card".
         Box(
@@ -836,6 +840,8 @@ fun SettingsScreenPreview() {
         SettingsScreen(
             mutableStateOf(SettingsScreenState(SettingsConfig())),
             signInButtonText = mutableStateOf("Sign In"),
+            {},
+            null,
             {},
             {},
             {},

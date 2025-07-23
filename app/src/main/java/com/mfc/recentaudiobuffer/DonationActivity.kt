@@ -51,11 +51,6 @@ class DonationActivity : AppCompatActivity() {
 
         setupStripe()
         setContent {
-            // Collect the error state from the AuthenticationManager
-            val authError by authenticationManager.authError.collectAsState()
-            // Track if a sign-in attempt has been made and failed
-            var signInAttempted = remember { mutableStateOf(false) }
-
             MaterialTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background
@@ -68,17 +63,9 @@ class DonationActivity : AppCompatActivity() {
                         onBackClick = { this.finish() },
                         signInButtonViewState = signInButtonViewState,
                         isGooglePayReady = isGooglePayReady,
-                        signInAttempted = signInAttempted
+                        authError = authenticationManager.authError.collectAsState().value,
+                        onDismissErrorDialog = { authenticationManager.clearAuthError() }
                     )
-
-                    // When authError is not null, display the AlertDialog
-                    authError?.let {
-                        // A sign-in attempt has now officially failed
-                        signInAttempted.value = true
-                        SignInErrorDialog(
-                            errorMessage = it,
-                            onDismiss = { authenticationManager.clearAuthError() })
-                    }
                 }
             }
         }

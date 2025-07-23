@@ -61,9 +61,11 @@ fun DonationScreen(
     onBackClick: () -> Unit,
     signInButtonViewState: MutableState<SignInButtonViewState>,
     isGooglePayReady: MutableState<Boolean>,
-    signInAttempted: MutableState<Boolean>
+    authError: String?,
+    onDismissErrorDialog: () -> Unit
 ) {
     var donationAmount by remember { mutableStateOf("") }
+    val signInAttempted = remember { mutableStateOf(false) }
     var isDonationAmountError by rememberSaveable { mutableStateOf(false) }
     val isLoggedIn: Boolean = (signInButtonText.value == "Sign Out")
 
@@ -73,6 +75,8 @@ fun DonationScreen(
             signInButtonText = signInButtonText,
             onSignInClick = onSignInClick,
             onBackButtonClicked = onBackClick,
+            authError = authError,
+            onDismissErrorDialog = onDismissErrorDialog
         )
     }, content = { innerPadding ->
         ConstraintLayout(
@@ -346,7 +350,7 @@ fun DonationScreenGooglePayPreview() {
         {},
         signInButtonViewState,
         isGooglePayReady,
-        remember { mutableStateOf(true) })
+        null, {})
 }
 
 @Preview(showBackground = true)
@@ -363,7 +367,7 @@ fun DonationScreenGooglePaySignInPreview() {
         {},
         signInButtonViewState,
         isGooglePayReady,
-        remember { mutableStateOf(false) })
+        null, {})
 }
 
 @Preview(showBackground = true)
@@ -380,7 +384,7 @@ fun DonationScreenGooglePaySignInFailedPreview() {
         {},
         signInButtonViewState,
         isGooglePayReady,
-        remember { mutableStateOf(true) })
+        "Failure string", {})
 }
 
 @Preview(showBackground = true)
@@ -397,5 +401,6 @@ fun DonationScreenCardPaymentPreview() {
         {},
         signInButtonViewState,
         isGooglePayReady,
-        remember { mutableStateOf(true) })
+        null,
+        {})
 }

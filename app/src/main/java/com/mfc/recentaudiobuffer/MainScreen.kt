@@ -92,6 +92,8 @@ import kotlinx.coroutines.withContext
 fun MainScreen(
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
+    authError: String?,
+    onDismissSignInErrorDialog: () -> Unit,
     onStartBufferingClick: () -> Unit,
     onStopBufferingClick: () -> Unit,
     onResetBufferClick: () -> Unit,
@@ -157,7 +159,9 @@ fun MainScreen(
             title = stringResource(id = R.string.main),
             signInButtonText = signInButtonText,
             onSignInClick = onSignInClick,
-            onSettingsClick = onSettingsClick
+            onSettingsClick = onSettingsClick,
+            authError = authError,
+            onDismissErrorDialog = onDismissSignInErrorDialog
         )
         if (!isPreview) {
             AdMobBanner()
@@ -771,6 +775,9 @@ fun MainScreenPreview() {
     MaterialTheme {
         MainScreen(
             signInButtonText = remember { mutableStateOf("Sign Out") },
+            onSignInClick = {},
+            authError = null,
+            onDismissSignInErrorDialog = {},
             onStartBufferingClick = {},
             onStopBufferingClick = {},
             onResetBufferClick = {},
@@ -780,7 +787,6 @@ fun MainScreenPreview() {
             onFileSelected = {},
             onDonateClick = {},
             onSettingsClick = {},
-            onSignInClick = {},
             onDirectoryAlertDismiss = {},
             onTrimFileClick = {},
             showTrimFileDialog = mutableStateOf(false),
