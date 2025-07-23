@@ -2,6 +2,7 @@ package com.mfc.recentaudiobuffer
 
 import android.content.Context
 import android.media.AudioFormat
+import android.os.Parcelable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.datastore.core.DataStore
@@ -22,8 +23,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import javax.inject.Inject
+import kotlinx.parcelize.Parcelize
 
-data class BitDepth(val bits: Int, val encodingEnum: Int) {
+@Parcelize
+data class BitDepth(val bits: Int, val encodingEnum: Int) : Parcelable {
     override fun toString(): String {
         return "$bits,$encodingEnum"
     }
@@ -71,7 +74,7 @@ public val bitDepths = mapOf(
     "16" to BitDepth(16, AudioFormat.ENCODING_PCM_16BIT),
 )
 
-public val sampleRates = mapOf(
+val sampleRates = mapOf(
     "8000" to 8000,
     "11025" to 11025,
     "16000" to 16000,
@@ -83,11 +86,12 @@ public val sampleRates = mapOf(
     "192000" to 192000
 )
 
-public data class AudioConfig(
+@Parcelize
+data class AudioConfig(
     var sampleRateHz: Int = DEFAULT_SAMPLE_RATE,
     var bufferTimeLengthS: Int = DEFAULT_BUFFER_TIME_LENGTH_S,
     var bitDepth: BitDepth = bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
-)
+) : Parcelable
 
 data class SettingsConfig(
     var sampleRateHz: Int = DEFAULT_SAMPLE_RATE,
@@ -97,7 +101,11 @@ data class SettingsConfig(
     var isAiAutoClipEnabled: Boolean = true,
 )
 
-public const val MAX_BUFFER_SIZE: Int = 200 * 1024 * 1024 // 200 MB
+fun SettingsConfig.toAudioConfig(): AudioConfig {
+    return AudioConfig(this.sampleRateHz, this.bufferTimeLengthS, this.bitDepth)
+}
+
+const val MAX_BUFFER_SIZE: Int = 100 * 1024 * 1024 // 100 MB
 
 // DataStore setup
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -207,15 +215,9 @@ class SettingsRepository @Inject constructor(
         return BitDepth.fromString(key) ?: BitDepth(8, AudioFormat.ENCODING_PCM_8BIT)
     }
 
-    suspend fun getAudioConfig(): AudioConfig {
-        Timber.d("getAudioConfig() called - reading from DataStore")
-        return loadAudioFromDatastore()
-    }
+    suspend fun getAudioConfig(): AudioConfig = loadSettingsFromDatastore().toAudioConfig()
 
-    suspend fun getSettingsConfig(): SettingsConfig {
-        Timber.d("getSettingsConfig() called - reading from DataStore")
-        return loadSettingsFromDatastore()
-    }
+    suspend fun getSettingsConfig(): SettingsConfig = loadSettingsFromDatastore()
 
     private fun DocumentSnapshot.toAudioConfig(): AudioConfig {
         val sampleRate = getLong("sampleRateHz")?.toInt() ?: DEFAULT_SAMPLE_RATE
@@ -238,27 +240,14 @@ class SettingsRepository @Inject constructor(
         )
     }
 
-    private suspend fun loadAudioFromDatastore(): AudioConfig {
-        val preferences = dataStore.data.first()
-        val sampleRate = preferences[PreferencesKeys.SAMPLE_RATE_HZ] ?: DEFAULT_SAMPLE_RATE
-        val bufferTimeLength =
-            preferences[PreferencesKeys.BUFFER_TIME_LENGTH_S] ?: DEFAULT_BUFFER_TIME_LENGTH_S
-        val bitDepthString = preferences[PreferencesKeys.BIT_DEPTH] ?: DEFAULT_BIT_DEPTH_KEY
-        val bitDepth = getBitDepth(bitDepthString)
-        return AudioConfig(sampleRate, bufferTimeLength, bitDepth)
-    }
-
     private suspend fun loadSettingsFromDatastore(): SettingsConfig {
-        val audioConfig = loadAudioFromDatastore() // Reuse the other helper!
-        val preferences = dataStore.data.first()
-        val areAdsEnabled = preferences[PreferencesKeys.ARE_ADS_ENABLED] ?: true
-        val isAiAutoClipEnabled = preferences[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] ?: true
+        val prefs = dataStore.data.first()
         return SettingsConfig(
-            sampleRateHz = audioConfig.sampleRateHz,
-            bufferTimeLengthS = audioConfig.bufferTimeLengthS,
-            bitDepth = audioConfig.bitDepth,
-            areAdsEnabled = areAdsEnabled,
-            isAiAutoClipEnabled = isAiAutoClipEnabled
+            sampleRateHz = prefs[PreferencesKeys.SAMPLE_RATE_HZ] ?: DEFAULT_SAMPLE_RATE,
+            bufferTimeLengthS = prefs[PreferencesKeys.BUFFER_TIME_LENGTH_S] ?: DEFAULT_BUFFER_TIME_LENGTH_S,
+            bitDepth = BitDepth.fromString(prefs[PreferencesKeys.BIT_DEPTH] ?: DEFAULT_BIT_DEPTH_KEY) ?: bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
+            areAdsEnabled = prefs[PreferencesKeys.ARE_ADS_ENABLED] ?: true,
+            isAiAutoClipEnabled = prefs[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] ?: true
         )
     }
 
@@ -367,7 +356,7 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
 
         // Only update errorMessage if input is invalid
         errorMessage.value = when {
-            isMaxExceeded.value -> "Value(s) too high: Multiplication of settings exceeds 200 MB"
+            isMaxExceeded.value -> "Value(s) too high: Multiplication of settings exceeds X MB"
             isBufferTimeLengthNull.value -> "Invalid buffer length. Must be a number greater than 0"
             else -> null
         }

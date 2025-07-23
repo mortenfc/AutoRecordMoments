@@ -1,16 +1,21 @@
 package com.mfc.recentaudiobuffer
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioFormat
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.ServiceTestRule
 import com.mfc.recentaudiobuffer.VADProcessor.Companion.readWavHeader
+import dagger.hilt.android.testing.HiltAndroidRule
+import kotlinx.coroutines.delay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Rule
@@ -127,15 +132,10 @@ class VADProcessorInstrumentedTest {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
-    @Before
-    fun init() {
-        hiltRule.inject()
-        Timber.plant(Timber.DebugTree())
-    }
-
     // --- TEST SETUP ---
     @Before
     fun setUp() {
+        hiltRule.inject()
         // This ensures Timber is always active for your tests.
         Timber.plant(Timber.DebugTree())
 
@@ -143,8 +143,45 @@ class VADProcessorInstrumentedTest {
         vadProcessor = VADProcessor(context)
     }
 
-
     // --- TESTS ---
+
+        @Test
+        suspend fun startRecording_withSettingsCausingIntegerOverflow_doesNotCrash() {
+        // Given: Settings that will cause the buffer size calculation to overflow a 32-bit Integer.
+        // 192,000 Hz * 2 bytes/sample * 10,000 s = 3,840,000,000 bytes.
+        // This value is > Integer.MAX_VALUE and will wrap to a negative number if cast to Int without checks.
+        settingsRepository.updateSampleRate(192000)
+        settingsRepository.updateBitDepth(bitDepths["16"]!!)
+        settingsRepository.updateBufferTimeLength(10000)
+
+        // When: We bind to the service and attempt to start recording.
+        // The service will read the malicious config and attempt to allocate a buffer.
+        // With the bug, this would throw a NegativeArraySizeException.
+        // The test passes if the app handles this gracefully (by capping the size) instead of crashing.
+        val intent =
+            Intent(ApplicationProvider.getApplicationContext(), MyBufferService::class.java)
+
+        try {
+            val binder = serviceRule.bindService(intent)
+            val service = (binder as MyBufferService.MyBinder).getService()
+
+            // This call triggers the bug by calling updateTotalBufferSize internally
+            service.startRecording()
+
+            // Give the service a moment to process
+            delay(500)
+
+            // The key assertion is that we reached this line without the service process crashing.
+            assertTrue("Service should handle invalid size calculation without crashing", true)
+
+            // Clean up
+            service.stopRecording()
+
+        } catch (e: Exception) {
+            // If any exception, especially NegativeArraySizeException, bubbles up and crashes the test, it fails.
+            fail("Service crashed during startup with overflow settings: ${e.message}")
+        }
+    }
 
     @Test
     fun processBuffer_withSilenceFile_returnsEmptyOrVerySmallBuffer() {

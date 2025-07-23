@@ -41,7 +41,7 @@ fun RecentFilesDialog(
     LaunchedEffect(Unit) {
         // Run the file query on a background thread
         val files = withContext(Dispatchers.IO) {
-            val grantedUri = FileSavingUtils.getCachedGrantedUri()
+            val grantedUri = FileSavingUtils.getCachedGrantedUri(context)
             queryRecentAudio(context, grantedUri)
         }
         audioFiles = files

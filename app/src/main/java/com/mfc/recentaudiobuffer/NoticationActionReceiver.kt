@@ -3,7 +3,6 @@ package com.mfc.recentaudiobuffer
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.CoroutineScope
@@ -18,50 +17,30 @@ class NotificationActionReceiver : BroadcastReceiver() {
         const val ACTION_SAVE_RECORDING = "ACTION_SAVE_RECORDING"
     }
 
-    @OptIn(UnstableApi::class)
+    @androidx.annotation.OptIn(UnstableApi::class)
     override fun onReceive(context: Context, intent: Intent) {
-        val myBufferService = RecentAudioBufferApplication.getSharedViewModel().myBufferService
-
         when (intent.action) {
             ACTION_STOP_RECORDING -> {
                 Timber.d("Received ACTION_STOP_RECORDING")
-                if (myBufferService != null) {
-                    myBufferService.stopRecording()
-                } else {
-                    startService(context, MyBufferService.ACTION_STOP_RECORDING_SERVICE)
-                }
+                startService(context, MyBufferService.ACTION_STOP_RECORDING_SERVICE)
             }
 
             ACTION_START_RECORDING -> {
                 Timber.d("Received ACTION_START_RECORDING")
-                if (myBufferService != null) {
-                    myBufferService.startRecording()
-                } else {
-                    startService(context, MyBufferService.ACTION_START_RECORDING_SERVICE)
-                }
+                startService(context, MyBufferService.ACTION_START_RECORDING_SERVICE)
             }
 
             ACTION_SAVE_RECORDING -> {
                 Timber.d("Received ACTION_SAVE_RECORDING")
-                val grantedUri = FileSavingUtils.getCachedGrantedUri()
+                val grantedUri = FileSavingUtils.getCachedGrantedUri(context)
 
                 if (FileSavingUtils.isUriValidAndAccessible(context, grantedUri)) {
-                    // Permission exists, proceed with saving as before
-                    Timber.d("Valid URI permission found. Proceeding with save.")
-                    if (myBufferService != null) {
-                        val pendingResult = goAsync()
-                        CoroutineScope(Dispatchers.IO).launch {
-                            try {
-                                myBufferService.quickSaveBuffer()
-                            } finally {
-                                pendingResult.finish()
-                            }
-                        }
-                    } else {
-                        startService(context, MyBufferService.ACTION_SAVE_RECORDING_SERVICE)
-                    }
+                    Timber.d("Valid URI permission found. Proceeding with quick save.")
+                    // The service needs to be running to save, so we just send an intent.
+                    // The service will then handle the entire save process.
+                    startService(context, MyBufferService.ACTION_SAVE_RECORDING_SERVICE)
                 } else {
-                    // Permission does NOT exist, launch MainActivity to request it
+                    // Permission does NOT exist, launch MainActivity to request it.
                     Timber.d("No valid URI permission. Launching MainActivity to request it.")
                     val mainActivityIntent = Intent(context, MainActivity::class.java).apply {
                         action = MainActivity.ACTION_REQUEST_DIRECTORY_PERMISSION
@@ -74,8 +53,9 @@ class NotificationActionReceiver : BroadcastReceiver() {
     }
 
     private fun startService(context: Context, action: String) {
-        val serviceIntent = Intent(context, MyBufferService::class.java)
-        serviceIntent.action = action
+        val serviceIntent = Intent(context, MyBufferService::class.java).apply {
+            this.action = action
+        }
         ContextCompat.startForegroundService(context, serviceIntent)
     }
 }

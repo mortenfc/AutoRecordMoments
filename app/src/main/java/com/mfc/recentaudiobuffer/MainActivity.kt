@@ -10,32 +10,33 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.Settings
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import android.os.Build
-import android.os.Environment
-import android.provider.DocumentsContract
-import android.provider.Settings
-import androidx.activity.compose.setContent
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.core.app.ActivityCompat
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
 import com.mfc.recentaudiobuffer.VADProcessor.Companion.readWavHeader
-import kotlinx.coroutines.launch
-import javax.inject.Inject
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import javax.inject.Inject
 
 @AndroidEntryPoint
 @UnstableApi
@@ -56,257 +57,179 @@ class MainActivity : AppCompatActivity() {
 
     private var myBufferService: MyBufferServiceInterface? = null
 
-    private var isRecording = mutableStateOf(false)
+    // --- UI State Management ---
+    private var isRecording by mutableStateOf(false)
+    private var isLoading by mutableStateOf(false)
+    private var showRecentFilesDialog by mutableStateOf(false)
+    private var showTrimFileDialog by mutableStateOf(false)
+    private var showSaveDialog by mutableStateOf(false)
+    private var showDirectoryPermissionDialog by mutableStateOf(false)
 
-    private var isLoading = mutableStateOf(false)
+    // State for the save dialog
+    private var bufferToSaveState by mutableStateOf<ByteArray?>(null)
+    private var audioConfigState by mutableStateOf<AudioConfig?>(null)
+    private var suggestedFileNameState by mutableStateOf("")
 
-    private var isPickAndPlayFileRunning = false
     private var wasStartRecordingButtonPress = false
 
-    private var showRecentFilesDialog = mutableStateOf(false)
-
-    private var showTrimFileDialog = mutableStateOf(false)
-
-    private val basePermissions = mutableListOf(
-        Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.FOREGROUND_SERVICE,
-        Manifest.permission.INTERNET,
-        Manifest.permission.ACCESS_NETWORK_STATE
-    )
-
-    private val requiredPermissions = basePermissions + if (Build.VERSION.SDK_INT >= 33) {
-        if (Build.VERSION.SDK_INT >= 34) {
-            mutableListOf(
-                Manifest.permission.POST_NOTIFICATIONS,
-                Manifest.permission.FOREGROUND_SERVICE_MICROPHONE
-            )
-        } else {
-            mutableListOf(
-                Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.READ_MEDIA_AUDIO
-            )
+    private val requiredPermissions = buildList {
+        add(Manifest.permission.RECORD_AUDIO)
+        add(Manifest.permission.FOREGROUND_SERVICE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
         }
-    } else {
-        mutableListOf(
-            Manifest.permission.ACCESS_NOTIFICATION_POLICY,
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            add(Manifest.permission.FOREGROUND_SERVICE_MICROPHONE)
+        }
     }
 
     private var mediaPlayerManager: MediaPlayerManager? = null
-
     private lateinit var foregroundServiceAudioBuffer: Intent
+
     private val foregroundBufferServiceConn = object : ServiceConnection {
         var isBound: Boolean = false
-        private lateinit var service: MyBufferServiceInterface
-
         override fun onServiceConnected(className: ComponentName, ibinder: IBinder) {
             val binder = ibinder as MyBufferService.MyBinder
-            this.service = binder.getService()
-            myBufferService = this.service
-            this.isBound = true
-            RecentAudioBufferApplication.getSharedViewModel().myBufferService = this.service
+            myBufferService = binder.getService()
+            isBound = true
             if (wasStartRecordingButtonPress) {
-                myBufferService!!.startRecording()
+                myBufferService?.startRecording()
                 wasStartRecordingButtonPress = false
             }
             lifecycleScope.launch {
-                myBufferService?.isRecording?.collect { recordingStatus ->
-                    // This block will run every time the state changes in the service
-                    isRecording.value = recordingStatus
-                }
+                myBufferService?.isRecording?.collect { isRecording = it }
             }
-            Timber.d("onServiceConnect()")
+            lifecycleScope.launch {
+                myBufferService?.isLoading?.collect { isLoading = it }
+            }
+            Timber.d("onServiceConnected()")
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
-            Timber.e("onServiceDisconnected unexpectedly called")
+            Timber.e("onServiceDisconnected")
             myBufferService = null
-            isRecording.value = false
+            isRecording = false
             isBound = false
-            // Try to rebind the service
-            this@MainActivity.startForegroundService(foregroundServiceAudioBuffer)
-            bindService(
-                Intent(this@MainActivity, MyBufferService::class.java), this, BIND_AUTO_CREATE
-            )
-        }
-
-        override fun onBindingDied(name: ComponentName?) {
-            Timber.e("onBindingDied unexpectedly called")
-            isBound = false
-            // Try to rebind the service
-            this@MainActivity.startForegroundService(foregroundServiceAudioBuffer)
-            bindService(
-                Intent(this@MainActivity, MyBufferService::class.java), this, BIND_AUTO_CREATE
-            )
-            super.onBindingDied(name)
-            wasStartRecordingButtonPress = false
         }
     }
 
     private val directoryPickerLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { selectedDir: Uri? ->
             selectedDir?.let {
-                Timber.i("directoryPickerLauncher: $it")
                 contentResolver.takePersistableUriPermission(
                     it,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
-                FileSavingUtils.cacheGrantedUri(it)
-                // If we have a buffer, prompt to save it
-                if (myBufferService != null) {
-                    FileSavingUtils.promptSaveFileName(
-                        it, myBufferService!!.getBuffer()
-                    )
+                FileSavingUtils.cacheGrantedUri(this, it)
+                if (bufferToSaveState != null) {
+                    showSaveDialog = true
                 }
             }
         }
 
     private fun pickDirectory() {
-        val recordingsDirFile =
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS)
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            val contentUri = getDocumentUriFromPath(recordingsDirFile.absolutePath)
-            if (contentUri != null) {
-                putExtra(DocumentsContract.EXTRA_INITIAL_URI, contentUri)
-            }
+        try {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+            directoryPickerLauncher.launch(null)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not open directory picker.", Toast.LENGTH_SHORT).show()
+            Timber.e(e, "Directory picker failed")
         }
-        val initialUri = intent.getParcelableExtra<Uri>(DocumentsContract.EXTRA_INITIAL_URI)
-        directoryPickerLauncher.launch(initialUri)
-    }
-
-    // Helper function to convert a file path to a content:// URI (if possible)
-    private fun getDocumentUriFromPath(path: String): Uri? {
-        val externalStorageVolume = Environment.getExternalStorageDirectory()
-        if (path.startsWith(externalStorageVolume.absolutePath)) {
-            val relativePath = path.substring(externalStorageVolume.absolutePath.length + 1)
-            return DocumentsContract.buildDocumentUri(
-                "com.android.externalstorage.documents", "primary:$relativePath"
-            )
-        }
-        return null
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Timber.i("onCreate(): Build.VERSION.SDK_INT: ${Build.VERSION.SDK_INT}")
-
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
-
         createNotificationChannels()
-
-        mediaPlayerManager = MediaPlayerManager(context = this) { uri, fileName ->
-            // The UI state is handled inside PlayerControlViewContainer.
-            // We just need to satisfy the constructor here. Logging is great for debugging.
-            Timber.i("Player is ready for file: $fileName")
-        }
+        mediaPlayerManager = MediaPlayerManager(context = this) { _, _ -> Timber.i("Player is ready.") }
 
         setContent {
+            val authError by authenticationManager.authError.collectAsState()
             MainScreen(
                 signInButtonText = authenticationManager.signInButtonText,
                 onSignInClick = { authenticationManager.onSignInClick() },
-                authError = authenticationManager.authError.collectAsState().value,
+                authError = authError,
                 onDismissSignInErrorDialog = { authenticationManager.clearAuthError() },
+                isRecordingFromService = isRecording,
                 onStartBufferingClick = { onClickStartRecording() },
                 onStopBufferingClick = { onClickStopRecording() },
                 onResetBufferClick = { onClickResetBuffer() },
                 onSaveBufferClick = { onClickSaveBuffer() },
-                onPickAndPlayFileClick = { onClickBrowseRecentFiles() },
+                onPickAndPlayFileClick = { showRecentFilesDialog = true },
                 showRecentFilesDialog = showRecentFilesDialog,
                 onFileSelected = { uri ->
-                    showRecentFilesDialog.value = false
-                    setUpMediaPlayer(uri)
+                    showRecentFilesDialog = false
+                    if (uri != Uri.EMPTY) setUpMediaPlayer(uri)
                 },
                 onDonateClick = { onClickDonate() },
                 onSettingsClick = { onClickSettings() },
-                onTrimFileClick = { onClickTrimFile() },
+                onTrimFileClick = { showTrimFileDialog = true },
                 showTrimFileDialog = showTrimFileDialog,
                 onTrimFileSelected = { uri ->
-                    showTrimFileDialog.value = false
-                    lifecycleScope.launch {
-                        trimAndSaveFile(uri)
-                    }
+                    showTrimFileDialog = false
+                    if (uri != Uri.EMPTY) lifecycleScope.launch { trimAndSaveFile(uri) }
                 },
+                showDirectoryPermissionDialog = showDirectoryPermissionDialog,
                 onDirectoryAlertDismiss = {
-                    FileSavingUtils.showDirectoryPermissionDialog = false
+                    showDirectoryPermissionDialog = false
                     pickDirectory()
                 },
                 mediaPlayerManager = mediaPlayerManager!!,
                 isLoading = isLoading,
-                isRecordingFromService = isRecording
+                showSaveDialog = showSaveDialog,
+                suggestedFileName = suggestedFileNameState,
+                onConfirmSave = { fileName ->
+                    showSaveDialog = false
+                    handleConfirmSave(fileName)
+                },
+                onDismissSaveDialog = {
+                    showSaveDialog = false
+                    bufferToSaveState = null
+                    audioConfigState = null
+                    suggestedFileNameState = ""
+                }
             )
         }
 
-        // Check if a directory has been cached, otherwise prompt the user
-        val grantedDirectoryUri = FileSavingUtils.getCachedGrantedUri()
-        if (grantedDirectoryUri == null) {
-            FileSavingUtils.showDirectoryPermissionDialog = true
+        if (FileSavingUtils.getCachedGrantedUri(this) == null) {
+            showDirectoryPermissionDialog = true
         }
-
         handleIntent(intent)
     }
 
     private fun onClickSettings() {
-        Intent(this, SettingsActivity::class.java).also {
-            it.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-            startActivity(it)
-        }
+        startActivity(Intent(this, SettingsActivity::class.java))
     }
 
     override fun onStart() {
         super.onStart()
-        Timber.i(
-            "onStart() called with isPickAndPlayFileRunning: $isPickAndPlayFileRunning \nIntent.action: ${intent.action}"
-        )
         authenticationManager.registerLauncher(this)
-        if (MyBufferService.isServiceRunning.get()) {
-            // Rebind to the existing service
-            Timber.i("Rebinding to existing service because its flag is set.")
-            Intent(this, MyBufferService::class.java).also { intent ->
-                bindService(intent, foregroundBufferServiceConn, Context.BIND_AUTO_CREATE)
-            }
+        if (MyBufferService.isServiceRunning.get() && !foregroundBufferServiceConn.isBound) {
+            bindService(Intent(this, MyBufferService::class.java), foregroundBufferServiceConn, Context.BIND_AUTO_CREATE)
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        Timber.i("onNewIntent() called")
+        setIntent(intent)
         handleIntent(intent)
-    }
-
-    override fun onStop() {
-        super.onStop()
-        Timber.i("onStop() finished")
     }
 
     override fun onDestroy() {
         super.onDestroy()
         if (foregroundBufferServiceConn.isBound) {
             unbindService(foregroundBufferServiceConn)
-            foregroundBufferServiceConn.isBound = false
         }
-        Timber.i("onDestroy() finished")
+        mediaPlayerManager?.closeMediaPlayer()
     }
 
     private fun handleIntent(intent: Intent) {
-        // Check if the activity was launched from the notification
         if (intent.action == FileSavingService.ACTION_OPEN_FILE) {
-            Timber.d("Got external intent to open file")
-            val savedFileUri =
-                intent.getParcelableExtra<Uri>(FileSavingService.EXTRA_SAVED_FILE_URI)
-            if (savedFileUri != null) {
-                // Call setUpMediaPlayer directly, bypassing any pickers
-                setUpMediaPlayer(savedFileUri)
-            } else {
-                Timber.e("savedFileUri is null")
-            }
+            val savedFileUri = intent.getParcelableExtra<Uri>(FileSavingService.EXTRA_SAVED_FILE_URI)
+            savedFileUri?.let { setUpMediaPlayer(it) }
         }
-
         if (intent.action == ACTION_REQUEST_DIRECTORY_PERMISSION) {
-            Timber.d("Intent to request directory permission received.")
-            // Directly trigger the directory picker flow.
             pickDirectory()
-            // Clear the action so it doesn't re-trigger on configuration changes
             setIntent(Intent(this, MainActivity::class.java))
         }
     }
@@ -315,121 +238,102 @@ class MainActivity : AppCompatActivity() {
         getPermissionsAndThen(requiredPermissions) {
             if (!foregroundBufferServiceConn.isBound) {
                 wasStartRecordingButtonPress = true
-                this.startForegroundService(foregroundServiceAudioBuffer)
-                bindService(
-                    Intent(this, MyBufferService::class.java),
-                    foregroundBufferServiceConn,
-                    BIND_AUTO_CREATE
-                )
-                Timber.i("Buffer service started and bound")
-            } else if (myBufferService!!.isRecording.value) {
-                runOnUiThread {
-                    Toast.makeText(
-                        this, "Buffer is already running!", Toast.LENGTH_SHORT
-                    ).show()
-                }
+                startForegroundService(foregroundServiceAudioBuffer)
+                bindService(Intent(this, MyBufferService::class.java), foregroundBufferServiceConn, BIND_AUTO_CREATE)
             } else {
-                myBufferService!!.startRecording()
-                runOnUiThread {
-                    Toast.makeText(
-                        this, "Restarted buffering in the background", Toast.LENGTH_LONG
-                    ).show()
-                }
+                myBufferService?.startRecording()
             }
         }
     }
 
     private fun onClickStopRecording() {
-        if (foregroundBufferServiceConn.isBound) {
-            if (myBufferService!!.isRecording.value) {
-                Timber.i("Stopping recording in MyBufferService")
-                myBufferService!!.stopRecording()
-                runOnUiThread {
-                    Toast.makeText(
-                        this, "Stopped buffering in the background", Toast.LENGTH_SHORT
-                    ).show()
-                }
-            } else {
-                runOnUiThread {
-                    Toast.makeText(
-                        this, "Buffer is not running", Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-        } else {
-            Timber.e("Buffer service is not running")
-            runOnUiThread {
-                Toast.makeText(
-                    this, "Buffer service is not running", Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
+        myBufferService?.stopRecording()
     }
 
     private fun onClickResetBuffer() {
-        if (foregroundBufferServiceConn.isBound) {
-            myBufferService!!.resetBuffer()
-        } else {
-            runOnUiThread {
-                Toast.makeText(this, "ERROR: Buffer service is not running. ", Toast.LENGTH_SHORT)
-                    .show()
-            }
-        }
+        myBufferService?.resetBuffer()
     }
 
     private fun onClickSaveBuffer() {
-        if (!foregroundBufferServiceConn.isBound) {
+        if (myBufferService == null || !foregroundBufferServiceConn.isBound) {
             Toast.makeText(this, "ERROR: Buffer service is not running.", Toast.LENGTH_LONG).show()
             return
         }
-
-        isLoading.value = true // Show loading indicator
-
+        isLoading = true
         lifecycleScope.launch {
-            // 1. Get settings FIRST, before changing any state
-            val settings = settingsRepository.getSettingsConfig()
-
-            // 2. Get the full audio buffer
-            val originalBuffer = myBufferService!!.getBuffer()
-
-            // 3. Trim the buffer in a separate thread, if enabled
-            val bufferToSave = if (settings.isAiAutoClipEnabled) {
-                Timber.d("Auto-clipping enabled. Processing buffer...")
-                // Offload the heavy work to a background thread for smooth UI
-                val processedBuffer = withContext(Dispatchers.Default) {
-                    vadProcessor.processBuffer(originalBuffer, settings.toAudioConfig())
+            try {
+                val settings = settingsRepository.getSettingsConfig()
+                val originalBuffer = myBufferService!!.getBuffer()
+                val bufferToSave = if (settings.isAiAutoClipEnabled) {
+                    withContext(Dispatchers.Default) {
+                        vadProcessor.processBuffer(originalBuffer, settings.toAudioConfig())
+                    }
+                } else {
+                    originalBuffer
                 }
-
-                processedBuffer
-            } else {
-                originalBuffer
+                bufferToSaveState = bufferToSave
+                audioConfigState = settings.toAudioConfig()
+                val timestamp = SimpleDateFormat("yy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
+                suggestedFileNameState = "recording_${timestamp}.wav"
+                val destDirUri = FileSavingUtils.getCachedGrantedUri(this@MainActivity)
+                if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, destDirUri)) {
+                    showSaveDialog = true
+                } else {
+                    pickDirectory()
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error during save buffer preparation")
+                Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                isLoading = false
             }
-
-            // 4. Proceed to save
-            val prevGrantedUri = FileSavingUtils.getCachedGrantedUri()
-            if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, prevGrantedUri)) {
-                FileSavingUtils.promptSaveFileName(prevGrantedUri!!, bufferToSave)
-            } else {
-                pickDirectory()
-            }
-        }
-    }
-
-    // Helper to convert SettingsConfig to AudioConfig
-    private fun SettingsConfig.toAudioConfig(): AudioConfig {
-        return AudioConfig(this.sampleRateHz, this.bufferTimeLengthS, this.bitDepth)
-    }
-
-    private fun onClickBrowseRecentFiles() {
-        getPermissionsAndThen(requiredPermissions) {
-            showRecentFilesDialog.value = true
         }
     }
 
     private fun onClickDonate() {
-        getPermissionsAndThen(requiredPermissions) {
-            val intent = Intent(this, DonationActivity::class.java)
-            startActivity(intent)
+        startActivity(Intent(this, DonationActivity::class.java))
+    }
+
+    private fun handleConfirmSave(fileName: String) {
+        val buffer = bufferToSaveState
+        val config = audioConfigState
+        val destDirUri = FileSavingUtils.getCachedGrantedUri(this)
+        if (buffer == null || config == null || destDirUri == null) {
+            Toast.makeText(this, "Internal error: Missing data for save.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val destDir = DocumentFile.fromTreeUri(this, destDirUri)
+        if (destDir?.findFile(fileName) != null) {
+            AlertDialog.Builder(this)
+                .setTitle("File Exists")
+                .setMessage("A file named '$fileName' already exists. Do you want to overwrite it?")
+                .setPositiveButton("Overwrite") { _, _ -> proceedWithSave(buffer, config, destDirUri, fileName) }
+                .setNegativeButton("Cancel", null)
+                .show()
+        } else {
+            proceedWithSave(buffer, config, destDirUri, fileName)
+        }
+    }
+
+    private fun proceedWithSave(buffer: ByteArray, config: AudioConfig, destDirUri: Uri, fileName: String) {
+        lifecycleScope.launch {
+            isLoading = true
+            val tempFileUri = withContext(Dispatchers.IO) {
+                FileSavingUtils.saveBufferToTempFile(this@MainActivity, buffer)
+            }
+            if (tempFileUri != null) {
+                val saveIntent = Intent(this@MainActivity, FileSavingService::class.java).apply {
+                    putExtra(FileSavingService.EXTRA_TEMP_FILE_URI, tempFileUri)
+                    putExtra(FileSavingService.EXTRA_DEST_DIR_URI, destDirUri)
+                    putExtra(FileSavingService.EXTRA_DEST_FILENAME, fileName)
+                    putExtra(FileSavingService.EXTRA_AUDIO_CONFIG, config)
+                }
+                startService(saveIntent)
+                myBufferService?.resetBuffer()
+            } else {
+                Toast.makeText(this@MainActivity, "Failed to create temporary file.", Toast.LENGTH_LONG).show()
+            }
+            isLoading = false
         }
     }
 
@@ -437,168 +341,76 @@ class MainActivity : AppCompatActivity() {
         val resultChannel = NotificationChannel(
             FileSavingService.RESULT_NOTIFICATION_CHANNEL_ID,
             FileSavingService.RESULT_NOTIFICATION_CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_LOW
+            NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
             description = FileSavingService.RESULT_NOTIFICATION_CHANNEL_DESCRIPTION
         }
-        val notificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        notificationManager.createNotificationChannels(listOf(resultChannel))
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannel(resultChannel)
     }
 
-    private var pendingPermissions: Array<String>? = null // Store pending permissions
+    private var onPermissionsGrantedCallback: (() -> Unit)? = null
 
     private val multiplePermissionsLauncher: ActivityResultLauncher<Array<String>> =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            val deniedPermissions = permissions.entries.filter { !it.value }.map { it.key }
-
-            if (deniedPermissions.isEmpty()) {
-                // All permissions granted
+            if (permissions.all { it.value }) {
                 onPermissionsGrantedCallback?.invoke()
             } else {
-                val wasTemporarilyDenied = deniedPermissions.any {
-                    ActivityCompat.shouldShowRequestPermissionRationale(this, it)
-                }
-
-                if (wasTemporarilyDenied) {
-                    pendingPermissions = deniedPermissions.toTypedArray()
-
-                    AlertDialog.Builder(this).setTitle("Permissions Required")
-                        .setMessage("These permissions are needed. Please grant them.")
-                        .setPositiveButton("OK") { _, _ ->
-                            pendingPermissions?.let {
-                                requestPermissionsAgain(it) // Call a separate function
-                                pendingPermissions = null
-                            }
-                        }.setNegativeButton("Cancel") { dialog, _ ->
-                            dialog.dismiss()
-                            pendingPermissions = null
-                        }.show()
-
-                } else {
-                    // "Don't ask again" was checked and permission denied
-                    runOnUiThread {
-                        Toast.makeText(
-                            this,
-                            "Perm}issions are required. Please grant them in app settings.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                    val intent = Intent(
-                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.fromParts("package", packageName, null)
-                    )
-                    startActivity(intent)
-                    pendingPermissions = null // Clear pending permissions
-                }
+                Toast.makeText(this, "Permissions are required. Please grant them in app settings.", Toast.LENGTH_LONG).show()
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
             }
-            onPermissionsGrantedCallback = null // Reset the callback after it's been used.
+            onPermissionsGrantedCallback = null
         }
 
-    private fun requestPermissionsAgain(permissions: Array<String>) {
-        multiplePermissionsLauncher.launch(permissions)
-    }
-
-    private var onPermissionsGrantedCallback: (() -> Unit)? = null // Store the callback
-
-    private fun getPermissionsAndThen(
-        permissions: List<String>, onPermissionsGranted: () -> Unit
-    ) {
-        Timber.i("getPermissionsAndThen()")
-        onPermissionsGrantedCallback = onPermissionsGranted // Store the callback
-
+    private fun getPermissionsAndThen(permissions: List<String>, onPermissionsGranted: () -> Unit) {
+        onPermissionsGrantedCallback = onPermissionsGranted
         val permissionsToRequest = permissions.filter {
-            ContextCompat.checkSelfPermission(
-                this, it
-            ) != PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
-
         if (permissionsToRequest.isNotEmpty()) {
             multiplePermissionsLauncher.launch(permissionsToRequest)
         } else {
-            Timber.i("All permissions already granted.")
-            onPermissionsGrantedCallback?.invoke() // Call the callback immediately
-            onPermissionsGrantedCallback = null // Reset the callback
+            onPermissionsGrantedCallback?.invoke()
+            onPermissionsGrantedCallback = null
         }
-
-        Timber.i("done getPermissionsAndThen()")
     }
 
     private fun setUpMediaPlayer(selectedMediaToPlayUri: Uri) {
-        Timber.d(
-            "setUpMediaPlayer: selectedMediaToPlayUri = $selectedMediaToPlayUri"
-        )
         mediaPlayerManager?.setUpMediaPlayer(selectedMediaToPlayUri)
     }
 
-    // 2. Add the click handler function
-    private fun onClickTrimFile() {
-        // This launches the system file picker to select an audio file
-        showTrimFileDialog.value = true
-    }
-
     private fun trimAndSaveFile(fileUri: Uri) {
-        isLoading.value = true
-        Timber.d("Trimming file: $fileUri")
-
-        try {
-            // Read the original file bytes
-            val inputStream = contentResolver.openInputStream(fileUri)
-            val originalBytes = inputStream?.readBytes() ?: run {
-                runOnUiThread {
-                    Toast.makeText(this, "Failed to read file", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            isLoading = true
+            try {
+                val inputStream = contentResolver.openInputStream(fileUri)
+                val originalBytes = withContext(Dispatchers.IO) { inputStream?.readBytes() }
+                inputStream?.close()
+                if (originalBytes == null) {
+                    Toast.makeText(this@MainActivity, "Failed to read file", Toast.LENGTH_SHORT).show()
+                    return@launch
                 }
-                return
-            }
-            inputStream.close()
-
-            // Get the config from the file's header
-            val config = readWavHeader(originalBytes)
-
-            // Process the buffer
-            val processedBytes = vadProcessor.processBuffer(originalBytes, config)
-
-            // Save the new, processed file
-            val prevGrantedUri = FileSavingUtils.getCachedGrantedUri()
-            if (FileSavingUtils.isUriValidAndAccessible(this, prevGrantedUri)) {
-                // Suggest a new name for the processed file
-                val originalFileName =
-                    DocumentFile.fromSingleUri(this, fileUri)?.name ?: "processed_file.wav"
-                val newFileName = originalFileName.replace(".wav", "_clipped.wav")
-
-                runOnUiThread {
-                    Toast.makeText(
-                        this,
-                        "Processing complete! Saving new file...",
-                        Toast.LENGTH_LONG
-                    )
-                        .show()
+                val config = readWavHeader(originalBytes)
+                val audioData = originalBytes.drop(44).toByteArray()
+                val processedBytes = withContext(Dispatchers.Default) {
+                    vadProcessor.processBuffer(audioData, config)
                 }
-                FileSavingUtils.promptSaveFileName(prevGrantedUri!!, processedBytes, newFileName)
-            } else {
-                // If we don't have a valid save directory, ask for one
-                pickDirectory()
-                runOnUiThread {
-                    Toast.makeText(
-                        this,
-                        "Please select a directory to save the processed file.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                bufferToSaveState = processedBytes
+                audioConfigState = config
+                val originalFileName = DocumentFile.fromSingleUri(this@MainActivity, fileUri)?.name ?: "processed.wav"
+                suggestedFileNameState = originalFileName.replace(".wav", "_clipped.wav", ignoreCase = true)
+                val destDirUri = FileSavingUtils.getCachedGrantedUri(this@MainActivity)
+                if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, destDirUri)) {
+                    showSaveDialog = true
+                } else {
+                    pickDirectory()
                 }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to process file")
+                Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                isLoading = false
             }
-
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to process file")
-            runOnUiThread {
-                Toast.makeText(
-                    this,
-                    "Error during processing: ${e.message}",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        } finally {
-            isLoading.value = false
         }
     }
 }

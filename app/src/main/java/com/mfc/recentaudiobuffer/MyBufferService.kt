@@ -61,6 +61,8 @@ import timber.log.Timber
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -72,7 +74,6 @@ import kotlin.math.roundToInt
 
 interface MyBufferServiceInterface {
     fun getBuffer(): ByteArray
-    fun writeWavHeader(out: OutputStream, audioDataLen: Int, configIn: AudioConfig?)
     fun stopRecording()
     fun startRecording()
     fun resetBuffer()
@@ -400,88 +401,22 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         recorded_duration.set(durationFormatted)
     }
 
-    override fun writeWavHeader(out: OutputStream, audioDataLen: Int, configIn: AudioConfig?) {
-        val localConfig = configIn ?: this.config
-        val channels = 1.toShort() // Recording is in mono
-        val sampleRate = localConfig.sampleRateHz
-        val bitsPerSample = localConfig.bitDepth.bits.toShort()
-
-        // WAV constants
-        val sampleSize = bitsPerSample / 8
-        val chunkSize = audioDataLen + 36
-
-        // Calculate sizes
-        val byteRate = sampleRate * channels * sampleSize
-
-        // Write the header
-        out.write(
-            byteArrayOf(
-                'R'.code.toByte(), 'I'.code.toByte(), 'F'.code.toByte(), 'F'.code.toByte()
-            )
-        )
-        out.write(intToBytes(chunkSize), 0, 4)
-        out.write(
-            byteArrayOf(
-                'W'.code.toByte(), 'A'.code.toByte(), 'V'.code.toByte(), 'E'.code.toByte()
-            )
-        )
-        out.write(
-            byteArrayOf(
-                'f'.code.toByte(), 'm'.code.toByte(), 't'.code.toByte(), ' '.code.toByte()
-            )
-        )
-        out.write(intToBytes(16), 0, 4)  // Sub-chunk size, 16 for PCM
-        out.write(shortToBytes(1.toShort()), 0, 2)  // AudioFormat, 1 for PCM
-        out.write(shortToBytes(channels), 0, 2)
-        out.write(intToBytes(sampleRate), 0, 4)
-        out.write(intToBytes(byteRate), 0, 4)
-        out.write(shortToBytes((channels * sampleSize).toShort()), 0, 2)  // Block align
-        out.write(shortToBytes(bitsPerSample), 0, 2)
-        out.write(
-            byteArrayOf(
-                'd'.code.toByte(), 'a'.code.toByte(), 't'.code.toByte(), 'a'.code.toByte()
-            )
-        )
-        out.write(intToBytes(audioDataLen), 0, 4)
-    }
-
-    private fun intToBytes(i: Int): ByteArray {
-        val bb = ByteBuffer.allocate(4)
-        bb.order(ByteOrder.LITTLE_ENDIAN)
-        bb.putInt(i)
-        return bb.array()
-    }
-
-    private fun shortToBytes(data: Short): ByteArray {
-        return byteArrayOf(
-            (data.toInt() and 0xff).toByte(), ((data.toInt() shr 8) and 0xff).toByte()
-        )
-    }
-
     override fun getBuffer(): ByteArray {
-        val shiftedBuffer: ByteArray
         lock.lock()
         try {
-            if (hasOverflowed.get()) {
-                // Return the entire audioDataStorage, shifted at recorderIndex
-                shiftedBuffer = ByteArray(totalRingBufferSize.get())
+            if (!::audioDataStorage.isInitialized) return ByteArray(0)
+            return if (hasOverflowed.get()) {
+                val shiftedBuffer = ByteArray(totalRingBufferSize.get())
                 val bytesToEnd = totalRingBufferSize.get() - recorderIndex.get()
-                System.arraycopy(
-                    audioDataStorage, recorderIndex.get(), shiftedBuffer, 0, bytesToEnd
-                )
-                System.arraycopy(
-                    audioDataStorage, 0, shiftedBuffer, bytesToEnd, recorderIndex.get()
-                )
-                return shiftedBuffer
+                System.arraycopy(audioDataStorage, recorderIndex.get(), shiftedBuffer, 0, bytesToEnd)
+                System.arraycopy(audioDataStorage, 0, shiftedBuffer, bytesToEnd, recorderIndex.get())
+                shiftedBuffer
             } else {
-                // Return only the relevant portion up to recorderIndex
-                shiftedBuffer = audioDataStorage.copyOf(recorderIndex.get())
+                audioDataStorage.copyOf(recorderIndex.get())
             }
         } finally {
             lock.unlock()
         }
-
-        return shiftedBuffer
     }
 
     override fun resetBuffer() {
@@ -497,44 +432,51 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             Timber.w("quickSaveBuffer called while already saving. Ignoring.")
             return
         }
+        _isLoading.value = true
+        updateNotification() // Show "saving..." state in notification
 
         try {
             val settings = settingsRepository.getSettingsConfig()
-            if (settings.isAiAutoClipEnabled) {
-                _isLoading.value = true
-            }
-            updateNotification() // Show "Auto-Trimming..." state
-
             val originalBuffer = getBuffer()
 
             val bufferToSave = if (settings.isAiAutoClipEnabled) {
-                Timber.d("Auto-clipping enabled. Processing buffer...")
-                // Run heavy processing on a background thread
                 withContext(Dispatchers.Default) {
-                    vadProcessor.processBuffer(originalBuffer, this@MyBufferService.config)
+                    vadProcessor.processBuffer(originalBuffer, settings.toAudioConfig())
                 }
             } else {
-                Timber.d("Auto-clipping disabled. Saving raw buffer.")
                 originalBuffer
             }
 
-            // Pass the final buffer to the FileSavingService
-            sharedAudioDataToSave = bufferToSave
-            val grantedUri = FileSavingUtils.getCachedGrantedUri()
-            val quickSaveIntent =
-                Intent(this, FileSavingService::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    .putExtra("grantedUri", grantedUri)
-            startService(quickSaveIntent)
+            val tempFileUri = withContext(Dispatchers.IO) {
+                FileSavingUtils.saveBufferToTempFile(this@MyBufferService, bufferToSave)
+            }
+
+            val destDirUri = FileSavingUtils.getCachedGrantedUri(this)
+
+            if (tempFileUri != null && destDirUri != null) {
+                val timestamp = SimpleDateFormat("yy-MM-dd_HH-mm-ss", Locale.getDefault()).format(
+                    Date()
+                )
+                val fileName = "quicksave_${timestamp}.wav"
+
+                val saveIntent = Intent(this, FileSavingService::class.java).apply {
+                    putExtra(FileSavingService.EXTRA_TEMP_FILE_URI, tempFileUri)
+                    putExtra(FileSavingService.EXTRA_DEST_DIR_URI, destDirUri)
+                    putExtra(FileSavingService.EXTRA_DEST_FILENAME, fileName)
+                    putExtra(FileSavingService.EXTRA_AUDIO_CONFIG, settings.toAudioConfig())
+                }
+                startService(saveIntent)
+                resetBuffer()
+            } else {
+                Timber.e("Failed to quick save. Temp URI: $tempFileUri, Dest Dir URI: $destDirUri")
+                Toast.makeText(this, "Quick save failed. No save directory set.", Toast.LENGTH_LONG).show()
+            }
         } catch (e: Exception) {
-            Timber.e("Error during quick save process: $e")
-            Toast.makeText(
-                applicationContext, "ERROR: Could not trim and save file: $e", Toast.LENGTH_LONG
-            ).show()
-            _isLoading.value = false
-            resetBuffer()
+            Timber.e(e, "Error during quick save process")
+            Toast.makeText(this, "Error: Could not save file.", Toast.LENGTH_LONG).show()
         } finally {
             _isLoading.value = false
-            resetBuffer()
+            updateNotification() // Revert to normal notification state
         }
     }
 
@@ -707,6 +649,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val canSave = recorderIndex.get() > 0 || hasOverflowed.get()
+
         val builder = NotificationCompat.Builder(this, CHRONIC_NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Buffered Recent Audio")
             .setSmallIcon(R.drawable.baseline_record_voice_over_24)
@@ -741,7 +685,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             ).addAction(
                 R.drawable.baseline_save_alt_24,
                 "Save and Clear",
-                if (_isRecording.value) saveIntent else null // Action is available only when recording
+                if (canSave) saveIntent else null
             )
         }
 
