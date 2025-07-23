@@ -146,6 +146,22 @@ fun SettingsScreen(
                     color = colorResource(id = R.color.teal_150), shape = RoundedCornerShape(12.dp)
                 )
         ) {
+            IconButton(
+                onClick = { showHelpDialog = true },
+                modifier = Modifier
+                    .align(Alignment.TopEnd) // Positions it at the top-right
+                    .padding(top = 4.dp) // Adds padding so it's not on the edge
+                    .zIndex(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "Show settings help",
+                    tint = colorResource(id = R.color.purple_accent)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // The Column ONLY organizes the content inside the Box. It has no style of its own.
             Column(
                 modifier = Modifier
@@ -292,7 +308,7 @@ fun SettingsScreen(
                     },
                     iconTint = colorResource(id = R.color.purple_accent),
                     enabled = isSubmitEnabled.value,
-                    width = 200.dp,
+                    modifier = Modifier.fillMaxWidth(fraction = 0.7f),
                     maxLines = 2,
                     iconSize = 40.dp
                 )
@@ -306,20 +322,6 @@ fun SettingsScreen(
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            IconButton(
-                onClick = { showHelpDialog = true },
-                modifier = Modifier
-                    .align(Alignment.TopEnd) // Positions it at the top-right
-                    .padding(top = 4.dp, end = 4.dp) // Adds padding so it's not on the edge
-                    .zIndex(1f)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = "Show settings help",
-                    tint = colorResource(id = R.color.purple_accent)
-                )
             }
         }
     }
@@ -398,7 +400,7 @@ fun MyOutlinedBufferInputField(
             }
         },
         modifier = Modifier
-            .width(220.dp)
+            .fillMaxWidth(0.75f)
             .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 0.dp)
             .onFocusChanged {
                 if (!it.isFocused) {
@@ -764,7 +766,7 @@ fun ComprehensiveHelpDialog(
                     color = textColor
                 )
                 Text(
-                    " • Sample Rate: 16000 Hz\n • Bit Depth: 16-bit\n • Buffer Length: 600s (10 min)",
+                    " • Sample Rate: 8000 Hz\n • Bit Depth: 16-bit\n • Buffer Length: 300s (5 min)",
                     style = MaterialTheme.typography.bodyMedium,
                     color = textColor,
                     modifier = Modifier.padding(start = 8.dp)
@@ -789,7 +791,7 @@ fun ComprehensiveHelpDialog(
                     color = textColor
                 )
                 Text(
-                    " • Sample Rate: 22050 Hz\n • Bit Depth: 16-bit\n • Buffer Length: 300s (5 min)",
+                    " • Sample Rate: 16000 Hz\n • Bit Depth: 16-bit\n • Buffer Length: 900s (15 min)",
                     style = MaterialTheme.typography.bodyMedium,
                     color = textColor,
                     modifier = Modifier.padding(start = 8.dp)
@@ -814,7 +816,7 @@ fun ComprehensiveHelpDialog(
                     color = textColor
                 )
                 Text(
-                    " • Sample Rate: 48000 Hz\n • Bit Depth: 16-bit\n • Buffer Length: 180s (3 min)",
+                    " • Sample Rate: 48000 Hz\n • Bit Depth: 16-bit\n • Buffer Length: 600s (10 min)",
                     style = MaterialTheme.typography.bodyMedium,
                     color = textColor,
                     modifier = Modifier.padding(start = 8.dp)

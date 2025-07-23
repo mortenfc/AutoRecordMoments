@@ -10,9 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.stripe.android.PaymentConfiguration
 import com.stripe.android.googlepaylauncher.GooglePayEnvironment
@@ -49,7 +47,7 @@ class DonationActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        setupStripe()
+        setupPaymentMethods()
         setContent {
             MaterialTheme {
                 Surface(
@@ -77,8 +75,10 @@ class DonationActivity : AppCompatActivity() {
         authenticationManager.registerLauncher(this)
     }
 
-    private fun setupStripe() {
+    private fun setupPaymentMethods() {
         PaymentConfiguration.init(this, stripeApiKey)
+        stripePaymentSheet = PaymentSheet(this, ::onPaymentSheetResult)
+
         val googlePayEnvironment = if (BuildConfig.DEBUG) {
             GooglePayEnvironment.Test
         } else {
@@ -91,7 +91,6 @@ class DonationActivity : AppCompatActivity() {
                 merchantName = "Auto Record Moments"
             ), readyCallback = ::onGooglePayReady, resultCallback = ::onGooglePayResult
         )
-        stripePaymentSheet = PaymentSheet(this, ::onPaymentSheetResult)
     }
 
     private fun presentPaymentSheet(clientSecret: String) {

@@ -33,12 +33,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TextField
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.clip
@@ -65,9 +67,15 @@ fun DonationScreen(
     onDismissErrorDialog: () -> Unit
 ) {
     var donationAmount by remember { mutableStateOf("") }
-    val signInAttempted = remember { mutableStateOf(false) }
+    val signInAttempted = rememberSaveable { mutableStateOf(false) }
     var isDonationAmountError by rememberSaveable { mutableStateOf(false) }
     val isLoggedIn: Boolean = (signInButtonText.value == "Sign Out")
+
+    LaunchedEffect(authError) {
+        if (authError != null) {
+            signInAttempted.value = true
+        }
+    }
 
     Scaffold(topBar = {
         TopAppBar(
@@ -226,7 +234,7 @@ fun DonationAmountTextField(
             value = donationAmount,
             onValueChange = onValueChange,
             label = { Text("Donation Amount ≥5 SEK") },
-            modifier = Modifier.width(250.dp),
+            modifier = Modifier.fillMaxWidth(fraction = 0.7f),
             isError = isDonationAmountError,
             singleLine = true,
             colors = androidx.compose.material3.TextFieldDefaults.colors(
@@ -272,6 +280,7 @@ fun CardPayButton(onClick: () -> Unit) {
         false
     )
 }
+// Add other necessary imports
 
 @Composable
 fun PaymentButton(
@@ -281,10 +290,22 @@ fun PaymentButton(
     text: String,
     isGooglePay: Boolean
 ) {
-    Button(
-        onClick = onClick, modifier = Modifier // Common button styling
-            .width(if (isGooglePay) 150.dp else 200.dp)
+    // Determine the sizing modifier based on the button type
+    val sizeModifier = if (isGooglePay) {
+        // Google Pay button likely has fixed brand requirements
+        Modifier
+            .width(150.dp)
             .height(48.dp)
+    } else {
+        // Card button will now be flexible
+        Modifier
+            // Set a minimum height, but allow it to grow if the text wraps
+            .defaultMinSize(minHeight = 48.dp)
+    }
+
+    Button(
+        onClick = onClick,
+        modifier = sizeModifier // Apply the appropriate sizing
             .drawBehind {
                 val shadowColor = Color.White
                 val transparentColor = Color.Transparent
@@ -314,10 +335,13 @@ fun PaymentButton(
                 }
             }
             .clip(CircleShape) // Fully rounded corners
-            .background(Color.Black), colors = ButtonDefaults.buttonColors(
+            .background(Color.Black),
+        colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent, // Make container transparent
             contentColor = Color.White // Text color
-        ), shape = CircleShape) {
+        ),
+        shape = CircleShape
+    ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp)
@@ -330,7 +354,10 @@ fun PaymentButton(
             )
             Spacer(modifier = if (isGooglePay) Modifier.width(1.dp) else Modifier.width(5.dp))
             Text(
-                text = text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White
+                text = text,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White
             )
         }
     }

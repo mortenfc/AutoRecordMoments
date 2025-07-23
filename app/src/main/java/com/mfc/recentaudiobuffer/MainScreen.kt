@@ -498,7 +498,7 @@ fun MainButton(
     icon: Int,
     onClick: () -> Unit,
     iconTint: Color = Color.White,
-    width: Dp = 180.dp,
+    modifier: Modifier = Modifier.fillMaxWidth(fraction = 0.7f),
     enabled: Boolean = true,
     contentPadding: Dp = 16.dp,
     iconSize: Dp = 22.dp,
@@ -506,8 +506,7 @@ fun MainButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = Modifier
-            .width(width)
+        modifier = modifier
             .padding(bottom = 30.dp)
             .drawBehind {
                 val shadowColor = Color.Black
@@ -807,7 +806,7 @@ fun MainButtonPreview() {
         icon = R.drawable.baseline_play_circle_outline_24,
         {},
         Color.White,
-        180.dp,
+        Modifier.fillMaxWidth(0.7f),
         true
     )
 }

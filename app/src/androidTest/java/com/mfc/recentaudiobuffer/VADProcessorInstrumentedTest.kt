@@ -7,11 +7,13 @@ import android.os.Build
 import android.provider.MediaStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.rule.ServiceTestRule
 import com.mfc.recentaudiobuffer.VADProcessor.Companion.readWavHeader
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.BeforeClass
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import timber.log.Timber
@@ -19,6 +21,7 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import javax.inject.Inject
 
 /**
  * This is an Instrumented Test, which runs on an Android device or emulator.
@@ -59,7 +62,6 @@ class VADProcessorInstrumentedTest {
                 MediaStore.Files.getContentUri("external")
             }
 
-            // --- REVISED DELETION LOGIC ---
             // Query for files with names starting with "debug_"
             val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
             val selectionArgs = arrayOf("debug_%")
@@ -116,6 +118,20 @@ class VADProcessorInstrumentedTest {
         return byteStream.toByteArray()
     }
 
+    @get:Rule(order = 0)
+    var hiltRule = HiltAndroidRule(this)
+
+    @get:Rule(order = 1)
+    val serviceRule = ServiceTestRule()
+
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+
+    @Before
+    fun init() {
+        hiltRule.inject()
+        Timber.plant(Timber.DebugTree())
+    }
 
     // --- TEST SETUP ---
     @Before
