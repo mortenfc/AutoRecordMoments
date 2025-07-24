@@ -10,19 +10,19 @@ plugins {
 }
 
 android {
-    namespace 'com.mfc.recentaudiobuffer'
-    compileSdk 34
+    namespace = 'com.mfc.recentaudiobuffer'
+    compileSdk = 34
 
     defaultConfig {
-        applicationId "com.mfc.recentaudiobuffer"
-        minSdk 32
-        targetSdk 34
-        versionCode 14
-        versionName "1.0.14"
+        applicationId = "com.mfc.recentaudiobuffer"
+        minSdk = 32
+        targetSdk = 34
+        versionCode = 15
+        versionName = "1.0.15"
 
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.mfc.recentaudiobuffer.HiltTestRunner"
         vectorDrawables {
-            useSupportLibrary true
+            useSupportLibrary = true
         }
     }
 
@@ -45,34 +45,34 @@ android {
 
     buildTypes {
         release {
-            debuggable false
-            signingConfig signingConfigs.release
-            minifyEnabled true
+            debuggable = false
+            signingConfig = signingConfigs.release
+            minifyEnabled = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_LIVE")}")
         }
         debug {
-            applicationIdSuffix ".debug"
-            debuggable true
-            signingConfig signingConfigs.debug
+            applicationIdSuffix = ".debug"
+            debuggable = true
+            signingConfig = signingConfigs.debug
             buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_TEST")}")
         }
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
         jvmTarget = '17'
     }
     buildFeatures {
-        compose true
-        viewBinding true
+        compose = true
+        viewBinding = true
         buildConfig = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion '1.5.15'
+        kotlinCompilerExtensionVersion = '1.5.15'
     }
     packagingOptions {
         resources {
@@ -88,26 +88,24 @@ dependencies {
     implementation 'androidx.fragment:fragment-ktx:1.8.5'
     implementation 'androidx.core:core-ktx'
     implementation 'androidx.core:core'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.appcompat:appcompat:1.7.1'
     implementation platform('org.jetbrains.kotlin:kotlin-bom:2.2.0')
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
     implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
     implementation "io.reactivex.rxjava2:rxjava:2.2.3"
     implementation 'io.reactivex.rxjava2:rxkotlin:2.3.0'
     implementation 'com.jakewharton.timber:timber:5.0.1'
-    implementation 'androidx.test.ext:junit-ktx:1.2.1'
 
     // Testing
+    androidTestImplementation 'androidx.test.ext:junit-ktx:1.2.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
     androidTestImplementation 'androidx.compose.ui:ui-test-android:1.7.6'
-    testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+    testImplementation 'junit:junit:4.13.2'
     testImplementation 'io.mockk:mockk:1.14.4'
     testImplementation 'io.mockk:mockk-android:1.14.4'
-    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
-        // For Hilt instrumented tests
+    // For Hilt instrumented tests
     androidTestImplementation("com.google.dagger:hilt-android-testing:2.57")
     kspAndroidTest("com.google.dagger:hilt-android-compiler:2.57")
     // For testing Android Services
@@ -151,8 +149,8 @@ dependencies {
     implementation 'androidx.datastore:datastore-preferences:1.1.7'
 
     // Hilt dependencies
-    implementation("com.google.dagger:hilt-android:2.56.2")
-    ksp("com.google.dagger:hilt-compiler:2.56.2")
+    implementation("com.google.dagger:hilt-android:2.57")
+    ksp("com.google.dagger:hilt-compiler:2.57")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // Media

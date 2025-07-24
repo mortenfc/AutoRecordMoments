@@ -230,7 +230,7 @@ class VADProcessor @Inject constructor(
         if (currentSpeechStart != null) {
             speechSegments.add(
                 mapOf(
-                    "start" to currentSpeechStart, "end" to audioFloats.size
+                    "start" to currentSpeechStart!!, "end" to audioFloats.size
                 )
             )
         }

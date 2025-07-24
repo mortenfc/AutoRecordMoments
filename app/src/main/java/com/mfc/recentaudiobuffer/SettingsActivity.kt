@@ -46,7 +46,6 @@ class SettingsActivity : ComponentActivity() {
     fun SettingsScreenInitializer(settingsViewModel: SettingsViewModel = hiltViewModel()) {
         val scope = rememberCoroutineScope()
         val config by settingsViewModel.config.collectAsState()
-        val auth = FirebaseAuth.getInstance()
         val state = remember { mutableStateOf(SettingsScreenState(config)) }
         val isSaving by settingsViewModel.isSaving.collectAsState()
         var hasSaved by remember { mutableStateOf(false) }
@@ -115,9 +114,9 @@ class SettingsActivity : ComponentActivity() {
                         Timber.d(
                             "onSubmit(): Settings changed, quicksaving and restarting recording"
                         )
-                        service.stopRecording()
-                        service.quickSaveBuffer()
-                        service.startRecording()
+                        service?.stopRecording()
+                        service?.quickSaveBuffer()
+                        service?.startRecording()
                     } else if (configBeforeUpdate != configAfterUpdate) {
                         Timber.w(
                             "onSubmit(): Settings changed, but no recording session found"

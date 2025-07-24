@@ -12,7 +12,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.ServiceTestRule
 import com.mfc.recentaudiobuffer.VADProcessor.Companion.readWavHeader
 import dagger.hilt.android.testing.HiltAndroidRule
+import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -24,8 +26,6 @@ import org.junit.runner.RunWith
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import javax.inject.Inject
 
 /**
@@ -41,6 +41,7 @@ import javax.inject.Inject
  * - music_30s.wav
  * - mostly_silence_noise_5min.wav
  */
+@HiltAndroidTest
 @RunWith(AndroidJUnit4::class)
 class VADProcessorInstrumentedTest {
 
@@ -146,7 +147,7 @@ class VADProcessorInstrumentedTest {
     // --- TESTS ---
 
         @Test
-        suspend fun startRecording_withSettingsCausingIntegerOverflow_doesNotCrash() {
+        fun startRecording_withSettingsCausingIntegerOverflow_doesNotCrash() = runTest {
         // Given: Settings that will cause the buffer size calculation to overflow a 32-bit Integer.
         // 192,000 Hz * 2 bytes/sample * 10,000 s = 3,840,000,000 bytes.
         // This value is > Integer.MAX_VALUE and will wrap to a negative number if cast to Int without checks.
@@ -176,6 +177,17 @@ class VADProcessorInstrumentedTest {
 
             // Clean up
             service.stopRecording()
+
+        val (config, audioBytes) = loadAudioAndConfig("silence_5s.wav")
+        // When
+        val result =
+            vadProcessor.processBuffer(audioBytes, config, debugFileBaseName = "silence_5s")
+        // Then
+        val maxTolerableBytes =
+            config.sampleRateHz / 10 * (config.bitDepth.bits / 8) // 100ms tolerance
+        assertTrue(
+            "Buffer from silence file should be nearly empty.", result.size < maxTolerableBytes
+        )
 
         } catch (e: Exception) {
             // If any exception, especially NegativeArraySizeException, bubbles up and crashes the test, it fails.
