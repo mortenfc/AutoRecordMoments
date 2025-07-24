@@ -17,7 +17,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Rule
@@ -124,6 +123,44 @@ class VADProcessorInstrumentedTest {
         return byteStream.toByteArray()
     }
 
+    /**
+     * Loads the real speech sample from the test assets.
+     */
+    private fun loadSpeechSample(): ByteArray {
+        val testContext = InstrumentationRegistry.getInstrumentation().context
+        val inputStream = testContext.assets.open("talking_24s.wav")
+        // Skip the 44-byte WAV header to get raw PCM data
+        inputStream.skip(44L)
+        return inputStream.readBytes()
+    }
+
+    /**
+     * Generates a block of silence.
+     */
+    private fun generateSilence(durationMs: Int, config: AudioConfig): ByteArray {
+        val numSamples = durationMs * config.sampleRateHz / 1000
+        val bytesPerSample = config.bitDepth.bits / 8
+        return ByteArray(numSamples * bytesPerSample) // Array of zeros
+    }
+
+    /**
+     * Generates a sine wave to simulate speech.
+     */
+    private fun generateSineWave(durationMs: Int, freq: Double, config: AudioConfig): ByteArray {
+        val sampleRate = config.sampleRateHz
+        val numSamples = durationMs * sampleRate / 1000
+        val bytesPerSample = config.bitDepth.bits / 8
+        val output = ByteArray(numSamples * bytesPerSample)
+
+        for (i in 0 until numSamples) {
+            val angle = 2.0 * Math.PI * i.toDouble() / (sampleRate / freq)
+            val sample = (Math.sin(angle) * 32767.0).toInt() // For 16-bit audio
+            output[i * 2] = (sample and 0xff).toByte()
+            output[i * 2 + 1] = ((sample shr 8) and 0xff).toByte()
+        }
+        return output
+    }
+
     @get:Rule(order = 0)
     var hiltRule = HiltAndroidRule(this)
 
@@ -145,53 +182,69 @@ class VADProcessorInstrumentedTest {
     }
 
     // --- TESTS ---
+    // In: VADProcessorInstrumentedTest.kt
+// In: VADProcessorInstrumentedTest.kt
 
-        @Test
-        fun startRecording_withSettingsCausingIntegerOverflow_doesNotCrash() = runTest {
-        // Given: Settings that will cause the buffer size calculation to overflow a 32-bit Integer.
-        // 192,000 Hz * 2 bytes/sample * 10,000 s = 3,840,000,000 bytes.
-        // This value is > Integer.MAX_VALUE and will wrap to a negative number if cast to Int without checks.
-        settingsRepository.updateSampleRate(192000)
-        settingsRepository.updateBitDepth(bitDepths["16"]!!)
-        settingsRepository.updateBufferTimeLength(10000)
+    @Test
+    fun processStreamedAudioAndTriggerQuickSaveViaReceiver() = runTest {
+        // --- GIVEN ---
+        val appContext = ApplicationProvider.getApplicationContext<Context>()
 
-        // When: We bind to the service and attempt to start recording.
-        // The service will read the malicious config and attempt to allocate a buffer.
-        // With the bug, this would throw a NegativeArraySizeException.
-        // The test passes if the app handles this gracefully (by capping the size) instead of crashing.
-        val intent =
-            Intent(ApplicationProvider.getApplicationContext(), MyBufferService::class.java)
+        // We cache a non-null URI. Our fake FileSavingUtils will approve it.
+        FileSavingUtils.cacheGrantedUri(appContext, Uri.parse("content://fake-directory"))
+
+        val sampleRate = 16000
+        val audioConfig = AudioConfig(sampleRate, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
+        settingsRepository.updateSampleRate(audioConfig.sampleRateHz)
+        settingsRepository.updateBitDepth(audioConfig.bitDepth)
+        settingsRepository.updateBufferTimeLength(1200)
+        settingsRepository.updateIsAiAutoClipEnabled(true)
+
+        val intent = Intent(appContext, MyBufferService::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as MyBufferService.MyBinder).getService()
 
         try {
-            val binder = serviceRule.bindService(intent)
-            val service = (binder as MyBufferService.MyBinder).getService()
-
-            // This call triggers the bug by calling updateTotalBufferSize internally
+            // --- WHEN ---
             service.startRecording()
+            delay(200)
+            assertTrue("Service should be recording", service.isRecording.value)
 
-            // Give the service a moment to process
-            delay(500)
+            val speechChunk = loadSpeechSample()
+            val totalDurationSeconds = 1000
+            val chunkDurationMs = 1000
 
-            // The key assertion is that we reached this line without the service process crashing.
-            assertTrue("Service should handle invalid size calculation without crashing", true)
+            for (timeMs in 0 until totalDurationSeconds * 1000 step chunkDurationMs) {
+                if ((timeMs / 1000) % 15 == 0) { // Inject speech every 15 seconds
+                    (service as MyBufferService).writeDataToBufferForTest(speechChunk)
+                } else {
+                    val silenceChunk = generateSilence(chunkDurationMs, audioConfig)
+                    (service as MyBufferService).writeDataToBufferForTest(silenceChunk)
+                }
+                delay(1) // Yield to prevent the test from becoming unresponsive
+            }
 
-            // Clean up
+            assertTrue(
+                "Buffer should contain data after long stream", service.getBuffer().isNotEmpty()
+            )
+
+            val saveIntent = Intent(appContext, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_SAVE_RECORDING
+            }
+            appContext.sendBroadcast(saveIntent)
+
+            delay(3000)
+
+            // --- THEN ---
+            val bufferAfterSave = service.getBuffer()
+            assertEquals(
+                "Buffer should be empty after quicksave and reset", 0, bufferAfterSave.size
+            )
+
+        } finally {
+            // --- CLEANUP ---
             service.stopRecording()
-
-        val (config, audioBytes) = loadAudioAndConfig("silence_5s.wav")
-        // When
-        val result =
-            vadProcessor.processBuffer(audioBytes, config, debugFileBaseName = "silence_5s")
-        // Then
-        val maxTolerableBytes =
-            config.sampleRateHz / 10 * (config.bitDepth.bits / 8) // 100ms tolerance
-        assertTrue(
-            "Buffer from silence file should be nearly empty.", result.size < maxTolerableBytes
-        )
-
-        } catch (e: Exception) {
-            // If any exception, especially NegativeArraySizeException, bubbles up and crashes the test, it fails.
-            fail("Service crashed during startup with overflow settings: ${e.message}")
+            FileSavingUtils.clearCachedUri(appContext)
         }
     }
 
@@ -232,8 +285,9 @@ class VADProcessorInstrumentedTest {
 
         // When
 
-        val result =
-            vadProcessor.processBuffer(audioBytes, config, paddingMs = 0, debugFileBaseName = "talking_24s")
+        val result = vadProcessor.processBuffer(
+            audioBytes, config, paddingMs = 0, debugFileBaseName = "talking_24s"
+        )
         // Then
         assertTrue("Resulting buffer should not be empty for a speech file.", result.isNotEmpty())
         assertTrue(

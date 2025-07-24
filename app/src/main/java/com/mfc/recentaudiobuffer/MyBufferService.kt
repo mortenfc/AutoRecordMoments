@@ -40,6 +40,7 @@ import android.os.Binder
 import android.os.IBinder
 import android.widget.Toast
 import androidx.annotation.OptIn
+import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
@@ -183,9 +184,49 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         abandonAudioFocus()
     }
 
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        Timber.i("onTaskRemoved() called with intent: $rootIntent")
-        super.onTaskRemoved(rootIntent)
+    /**
+     * This method allows tests to push mock audio chunks directly into the buffer,
+     * Simulates writing a chunk of data
+     * into the circular buffer, respecting the overflow logic.
+     */
+    @VisibleForTesting
+    fun writeDataToBufferForTest(data: ByteArray) {
+        if (isRecording.value && ::audioDataStorage.isInitialized) {
+            lock.lock()
+            try {
+                val readResult = data.size
+                if (recorderIndex.get() + readResult > totalRingBufferSize.get()) {
+                    hasOverflowed.set(true)
+                    val bytesToEnd = totalRingBufferSize.get() - recorderIndex.get()
+                    if (bytesToEnd > 0) {
+                        System.arraycopy(data, 0, audioDataStorage, recorderIndex.get(), bytesToEnd)
+                    }
+                    val remainingBytes = readResult - bytesToEnd
+                    System.arraycopy(data, bytesToEnd, audioDataStorage, 0, remainingBytes)
+                    recorderIndex.set(remainingBytes)
+                } else {
+                    System.arraycopy(data, 0, audioDataStorage, recorderIndex.get(), readResult)
+                    recorderIndex.set(recorderIndex.get() + readResult)
+                }
+            } finally {
+                lock.unlock()
+            }
+        }
+    }
+
+    /**
+     * Uses the `getBuffer()` method
+     * to retrieve the full, ordered buffer before processing.
+     */
+    @VisibleForTesting
+    suspend fun stopAndGetFilteredAudio(): ByteArray {
+        stopRecording()
+        val fullBuffer = getBuffer()
+        val audioConfig = settingsRepository.getAudioConfig()
+
+        return vadProcessor.processBuffer(
+            fullBuffer, audioConfig, paddingMs = 500, debugFileBaseName = "debug_filtered_stream"
+        )
     }
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
@@ -408,8 +449,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             return if (hasOverflowed.get()) {
                 val shiftedBuffer = ByteArray(totalRingBufferSize.get())
                 val bytesToEnd = totalRingBufferSize.get() - recorderIndex.get()
-                System.arraycopy(audioDataStorage, recorderIndex.get(), shiftedBuffer, 0, bytesToEnd)
-                System.arraycopy(audioDataStorage, 0, shiftedBuffer, bytesToEnd, recorderIndex.get())
+                System.arraycopy(
+                    audioDataStorage, recorderIndex.get(), shiftedBuffer, 0, bytesToEnd
+                )
+                System.arraycopy(
+                    audioDataStorage, 0, shiftedBuffer, bytesToEnd, recorderIndex.get()
+                )
                 shiftedBuffer
             } else {
                 audioDataStorage.copyOf(recorderIndex.get())
@@ -469,7 +514,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 resetBuffer()
             } else {
                 Timber.e("Failed to quick save. Temp URI: $tempFileUri, Dest Dir URI: $destDirUri")
-                Toast.makeText(this, "Quick save failed. No save directory set.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Quick save failed. No save directory set.", Toast.LENGTH_LONG)
+                    .show()
             }
         } catch (e: Exception) {
             Timber.e(e, "Error during quick save process")
@@ -574,7 +620,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 Timber.e("Failed to start or run recording $e")
                 _isRecording.value = false // Revert state on any failure.
             } finally {
-                // This now correctly cleans up only when the coroutine is finished or cancelled.
                 recorder?.stop()
                 recorder?.release()
                 Timber.d("Recording coroutine finished and cleaned up.")
@@ -683,9 +728,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 if (_isRecording.value) "Pause" else "Continue",
                 if (_isRecording.value) stopIntent else startIntent
             ).addAction(
-                R.drawable.baseline_save_alt_24,
-                "Save and Clear",
-                if (canSave) saveIntent else null
+                R.drawable.baseline_save_alt_24, "Save and Clear", if (canSave) saveIntent else null
             )
         }
 
