@@ -166,7 +166,7 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    suspend fun updateBufferTimeLength(bufferTimeLength: Int) {
+    suspend fun updateBufferTimeLengthS(bufferTimeLength: Int) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.BUFFER_TIME_LENGTH_S] = bufferTimeLength
         }
@@ -335,7 +335,7 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
     }
 
     fun uploadSettingsToAppView(settingsViewModel: SettingsViewModel): List<Job> {
-        val job1 = settingsViewModel.updateBufferTimeLength(bufferTimeLengthTemp.intValue)
+        val job1 = settingsViewModel.updateBufferTimeLengthS(bufferTimeLengthTemp.intValue)
         val job2 = settingsViewModel.updateSampleRate(sampleRateTemp.intValue)
         val job3 = settingsViewModel.updateBitDepth(bitDepthTemp.value)
         val job4 = settingsViewModel.updateIsAiAutoClipEnabled(isAiAutoClipEnabled.value)

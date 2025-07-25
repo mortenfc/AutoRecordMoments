@@ -27,12 +27,12 @@ import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
-import com.mfc.recentaudiobuffer.VADProcessor.Companion.readWavHeader
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -66,7 +66,7 @@ class MainActivity : AppCompatActivity() {
     private var showDirectoryPermissionDialog by mutableStateOf(false)
 
     // State for the save dialog
-    private var bufferToSaveState by mutableStateOf<ByteArray?>(null)
+    private var vadProcessedByteArray by mutableStateOf<ByteArray?>(null)
     private var audioConfigState by mutableStateOf<AudioConfig?>(null)
     private var suggestedFileNameState by mutableStateOf("")
 
@@ -121,7 +121,7 @@ class MainActivity : AppCompatActivity() {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
                 FileSavingUtils.cacheGrantedUri(this, it)
-                if (bufferToSaveState != null) {
+                if (vadProcessedByteArray != null) {
                     showSaveDialog = true
                 }
             }
@@ -141,7 +141,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
         createNotificationChannels()
-        mediaPlayerManager = MediaPlayerManager(context = this) { _, _ -> Timber.i("Player is ready.") }
+        mediaPlayerManager =
+            MediaPlayerManager(context = this) { _, _ -> Timber.i("Player is ready.") }
 
         setContent {
             val authError by authenticationManager.authError.collectAsState()
@@ -184,11 +185,10 @@ class MainActivity : AppCompatActivity() {
                 },
                 onDismissSaveDialog = {
                     showSaveDialog = false
-                    bufferToSaveState = null
+                    vadProcessedByteArray = null
                     audioConfigState = null
                     suggestedFileNameState = ""
-                }
-            )
+                })
         }
 
         if (FileSavingUtils.getCachedGrantedUri(this) == null) {
@@ -205,7 +205,11 @@ class MainActivity : AppCompatActivity() {
         super.onStart()
         authenticationManager.registerLauncher(this)
         if (MyBufferService.isServiceRunning.get() && !foregroundBufferServiceConn.isBound) {
-            bindService(Intent(this, MyBufferService::class.java), foregroundBufferServiceConn, Context.BIND_AUTO_CREATE)
+            bindService(
+                Intent(this, MyBufferService::class.java),
+                foregroundBufferServiceConn,
+                Context.BIND_AUTO_CREATE
+            )
         }
     }
 
@@ -225,7 +229,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleIntent(intent: Intent) {
         if (intent.action == FileSavingService.ACTION_OPEN_FILE) {
-            val savedFileUri = intent.getParcelableExtra<Uri>(FileSavingService.EXTRA_SAVED_FILE_URI)
+            val savedFileUri =
+                intent.getParcelableExtra<Uri>(FileSavingService.EXTRA_SAVED_FILE_URI)
             savedFileUri?.let { setUpMediaPlayer(it) }
         }
         if (intent.action == ACTION_REQUEST_DIRECTORY_PERMISSION) {
@@ -239,7 +244,11 @@ class MainActivity : AppCompatActivity() {
             if (!foregroundBufferServiceConn.isBound) {
                 wasStartRecordingButtonPress = true
                 startForegroundService(foregroundServiceAudioBuffer)
-                bindService(Intent(this, MyBufferService::class.java), foregroundBufferServiceConn, BIND_AUTO_CREATE)
+                bindService(
+                    Intent(this, MyBufferService::class.java),
+                    foregroundBufferServiceConn,
+                    BIND_AUTO_CREATE
+                )
             } else {
                 myBufferService?.startRecording()
             }
@@ -263,17 +272,21 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val settings = settingsRepository.getSettingsConfig()
-                val originalBuffer = myBufferService!!.getBuffer()
+                val originalBuffer = myBufferService!!.pauseSortAndGetBuffer()
                 val bufferToSave = if (settings.isAiAutoClipEnabled) {
                     withContext(Dispatchers.Default) {
                         vadProcessor.processBuffer(originalBuffer, settings.toAudioConfig())
                     }
                 } else {
-                    originalBuffer
+                    originalBuffer.rewind()
+                    val bytes = ByteArray(originalBuffer.remaining())
+                    originalBuffer.get(bytes)
+                    bytes
                 }
-                bufferToSaveState = bufferToSave
+                vadProcessedByteArray = bufferToSave
                 audioConfigState = settings.toAudioConfig()
-                val timestamp = SimpleDateFormat("yy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
+                val timestamp =
+                    SimpleDateFormat("yy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
                 suggestedFileNameState = "recording_${timestamp}.wav"
                 val destDirUri = FileSavingUtils.getCachedGrantedUri(this@MainActivity)
                 if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, destDirUri)) {
@@ -285,6 +298,7 @@ class MainActivity : AppCompatActivity() {
                 Timber.e(e, "Error during save buffer preparation")
                 Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
             } finally {
+                myBufferService!!.startRecording()
                 isLoading = false
             }
         }
@@ -295,31 +309,35 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleConfirmSave(fileName: String) {
-        val buffer = bufferToSaveState
+        val buffer = vadProcessedByteArray
         val config = audioConfigState
         val destDirUri = FileSavingUtils.getCachedGrantedUri(this)
         if (buffer == null || config == null || destDirUri == null) {
-            Toast.makeText(this, "Internal error: Missing data for save.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Internal error: Missing data for save.", Toast.LENGTH_SHORT)
+                .show()
             return
         }
         val destDir = DocumentFile.fromTreeUri(this, destDirUri)
         if (destDir?.findFile(fileName) != null) {
-            AlertDialog.Builder(this)
-                .setTitle("File Exists")
+            AlertDialog.Builder(this).setTitle("File Exists")
                 .setMessage("A file named '$fileName' already exists. Do you want to overwrite it?")
-                .setPositiveButton("Overwrite") { _, _ -> proceedWithSave(buffer, config, destDirUri, fileName) }
-                .setNegativeButton("Cancel", null)
-                .show()
+                .setPositiveButton("Overwrite") { _, _ ->
+                    proceedWithSave(
+                        buffer, config, destDirUri, fileName
+                    )
+                }.setNegativeButton("Cancel", null).show()
         } else {
             proceedWithSave(buffer, config, destDirUri, fileName)
         }
     }
 
-    private fun proceedWithSave(buffer: ByteArray, config: AudioConfig, destDirUri: Uri, fileName: String) {
+    private fun proceedWithSave(
+        buffer: ByteArray, config: AudioConfig, destDirUri: Uri, fileName: String
+    ) {
         lifecycleScope.launch {
             isLoading = true
             val tempFileUri = withContext(Dispatchers.IO) {
-                FileSavingUtils.saveBufferToTempFile(this@MainActivity, buffer)
+                FileSavingUtils.saveBufferToTempFile(this@MainActivity, ByteBuffer.wrap(buffer))
             }
             if (tempFileUri != null) {
                 val saveIntent = Intent(this@MainActivity, FileSavingService::class.java).apply {
@@ -331,7 +349,9 @@ class MainActivity : AppCompatActivity() {
                 startService(saveIntent)
                 myBufferService?.resetBuffer()
             } else {
-                Toast.makeText(this@MainActivity, "Failed to create temporary file.", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    this@MainActivity, "Failed to create temporary file.", Toast.LENGTH_LONG
+                ).show()
             }
             isLoading = false
         }
@@ -345,7 +365,8 @@ class MainActivity : AppCompatActivity() {
         ).apply {
             description = FileSavingService.RESULT_NOTIFICATION_CHANNEL_DESCRIPTION
         }
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager =
+            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(resultChannel)
     }
 
@@ -356,8 +377,17 @@ class MainActivity : AppCompatActivity() {
             if (permissions.all { it.value }) {
                 onPermissionsGrantedCallback?.invoke()
             } else {
-                Toast.makeText(this, "Permissions are required. Please grant them in app settings.", Toast.LENGTH_LONG).show()
-                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+                Toast.makeText(
+                    this,
+                    "Permissions are required. Please grant them in app settings.",
+                    Toast.LENGTH_LONG
+                ).show()
+                startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", packageName, null)
+                    )
+                )
             }
             onPermissionsGrantedCallback = null
         }
@@ -387,18 +417,21 @@ class MainActivity : AppCompatActivity() {
                 val originalBytes = withContext(Dispatchers.IO) { inputStream?.readBytes() }
                 inputStream?.close()
                 if (originalBytes == null) {
-                    Toast.makeText(this@MainActivity, "Failed to read file", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Failed to read file", Toast.LENGTH_SHORT)
+                        .show()
                     return@launch
                 }
-                val config = readWavHeader(originalBytes)
+                val config = WavUtils.readWavHeader(originalBytes)
                 val audioData = originalBytes.drop(44).toByteArray()
                 val processedBytes = withContext(Dispatchers.Default) {
-                    vadProcessor.processBuffer(audioData, config)
+                    vadProcessor.processBuffer(ByteBuffer.wrap(audioData), config)
                 }
-                bufferToSaveState = processedBytes
+                vadProcessedByteArray = processedBytes
                 audioConfigState = config
-                val originalFileName = DocumentFile.fromSingleUri(this@MainActivity, fileUri)?.name ?: "processed.wav"
-                suggestedFileNameState = originalFileName.replace(".wav", "_clipped.wav", ignoreCase = true)
+                val originalFileName =
+                    DocumentFile.fromSingleUri(this@MainActivity, fileUri)?.name ?: "processed.wav"
+                suggestedFileNameState =
+                    originalFileName.replace(".wav", "_clipped.wav", ignoreCase = true)
                 val destDirUri = FileSavingUtils.getCachedGrantedUri(this@MainActivity)
                 if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, destDirUri)) {
                     showSaveDialog = true

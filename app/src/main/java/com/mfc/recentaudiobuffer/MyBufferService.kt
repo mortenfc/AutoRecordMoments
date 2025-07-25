@@ -57,11 +57,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import timber.log.Timber
-import java.io.OutputStream
 import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -74,7 +73,7 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 
 interface MyBufferServiceInterface {
-    fun getBuffer(): ByteArray
+    fun pauseSortAndGetBuffer(): ByteBuffer
     fun stopRecording()
     fun startRecording()
     fun resetBuffer()
@@ -101,12 +100,16 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         const val ACTION_STOP_RECORDING_SERVICE = "com.example.app.ACTION_STOP_RECORDING_SERVICE"
         const val ACTION_START_RECORDING_SERVICE = "com.example.app.ACTION_START_RECORDING_SERVICE"
         const val ACTION_SAVE_RECORDING_SERVICE = "com.example.app.ACTION_SAVE_RECORDING_SERVICE"
+        const val ACTION_RESTART_WITH_NEW_SETTINGS =
+            "com.mfc.recentaudiobuffer.ACTION_RESTART_WITH_NEW_SETTINGS"
+
+        @VisibleForTesting
+        const val ACTION_SAVE_COMPLETE = "com.mfc.recentaudiobuffer.ACTION_SAVE_COMPLETE"
         private const val REQUEST_CODE_STOP = 1
         private const val REQUEST_CODE_START = 2
         private const val REQUEST_CODE_SAVE = 3
 
         // Static variable to hold the buffer
-        var sharedAudioDataToSave: ByteArray? = null
         var isServiceRunning = AtomicBoolean(false)
     }
 
@@ -168,6 +171,14 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                     quickSaveBuffer()
                 }
             }
+
+            ACTION_RESTART_WITH_NEW_SETTINGS -> {
+                serviceScope.launch {
+                    Timber.d("Restarting service with new settings...")
+                    stopRecording()
+                    quickSaveBuffer()
+                }
+            }
         }
 
         startForeground(CHRONIC_NOTIFICATION_ID, createNotification())
@@ -182,6 +193,20 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         stopRecording()
         serviceScope.cancel()
         abandonAudioFocus()
+    }
+
+    @VisibleForTesting
+    fun prepareForTestRecording() {
+        _isRecording.value = true
+        // We intentionally DO NOT launch the real recordingJob.
+        // The test will provide the audio data directly via writeDataToBufferForTest().
+        serviceScope.launch {
+            // We still need to initialize the config and buffer size
+            config = settingsRepository.getAudioConfig()
+            updateTotalBufferSize(config)
+        }
+        // We can still start the notification updates if we want
+        startNotificationUpdates()
     }
 
     /**
@@ -212,21 +237,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 lock.unlock()
             }
         }
-    }
-
-    /**
-     * Uses the `getBuffer()` method
-     * to retrieve the full, ordered buffer before processing.
-     */
-    @VisibleForTesting
-    suspend fun stopAndGetFilteredAudio(): ByteArray {
-        stopRecording()
-        val fullBuffer = getBuffer()
-        val audioConfig = settingsRepository.getAudioConfig()
-
-        return vadProcessor.processBuffer(
-            fullBuffer, audioConfig, paddingMs = 500, debugFileBaseName = "debug_filtered_stream"
-        )
     }
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
@@ -274,32 +284,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         audioManager.abandonAudioFocus(audioFocusChangeListener)
     }
 
-    private fun tryAllocating(idealBufferSize: Int): Long {
-        try {
-            // Try to allocate a large byte array
-            ByteArray(idealBufferSize)
-            // If successful, return the allocation size
-            return idealBufferSize.toLong()
-        } catch (e: OutOfMemoryError) {
-            // If OutOfMemoryError, parse the message
-            val message = e.message ?: ""
-            val freeBytesRegex = Regex("with (\\d+) free bytes")
-            val matchResult = freeBytesRegex.find(message)
-            if (matchResult != null && matchResult.groupValues.size > 1) {
-                try {
-                    val freeBytes = matchResult.groupValues[1].toLong()
-                    Timber.d("Approximate free memory: $freeBytes bytes")
-                    return freeBytes
-                } catch (e: NumberFormatException) {
-                    Timber.e("Failed to parse free bytes from OutOfMemoryError message $e")
-                }
-            } else {
-                Timber.e("Failed to find free bytes in OutOfMemoryError message")
-            }
-        }
-        return 0
-    }
-
     private fun updateTotalBufferSize(config: AudioConfig) {
         var idealBufferSize =
             (config.sampleRateHz.toLong() * (config.bitDepth.bits / 8) * config.bufferTimeLengthS).toInt()
@@ -321,8 +305,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 Toast.LENGTH_LONG
             ).show()
             // You could decide to cap the buffer at a very small "safe" size here
-            if (idealBufferSize > 10 * 1024 * 1024) { // e.g., cap at 10MB if low memory
-                idealBufferSize = 10 * 1024 * 1024
+            if (idealBufferSize > 20 * 1024 * 1024) { // e.g., cap at 20MB if low memory
+                idealBufferSize = 20 * 1024 * 1024
             }
         }
 
@@ -340,6 +324,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         // 4. Safely try to allocate the final calculated size
         try {
             totalRingBufferSize.set(idealBufferSize)
+            audioDataStorage = ByteArray(idealBufferSize)
             audioDataStorage = ByteArray(idealBufferSize)
             Timber.d("Successfully allocated buffer of size: $idealBufferSize bytes")
         } catch (e: OutOfMemoryError) {
@@ -400,11 +385,10 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         if (!_isRecording.value) return
         _isRecording.value = false
 
-        // Stop both loops
+        // Stop both loops async
         recordingJob?.cancel()
         notificationJob?.cancel()
 
-        // Update notification one last time
         updateNotification()
     }
 
@@ -442,22 +426,42 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         recorded_duration.set(durationFormatted)
     }
 
-    override fun getBuffer(): ByteArray {
+    override fun pauseSortAndGetBuffer(): ByteBuffer {
         lock.lock()
+        stopRecording()
+        runBlocking {
+            recordingJob?.join()
+            notificationJob?.join()
+        }
         try {
-            if (!::audioDataStorage.isInitialized) return ByteArray(0)
+            // Prevent accessing uninitialized data
+            if (!::audioDataStorage.isInitialized || totalRingBufferSize.get() == 0) {
+                return ByteBuffer.allocate(0)
+            }
+
+            // Prevent reversing to negative index
+            if (recorderIndex.get() == 0 && !hasOverflowed.get()) {
+                return ByteBuffer.allocate(0)
+            }
+
             return if (hasOverflowed.get()) {
-                val shiftedBuffer = ByteArray(totalRingBufferSize.get())
-                val bytesToEnd = totalRingBufferSize.get() - recorderIndex.get()
-                System.arraycopy(
-                    audioDataStorage, recorderIndex.get(), shiftedBuffer, 0, bytesToEnd
-                )
-                System.arraycopy(
-                    audioDataStorage, 0, shiftedBuffer, bytesToEnd, recorderIndex.get()
-                )
-                shiftedBuffer
+                // Memory-efficient in-place rotation
+                val index = recorderIndex.get()
+
+                // 1. Reverse the first part (from the write head to the end)
+                audioDataStorage.reverse(index, audioDataStorage.size - 1)
+                // 2. Reverse the second part (from the start to before the write head)
+                audioDataStorage.reverse(0, index - 1)
+                // 3. Reverse the entire audioDataStorage to complete the rotation
+                audioDataStorage.reverse(0, audioDataStorage.size - 1)
+
+                recorderIndex.set(0)
+
+                // The original audioDataStorage is now correctly ordered. Return it.
+                ByteBuffer.wrap(audioDataStorage)
             } else {
-                audioDataStorage.copyOf(recorderIndex.get())
+                // ✅ Create a zero-copy view of the relevant part of the array.
+                ByteBuffer.wrap(audioDataStorage, 0, recorderIndex.get())
             }
         } finally {
             lock.unlock()
@@ -482,12 +486,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         try {
             val settings = settingsRepository.getSettingsConfig()
-            val originalBuffer = getBuffer()
+            val originalBuffer = pauseSortAndGetBuffer()
 
             val bufferToSave = if (settings.isAiAutoClipEnabled) {
-                withContext(Dispatchers.Default) {
+                ByteBuffer.wrap(withContext(Dispatchers.Default) {
                     vadProcessor.processBuffer(originalBuffer, settings.toAudioConfig())
-                }
+                })
             } else {
                 originalBuffer
             }
@@ -521,8 +525,11 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             Timber.e(e, "Error during quick save process")
             Toast.makeText(this, "Error: Could not save file.", Toast.LENGTH_LONG).show()
         } finally {
+            startRecording() // Restart
             _isLoading.value = false
             updateNotification() // Revert to normal notification state
+            sendBroadcast(Intent(ACTION_SAVE_COMPLETE))
+            Timber.d("Sent ACTION_SAVE_COMPLETE broadcast.")
         }
     }
 

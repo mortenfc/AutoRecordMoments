@@ -10,6 +10,7 @@ import java.nio.ByteOrder
  * A utility object for handling WAV file header operations.
  */
 object WavUtils {
+    const val WAV_HEADER_SIZE = 44
 
     /**
      * Writes a standard 44-byte WAV header to the given output stream.
@@ -51,5 +52,24 @@ object WavUtils {
             // Re-throw to allow the caller to handle the failed write operation
             throw e
         }
+    }
+
+    /**
+     * Reads the sample rate and bit depth from a WAV file's header.
+     */
+    fun readWavHeader(wavBytes: ByteArray): AudioConfig {
+        if (wavBytes.size < WAV_HEADER_SIZE) {
+            throw IllegalArgumentException("Invalid WAV header: file is too small.")
+        }
+        val buffer = ByteBuffer.wrap(wavBytes).order(ByteOrder.LITTLE_ENDIAN)
+        val sampleRate = buffer.getInt(24)
+        val bitDepthValue = buffer.getShort(34).toInt()
+
+        Timber.d("Read from WAV: sampleRate: $sampleRate, bitDepth: $bitDepthValue")
+
+        val bitDepth = bitDepths["$bitDepthValue"]
+            ?: throw IllegalArgumentException("Unsupported bit depth found in WAV header: $bitDepthValue")
+
+        return AudioConfig(sampleRate, 0, bitDepth)
     }
 }

@@ -27,6 +27,12 @@
         </DropdownSelection>
         <DialogSelection />
       </SelectionState>
+      <SelectionState runConfigName="processBuffer_withSilenceFile_returnsEmptyOrVerySmallBuffer()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="processStreamedAudioAndTriggerQuickSaveViaReceiver()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
     </selectionStates>
   </component>
 </project>

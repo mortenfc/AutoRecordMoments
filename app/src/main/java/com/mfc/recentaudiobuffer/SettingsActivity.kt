@@ -1,6 +1,7 @@
 package com.mfc.recentaudiobuffer
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -107,16 +108,13 @@ class SettingsActivity : ComponentActivity() {
                     // 3. Now the ViewModel's state is guaranteed to be updated
                     val configAfterUpdate = settingsViewModel.config.value
 
-                    val service = RecentAudioBufferApplication.getSharedViewModel().myBufferService
-                    val isSessionActive = service != null
-
-                    if (configBeforeUpdate != configAfterUpdate && isSessionActive) {
-                        Timber.d(
-                            "onSubmit(): Settings changed, quicksaving and restarting recording"
-                        )
-                        service?.stopRecording()
-                        service?.quickSaveBuffer()
-                        service?.startRecording()
+                    if (configBeforeUpdate != configAfterUpdate && MyBufferService.isServiceRunning.get()) {
+                        Timber.d("Settings changed and service is running. Sending restart command.")
+                        val intent =
+                            Intent(this@SettingsActivity, MyBufferService::class.java).apply {
+                                action = MyBufferService.ACTION_RESTART_WITH_NEW_SETTINGS
+                            }
+                        startService(intent)
                     } else if (configBeforeUpdate != configAfterUpdate) {
                         Timber.w(
                             "onSubmit(): Settings changed, but no recording session found"

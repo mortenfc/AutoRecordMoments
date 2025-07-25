@@ -47,9 +47,9 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun updateBufferTimeLength(bufferTimeLength: Int): Job {
+    fun updateBufferTimeLengthS(bufferTimeLength: Int): Job {
         return viewModelScope.launch {
-            settingsRepository.updateBufferTimeLength(bufferTimeLength)
+            settingsRepository.updateBufferTimeLengthS(bufferTimeLength)
             _config.update { it.copy(bufferTimeLengthS = bufferTimeLength) }
         }
     }

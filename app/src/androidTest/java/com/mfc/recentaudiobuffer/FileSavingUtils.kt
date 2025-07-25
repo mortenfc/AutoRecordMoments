@@ -11,7 +11,10 @@ import androidx.core.net.toUri
 import com.mfc.recentaudiobuffer.WavUtils.writeWavHeader
 import timber.log.Timber
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.channels.Channels
 
 /**
  * This is a special TEST version of FileSavingUtils.
@@ -47,11 +50,17 @@ object FileSavingUtils {
         sharedPrefs.edit { remove("grantedUri") }
     }
 
-    fun saveBufferToTempFile(context: Context, data: ByteArray): Uri? {
+    fun saveBufferToTempFile(context: Context, data: ByteBuffer): Uri? {
         return try {
             val tempFile = File.createTempFile("recording_buffer", ".raw", context.cacheDir)
-            tempFile.outputStream().use {
-                it.write(data)
+
+            // 1. Use a FileOutputStream which gives access to a channel
+            FileOutputStream(tempFile).use { fileOutputStream ->
+                // 2. Get the channel from the stream
+                fileOutputStream.channel.use { channel ->
+                    // 3. Write the ByteBuffer directly to the channel
+                    channel.write(data)
+                }
             }
             Uri.fromFile(tempFile)
         } catch (e: IOException) {
@@ -60,7 +69,8 @@ object FileSavingUtils {
         }
     }
 
-    fun saveDebugFile(context: Context, fileName: String, data: ByteArray, config: AudioConfig) {
+    @VisibleForTesting
+    fun saveDebugFile(context: Context, fileName: String, data: ByteBuffer, config: AudioConfig) {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
@@ -74,13 +84,19 @@ object FileSavingUtils {
 
         try {
             fileUri = contentResolver.insert(collection, values)
-            if (fileUri == null) {
-                throw IOException("Failed to create new MediaStore record for $fileName")
-            }
+                ?: throw IOException("Failed to create new MediaStore record for $fileName")
 
             contentResolver.openOutputStream(fileUri)?.use { stream ->
-                writeWavHeader(stream, data.size, config)
-                stream.write(data)
+                // First, write the WAV header to the stream as before.
+                // data.remaining() correctly gives the size of the audio data.
+                writeWavHeader(stream, data.remaining(), config)
+
+                // Create a channel from the stream to write the ByteBuffer.
+                Channels.newChannel(stream).use { channel ->
+                    // Ensure we write from the start of the buffer.
+                    data.rewind()
+                    channel.write(data)
+                }
                 stream.flush()
                 Timber.d("DEBUG file saved successfully to URI: $fileUri")
             } ?: throw IOException("Failed to open output stream for $fileUri")

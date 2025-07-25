@@ -5,13 +5,16 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtException
 import ai.onnxruntime.OrtSession
+import android.annotation.SuppressLint
 import be.tarsos.dsp.AudioEvent
 import be.tarsos.dsp.io.TarsosDSPAudioFormat
 import be.tarsos.dsp.resample.RateTransposer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.ShortBuffer
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,31 +25,14 @@ class VADProcessor @Inject constructor(
     companion object {
         private const val VAD_MAX_SAMPLE_RATE = 16000
         private const val VAD_MIN_SAMPLE_RATE = 8000
-        private const val WAV_HEADER_SIZE = 44
 
         // TUNINGS:
         private const val DEFAULT_PADDING_MS = 1300
         private const val SPEECH_THRESHOLD = 0.4f
 
-        /**
-         * Reads the sample rate and bit depth from a WAV file's header.
-         */
-        fun readWavHeader(wavBytes: ByteArray): AudioConfig {
-            if (wavBytes.size < WAV_HEADER_SIZE) {
-                throw IllegalArgumentException("Invalid WAV header: file is too small.")
-            }
-            val buffer = ByteBuffer.wrap(wavBytes).order(ByteOrder.LITTLE_ENDIAN)
-            val sampleRate = buffer.getInt(24)
-            val bitDepthValue = buffer.getShort(34).toInt()
-
-            Timber.d("Read from WAV: sampleRate: $sampleRate, bitDepth: $bitDepthValue")
-
-            val bitDepth = bitDepths["$bitDepthValue"]
-                ?: throw IllegalArgumentException("Unsupported bit depth found in WAV header: $bitDepthValue")
-
-            return AudioConfig(sampleRate, 0, bitDepth)
-        }
     }
+
+    data class SpeechTimestamp(val start: Int, var end: Int)
 
     // --- State variables modeled after the Java example ---
     private var state: Array<Array<FloatArray>>? = null
@@ -71,18 +57,19 @@ class VADProcessor @Inject constructor(
         lastBatchSize = 0
     }
 
+    @SuppressLint("VisibleForTests")
     fun processBuffer(
-        fullAudioBuffer: ByteArray,
+        fullAudioBuffer: ByteBuffer,
         config: AudioConfig,
         paddingMs: Int = DEFAULT_PADDING_MS,
         debugFileBaseName: String? = null
     ): ByteArray {
-        if (fullAudioBuffer.isEmpty()) return ByteArray(0)
+        if (fullAudioBuffer.remaining() == 0) return ByteArray(0)
 
-        // Reset state for each new buffer processing call to ensure no bleed-over.
         resetStates()
 
         if (debugFileBaseName != null) {
+            // Note: This requires the new saveDebugFile overload shown in the next section.
             FileSavingUtils.saveDebugFile(
                 context, "${debugFileBaseName}_01_original.wav", fullAudioBuffer, config
             )
@@ -97,7 +84,8 @@ class VADProcessor @Inject constructor(
             originalSampleRate >= VAD_MIN_SAMPLE_RATE -> VAD_MIN_SAMPLE_RATE
             else -> {
                 Timber.e("Unsupported sample rate for VAD: $originalSampleRate Hz.")
-                return fullAudioBuffer
+                // Return an empty ByteArray, not the ByteBuffer
+                return ByteArray(0)
             }
         }
 
@@ -115,7 +103,7 @@ class VADProcessor @Inject constructor(
                 FileSavingUtils.saveDebugFile(
                     context,
                     "${debugFileBaseName}_02_resampled.wav",
-                    resampledBytes,
+                    ByteBuffer.wrap(resampledBytes),
                     resampledConfig
                 )
             }
@@ -124,12 +112,16 @@ class VADProcessor @Inject constructor(
         val speechTimestamps = getSpeechTimestamps(processedFloats, vadSampleRate)
         val mergedTimestamps =
             mergeTimestamps(speechTimestamps, paddingMs, vadSampleRate, processedFloats.size)
+        // Call the new overloaded stitchAudio that accepts a ByteBuffer
         val finalResultBytes =
             stitchAudio(fullAudioBuffer, mergedTimestamps, config, vadSampleRate.toFloat())
 
         if (debugFileBaseName != null) {
             FileSavingUtils.saveDebugFile(
-                context, "${debugFileBaseName}_03_final_result.wav", finalResultBytes, config
+                context,
+                "${debugFileBaseName}_03_final_result.wav",
+                ByteBuffer.wrap(finalResultBytes),
+                config
             )
         }
 
@@ -146,13 +138,29 @@ class VADProcessor @Inject constructor(
         return value as? Array<Array<FloatArray>>
     }
 
+    private fun bytesToFloats(buffer: ByteBuffer, bitsPerSample: Int): FloatArray {
+        // Ensure the buffer is read from the beginning
+        buffer.rewind()
+
+        // Create a view of the ByteBuffer as a ShortBuffer
+        val shortBuffer: ShortBuffer = buffer.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+        val shortArray = ShortArray(shortBuffer.remaining())
+        shortBuffer.get(shortArray)
+
+        // Convert short array to float array
+        return FloatArray(shortArray.size) { i ->
+            // Normalize to the range [-1.0, 1.0]
+            shortArray[i] / 32768.0f
+        }
+    }
+
     private fun getSpeechTimestamps(
         audioFloats: FloatArray, sampleRate: Int
-    ): List<Map<String, Int>> {
+    ): List<SpeechTimestamp> {
         val windowSize = if (sampleRate == 16000) 512 else 256
         val contextSize = if (sampleRate == 16000) 64 else 32
 
-        val speechSegments = mutableListOf<Map<String, Int>>()
+        val speechSegments = mutableListOf<SpeechTimestamp>()
         var currentSpeechStart: Int? = null
 
         // Since we process one buffer at a time, batchSize is always 1.
@@ -209,8 +217,8 @@ class VADProcessor @Inject constructor(
                         currentSpeechStart = currentSamplePosition
                     } else if ((currentSpeechStart != null) && (score < SPEECH_THRESHOLD)) {
                         speechSegments.add(
-                            mapOf(
-                                "start" to currentSpeechStart!!, "end" to currentSamplePosition
+                            SpeechTimestamp(
+                                start = currentSpeechStart!!, end = currentSamplePosition
                             )
                         )
                         currentSpeechStart = null
@@ -229,9 +237,7 @@ class VADProcessor @Inject constructor(
 
         if (currentSpeechStart != null) {
             speechSegments.add(
-                mapOf(
-                    "start" to currentSpeechStart!!, "end" to audioFloats.size
-                )
+                SpeechTimestamp(start = currentSpeechStart, end = audioFloats.size)
             )
         }
 
@@ -281,34 +287,41 @@ class VADProcessor @Inject constructor(
     }
 
     private fun mergeTimestamps(
-        timestamps: List<Map<String, Int>>, paddingMs: Int, sampleRate: Int, totalSamples: Int
-    ): List<Map<String, Int>> {
+        timestamps: List<SpeechTimestamp>, paddingMs: Int, sampleRate: Int, totalSamples: Int
+    ): List<SpeechTimestamp> {
         if (timestamps.isEmpty()) return emptyList()
+
         val paddingSamples = (paddingMs / 1000f * sampleRate).toInt()
-        val mergeGapSamples = sampleRate * 2
-        val merged = mutableListOf<Map<String, Int>>()
-        var currentSegment = timestamps.first().toMutableMap()
+        val mergeGapSamples = sampleRate * 2 // Merge segments closer than 2 seconds
+
+        val merged = mutableListOf<SpeechTimestamp>()
+        var currentSegment =
+            timestamps.first().copy() // Use copy to avoid modifying the original list item
+
         for (i in 1 until timestamps.size) {
             val nextTimestamp = timestamps[i]
-            val gap = nextTimestamp["start"]!! - currentSegment["end"]!!
+            val gap = nextTimestamp.start - currentSegment.end
             if (gap < mergeGapSamples) {
-                currentSegment["end"] = nextTimestamp["end"]!!
+                // Merge segments by extending the end of the current one
+                currentSegment.end = nextTimestamp.end
             } else {
                 merged.add(currentSegment)
-                currentSegment = nextTimestamp.toMutableMap()
+                currentSegment = nextTimestamp.copy()
             }
         }
         merged.add(currentSegment)
+
+        // Apply padding to the final merged segments
         return merged.map {
-            val start = (it["start"]!! - paddingSamples).coerceAtLeast(0)
-            val end = (it["end"]!! + paddingSamples).coerceAtMost(totalSamples)
-            mapOf("start" to start, "end" to end)
+            val start = (it.start - paddingSamples).coerceAtLeast(0)
+            val end = (it.end + paddingSamples).coerceAtMost(totalSamples)
+            it.copy(start = start, end = end)
         }
     }
 
     private fun stitchAudio(
-        originalBuffer: ByteArray,
-        segments: List<Map<String, Int>>,
+        originalBuffer: ByteBuffer,
+        segments: List<SpeechTimestamp>,
         config: AudioConfig,
         vadSampleRate: Float
     ): ByteArray {
@@ -316,29 +329,23 @@ class VADProcessor @Inject constructor(
         val originalSampleRate = config.sampleRateHz
         val scaleFactor = originalSampleRate.toDouble() / vadSampleRate
 
-        val totalSizeInBytes = segments.sumOf {
-            val originalStart = (it["start"]!! * scaleFactor).toInt()
-            val originalEnd = (it["end"]!! * scaleFactor).toInt()
-            (originalEnd - originalStart) * bytesPerSample
-        }
-
-        if (totalSizeInBytes == 0) return ByteArray(0)
-        val newBuffer = ByteArray(totalSizeInBytes)
-        var currentPosition = 0
+        // Use a stream to build the final byte array efficiently
+        val resultStream = ByteArrayOutputStream()
 
         segments.forEach { segment ->
-            val startByte = (segment["start"]!! * scaleFactor).toInt() * bytesPerSample
-            val endByte = (segment["end"]!! * scaleFactor).toInt() * bytesPerSample
+            val startByte = (segment.start * scaleFactor).toInt() * bytesPerSample
+            val endByte = (segment.end * scaleFactor).toInt() * bytesPerSample
             val lengthInBytes = endByte - startByte
-            if (startByte + lengthInBytes > originalBuffer.size || lengthInBytes < 0) {
-                Timber.e("Stitch error: calculated segment is out of bounds.")
-                return@forEach
+
+            if (lengthInBytes > 0 && startByte + lengthInBytes <= originalBuffer.capacity()) {
+                val segmentBytes = ByteArray(lengthInBytes)
+                originalBuffer.position(startByte) // Move the buffer's "read head"
+                originalBuffer.get(segmentBytes)      // Read the data into our temp array
+                resultStream.write(segmentBytes)
+            } else if (lengthInBytes < 0) {
+                Timber.e("Stitch error: calculated segment has negative length.")
             }
-            System.arraycopy(
-                originalBuffer, startByte, newBuffer, currentPosition, lengthInBytes
-            )
-            currentPosition += lengthInBytes
         }
-        return newBuffer.copyOf(currentPosition)
+        return resultStream.toByteArray()
     }
 }
