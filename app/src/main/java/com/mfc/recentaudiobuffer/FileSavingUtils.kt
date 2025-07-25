@@ -68,7 +68,7 @@ object FileSavingUtils {
     }
 
     /**
-     * Saves a byte array of raw audio data to a temporary file in the app's cache directory.
+     * Saves a bytebuffer of raw audio data to a temporary file in the app's cache directory.
      * This is the reliable way to pass data to the FileSavingService.
      *
      * @return The Uri of the created temporary file, or null on failure.

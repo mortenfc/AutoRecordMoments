@@ -149,7 +149,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
-        createNotificationChannels()
         requestAudioFocus()
     }
 
@@ -427,12 +426,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     }
 
     override fun pauseSortAndGetBuffer(): ByteBuffer {
-        lock.lock()
         stopRecording()
         runBlocking {
             recordingJob?.join()
             notificationJob?.join()
         }
+        lock.lock()
         try {
             // Prevent accessing uninitialized data
             if (!::audioDataStorage.isInitialized || totalRingBufferSize.get() == 0) {
@@ -525,10 +524,14 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             Timber.e(e, "Error during quick save process")
             Toast.makeText(this, "Error: Could not save file.", Toast.LENGTH_LONG).show()
         } finally {
+
             startRecording() // Restart
             _isLoading.value = false
             updateNotification() // Revert to normal notification state
-            sendBroadcast(Intent(ACTION_SAVE_COMPLETE))
+            val intent = Intent(ACTION_SAVE_COMPLETE).apply {
+                setPackage(packageName)
+            }
+            sendBroadcast(intent)
             Timber.d("Sent ACTION_SAVE_COMPLETE broadcast.")
         }
     }
@@ -658,19 +661,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     override fun onBind(intent: Intent): IBinder {
         return binder
-    }
-
-    private fun createNotificationChannels() {
-        val channel = NotificationChannel(
-            CHRONIC_NOTIFICATION_CHANNEL_ID,
-            CHRONIC_NOTIFICATION_CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = CHRONIC_NOTIFICATION_CHANNEL_DESCRIPTION
-        }
-        val notificationManager: NotificationManager =
-            getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(channel)
     }
 
     @OptIn(UnstableApi::class)

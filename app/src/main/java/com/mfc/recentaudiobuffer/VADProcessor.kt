@@ -69,8 +69,6 @@ class VADProcessor @Inject constructor(
     ): ByteArray {
         if (fullAudioBuffer.remaining() == 0) return ByteArray(0)
 
-        resetStates()
-
         if (debugFileBaseName != null) {
             // Note: This requires the new saveDebugFile overload shown in the next section.
             FileSavingUtils.saveDebugFile(
@@ -136,6 +134,8 @@ class VADProcessor @Inject constructor(
         config: AudioConfig,
         chunkSizeInSeconds: Int = DEFAULT_CHUNK_SIZE_S
     ): ByteArray {
+        resetStates()
+
         val bytesPerSample = config.bitDepth.bits / 8
         val bytesPerSecond = config.sampleRateHz * bytesPerSample
         val chunkSizeBytes = chunkSizeInSeconds * bytesPerSecond

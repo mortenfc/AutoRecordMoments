@@ -18,6 +18,7 @@ import androidx.test.rule.ServiceTestRule
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -177,103 +178,130 @@ class VADProcessorInstrumentedTest {
 
     // --- TESTS ---
     @Test
-    fun processStreamedAudioAndTriggerQuickSaveViaReceiver() = runTest(timeout = 3.minutes) {
-        val appContext = ApplicationProvider.getApplicationContext<Context>()
+    fun processStreamedAudioAndTriggerQuickSaveViaReceiver() {
+        runBlocking {
+            val appContext = ApplicationProvider.getApplicationContext<Context>()
 
-        // --- SETUP SYNCHRONIZATION ---
-        // 1. Create a latch that will block the test thread until countDown() is called.
-        val latch = CountDownLatch(1)
+            // --- SETUP SYNCHRONIZATION ---
+            // 1. Create a latch that will block the test thread until countDown() is called.
+            val latch = CountDownLatch(1)
 
-        // 2. Create a broadcast receiver that listens for our "save complete" signal.
-        val saveCompleteReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                if (intent?.action == MyBufferService.ACTION_SAVE_COMPLETE) {
-                    Timber.d("Test receiver got ACTION_SAVE_COMPLETE. Releasing latch.")
-                    // When the signal is received, release the latch.
-                    latch.countDown()
+            // 2. Create a broadcast receiver that listens for our "save complete" signal.
+            val saveCompleteReceiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (intent?.action == MyBufferService.ACTION_SAVE_COMPLETE) {
+                        Timber.d("Test receiver got ACTION_SAVE_COMPLETE. Releasing latch.")
+                        // When the signal is received, release the latch.
+                        latch.countDown()
+                    }
                 }
             }
-        }
 
-        var service: MyBufferService? = null
-        val testDir = File(appContext.cacheDir, "test-output")
+            var service: MyBufferService? = null
+            val testDir = File(appContext.cacheDir, "test-output")
 
-        try {
-            ContextCompat.registerReceiver(
-                appContext,
-                saveCompleteReceiver,
-                IntentFilter(MyBufferService.ACTION_SAVE_COMPLETE),
-                ContextCompat.RECEIVER_NOT_EXPORTED
-            )
+            try {
+                ContextCompat.registerReceiver(
+                    appContext,
+                    saveCompleteReceiver,
+                    IntentFilter(MyBufferService.ACTION_SAVE_COMPLETE),
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+                )
 
-            // --- GIVEN ---
-            if (testDir.exists()) {
-                testDir.deleteRecursively()
-            }
-            testDir.mkdirs()
-            FileSavingUtils.cacheGrantedUri(appContext, testDir.toUri())
-
-            val sampleRate = 16000
-            val audioConfig =
-                AudioConfig(sampleRate, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
-            settingsRepository.updateSampleRate(audioConfig.sampleRateHz)
-            settingsRepository.updateBitDepth(audioConfig.bitDepth)
-            settingsRepository.updateBufferTimeLengthS(1000)
-            settingsRepository.updateIsAiAutoClipEnabled(true)
-
-            val intent = Intent(appContext, MyBufferService::class.java)
-            val binder = serviceRule.bindService(intent)
-            service = (binder as MyBufferService.MyBinder).getService() as MyBufferService
-
-            // --- WHEN ---
-            service.prepareForTestRecording()
-            delay(200)
-            assertTrue(
-                "Service should be recording", service.isRecording.value
-            )
-
-            val speechChunk = loadSpeechSample()
-            val totalDurationSeconds = 1000
-            val chunkDurationMs = 1000
-
-            Timber.d("Starting to stream 1000 seconds of simulated audio...")
-            for (timeMs in 0 until totalDurationSeconds * 1000 step chunkDurationMs) {
-                if ((timeMs / 1000) % 15 == 0) { // Inject speech every 15 seconds
-                    service.writeDataToBufferForTest(speechChunk)
-                } else {
-                    val silenceChunk = generateSilence(chunkDurationMs, audioConfig)
-                    service.writeDataToBufferForTest(silenceChunk)
+                // --- GIVEN ---
+                if (testDir.exists()) {
+                    testDir.deleteRecursively()
                 }
-                delay(1) // Advance virtual time
-            }
-            Timber.d("Finished streaming.")
+                testDir.mkdirs()
+                FileSavingUtils.cacheGrantedUri(appContext, testDir.toUri())
 
-            // Send the broadcast to start the save operation
-            appContext.sendBroadcast(
-                Intent(
-                    appContext, NotificationActionReceiver::class.java
-                ).apply {
-                    action = NotificationActionReceiver.ACTION_SAVE_RECORDING
-                })
+                val sampleRate = 16000
+                val audioConfig =
+                    AudioConfig(sampleRate, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
+                settingsRepository.updateSampleRate(audioConfig.sampleRateHz)
+                settingsRepository.updateBitDepth(audioConfig.bitDepth)
+                settingsRepository.updateBufferTimeLengthS(1000)
+                settingsRepository.updateIsAiAutoClipEnabled(true)
 
-            // This will wait for the service to respond with its "complete" broadcast.
-            val completed = latch.await(2, TimeUnit.MINUTES)
-            assertTrue("VAD and save operation did not complete within the timeout.", completed)
+                val intent = Intent(appContext, MyBufferService::class.java)
+                val binder = serviceRule.bindService(intent)
+                service = (binder as MyBufferService.MyBinder).getService() as MyBufferService
 
-            // --- THEN ---
-            val bufferAfterSave = service.pauseSortAndGetBuffer()
-            assertEquals(
-                "Buffer should be empty after quicksave and reset", 0, bufferAfterSave.remaining()
-            )
+                // --- WHEN ---
+                service.prepareForTestRecording()
+                delay(200)
+                assertTrue(
+                    "Service should be recording", service.isRecording.value
+                )
 
-        } finally {
-            // --- CLEANUP ---
-            appContext.unregisterReceiver(saveCompleteReceiver)
-            service?.stopRecording()
-            service?.resetBuffer()
-            FileSavingUtils.clearCachedUri(appContext)
-            if (testDir.exists()) {
-                testDir.deleteRecursively()
+                val speechChunk = loadSpeechSample()
+                val totalDurationSeconds = 1200
+                val chunkDurationMs = 1000
+
+                Timber.d("Starting to stream 1000 seconds of simulated audio...")
+                for (timeMs in 0 until totalDurationSeconds * 1000 step chunkDurationMs) {
+                    if ((timeMs / 1000) % 15 == 0) { // Inject speech every 15 seconds
+                        service.writeDataToBufferForTest(speechChunk)
+                    } else {
+                        val silenceChunk = generateSilence(chunkDurationMs, audioConfig)
+                        service.writeDataToBufferForTest(silenceChunk)
+                    }
+                }
+                Timber.d("Finished streaming.")
+
+                // Send the broadcast to start the save operation
+                appContext.sendBroadcast(
+                    Intent(
+                        appContext, NotificationActionReceiver::class.java
+                    ).apply {
+                        action = NotificationActionReceiver.ACTION_SAVE_RECORDING
+                    })
+
+                // This will wait for the service to respond with its "complete" broadcast.
+                val completed = latch.await(2, TimeUnit.MINUTES)
+                assertTrue("VAD and save operation did not complete within the timeout.", completed)
+
+                // --- THEN ---
+                val bufferAfterSave = service.pauseSortAndGetBuffer()
+                assertEquals(
+                    "Buffer should be empty after quicksave and reset",
+                    0,
+                    bufferAfterSave.remaining()
+                )
+
+                Timber.d("Verifying duration of saved file...")
+                val savedFiles = testDir.listFiles { _, name -> name.startsWith("quicksave_") }
+                assertTrue(
+                    "A saved file should exist in the test directory", !savedFiles.isNullOrEmpty()
+                )
+
+                val savedFile = savedFiles!!.first()
+                val fileBytes = savedFile.readBytes()
+                val wavConfig = WavUtils.readWavHeader(fileBytes)
+                val audioDataSize = fileBytes.size - WavUtils.WAV_HEADER_SIZE
+
+// Calculate duration in seconds
+                val bytesPerSecond = wavConfig.sampleRateHz * (wavConfig.bitDepth.bits / 8)
+                val durationInSeconds = audioDataSize.toDouble() / bytesPerSecond
+
+                Timber.d("Saved file duration: $durationInSeconds seconds.")
+
+// Assert that the duration is within 1000 ± 5 seconds
+                val expectedDurationRange = 995.0..1005.0
+                assertTrue(
+                    "The duration of the saved file ($durationInSeconds s) was not within the expected range of $expectedDurationRange s",
+                    durationInSeconds in expectedDurationRange
+                )
+
+            } finally {
+                // --- CLEANUP ---
+                appContext.unregisterReceiver(saveCompleteReceiver)
+                service?.stopRecording()
+                service?.resetBuffer()
+                FileSavingUtils.clearCachedUri(appContext)
+                if (testDir.exists()) {
+                    testDir.deleteRecursively()
+                }
             }
         }
     }

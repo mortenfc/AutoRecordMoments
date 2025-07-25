@@ -140,7 +140,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
-        createNotificationChannels()
         mediaPlayerManager =
             MediaPlayerManager(context = this) { _, _ -> Timber.i("Player is ready.") }
 
@@ -355,19 +354,6 @@ class MainActivity : AppCompatActivity() {
             }
             isLoading = false
         }
-    }
-
-    private fun createNotificationChannels() {
-        val resultChannel = NotificationChannel(
-            FileSavingService.RESULT_NOTIFICATION_CHANNEL_ID,
-            FileSavingService.RESULT_NOTIFICATION_CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = FileSavingService.RESULT_NOTIFICATION_CHANNEL_DESCRIPTION
-        }
-        val notificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(resultChannel)
     }
 
     private var onPermissionsGrantedCallback: (() -> Unit)? = null
