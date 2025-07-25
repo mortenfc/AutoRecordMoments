@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.IBinder
 import androidx.annotation.OptIn
+import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.media3.common.util.UnstableApi
@@ -92,7 +93,13 @@ class FileSavingService : Service() {
         fileName: String,
         config: AudioConfig
     ): Uri? {
-        val destDir = DocumentFile.fromTreeUri(this, destDirUri)
+        val destDir = if (destDirUri.scheme == "file") {
+            // For testing with the local cache directory (file://)
+            DocumentFile.fromFile(File(destDirUri.path!!))
+        } else {
+            // For production with a user-selected directory (content://)
+            DocumentFile.fromTreeUri(this, destDirUri)
+        }
         if (destDir == null || !destDir.exists() || !destDir.isDirectory) {
             Timber.e("Destination directory is invalid or doesn't exist: $destDirUri")
             return null

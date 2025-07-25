@@ -6,6 +6,7 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtException
 import ai.onnxruntime.OrtSession
 import android.annotation.SuppressLint
+import androidx.annotation.VisibleForTesting
 import be.tarsos.dsp.AudioEvent
 import be.tarsos.dsp.io.TarsosDSPAudioFormat
 import be.tarsos.dsp.resample.RateTransposer
@@ -29,6 +30,7 @@ class VADProcessor @Inject constructor(
         // TUNINGS:
         private const val DEFAULT_PADDING_MS = 1300
         private const val SPEECH_THRESHOLD = 0.4f
+        private const val DEFAULT_CHUNK_SIZE_S = 60
 
     }
 
@@ -58,6 +60,7 @@ class VADProcessor @Inject constructor(
     }
 
     @SuppressLint("VisibleForTests")
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     fun processBuffer(
         fullAudioBuffer: ByteBuffer,
         config: AudioConfig,
@@ -126,6 +129,36 @@ class VADProcessor @Inject constructor(
         }
 
         return finalResultBytes
+    }
+
+    fun processBufferInChunks(
+        fullAudioBuffer: ByteBuffer,
+        config: AudioConfig,
+        chunkSizeInSeconds: Int = DEFAULT_CHUNK_SIZE_S
+    ): ByteArray {
+        val bytesPerSample = config.bitDepth.bits / 8
+        val bytesPerSecond = config.sampleRateHz * bytesPerSample
+        val chunkSizeBytes = chunkSizeInSeconds * bytesPerSecond
+
+        val resultStream = ByteArrayOutputStream()
+        fullAudioBuffer.rewind()
+
+        while (fullAudioBuffer.hasRemaining()) {
+            val currentChunkSize = minOf(chunkSizeBytes, fullAudioBuffer.remaining())
+            val chunkBytes = ByteArray(currentChunkSize)
+            fullAudioBuffer.get(chunkBytes)
+
+            val chunkBuffer = ByteBuffer.wrap(chunkBytes)
+
+            // Process this smaller chunk with your existing function
+            val speechInChunk = processBuffer(chunkBuffer, config)
+
+            if (speechInChunk.isNotEmpty()) {
+                resultStream.write(speechInChunk)
+            }
+        }
+
+        return resultStream.toByteArray()
     }
 
     @Suppress("UNCHECKED_CAST")

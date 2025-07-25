@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -27,6 +28,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.CountDownLatch
@@ -61,7 +63,6 @@ class VADProcessorInstrumentedTest {
         @JvmStatic
         fun clearDownloadsBeforeAllTests() {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
-            Timber.plant(Timber.DebugTree())
             Timber.w("!!! CLEARING DEBUG FILES IN DOWNLOADS DIRECTORY !!!")
             val contentResolver = context.contentResolver
 
@@ -169,8 +170,6 @@ class VADProcessorInstrumentedTest {
     @Before
     fun setUp() {
         hiltRule.inject()
-        // This ensures Timber is always active for your tests.
-        Timber.plant(Timber.DebugTree())
 
         context = InstrumentationRegistry.getInstrumentation().targetContext
         vadProcessor = VADProcessor(context)
@@ -197,6 +196,7 @@ class VADProcessorInstrumentedTest {
         }
 
         var service: MyBufferService? = null
+        val testDir = File(appContext.cacheDir, "test-output")
 
         try {
             ContextCompat.registerReceiver(
@@ -207,8 +207,11 @@ class VADProcessorInstrumentedTest {
             )
 
             // --- GIVEN ---
-            // We cache a non-null URI. Our fake FileSavingUtils will approve it.
-            FileSavingUtils.cacheGrantedUri(appContext, Uri.parse("content://fake-directory"))
+            if (testDir.exists()) {
+                testDir.deleteRecursively()
+            }
+            testDir.mkdirs()
+            FileSavingUtils.cacheGrantedUri(appContext, testDir.toUri())
 
             val sampleRate = 16000
             val audioConfig =
@@ -269,6 +272,9 @@ class VADProcessorInstrumentedTest {
             service?.stopRecording()
             service?.resetBuffer()
             FileSavingUtils.clearCachedUri(appContext)
+            if (testDir.exists()) {
+                testDir.deleteRecursively()
+            }
         }
     }
 

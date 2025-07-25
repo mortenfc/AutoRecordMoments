@@ -490,7 +490,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
             val bufferToSave = if (settings.isAiAutoClipEnabled) {
                 ByteBuffer.wrap(withContext(Dispatchers.Default) {
-                    vadProcessor.processBuffer(originalBuffer, settings.toAudioConfig())
+                    vadProcessor.processBufferInChunks(originalBuffer, settings.toAudioConfig())
                 })
             } else {
                 originalBuffer
