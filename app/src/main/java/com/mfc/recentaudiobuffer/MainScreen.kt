@@ -49,11 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
@@ -104,7 +100,9 @@ fun MainScreen(
 
     // FIXED: Use animateColorAsState for color animations
     val recordingButtonBackgroundColor by animateColorAsState(
-        targetValue = if (isRecordingFromService) colorResource(id = R.color.red_pause).copy(alpha = 1f, red = 0.65f, blue = 0.3f)
+        targetValue = if (isRecordingFromService) colorResource(id = R.color.red_pause).copy(
+            alpha = 1f, red = 0.65f, blue = 0.3f
+        )
         else colorResource(id = R.color.green_start).copy(alpha = 1f, green = 0.95f),
         animationSpec = tween(durationMillis = 400, easing = EaseInOutCubic),
         label = "recordingButtonBackgroundColor"
@@ -146,8 +144,7 @@ fun MainScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
+                        modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center
                     ) {
                         RecordingToggleButton(
                             isRecording = isRecordingFromService,
@@ -155,8 +152,7 @@ fun MainScreen(
                             elementsColor = recordingButtonElementsColor,
                             onClick = {
                                 if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick()
-                            }
-                        )
+                            })
                         IconButton(
                             onClick = { showPrivacyInfoDialog = true },
                             modifier = Modifier.offset(x = 100.dp, y = -100.dp)
@@ -228,15 +224,13 @@ fun MainScreen(
     // --- Dialogs ---
     if (showRecentFilesDialog) {
         RecentFilesDialog(
-            onDismiss = { onFileSelected(Uri.EMPTY) },
-            onFileSelected = onFileSelected
+            onDismiss = { onFileSelected(Uri.EMPTY) }, onFileSelected = onFileSelected
         )
     }
 
     if (showTrimFileDialog) {
         RecentFilesDialog(
-            onDismiss = { onTrimFileSelected(Uri.EMPTY) },
-            onFileSelected = onTrimFileSelected
+            onDismiss = { onTrimFileSelected(Uri.EMPTY) }, onFileSelected = onTrimFileSelected
         )
     }
 
@@ -258,13 +252,17 @@ fun MainScreen(
 }
 
 @Composable
-fun RecordingToggleButton(isRecording: Boolean, backgroundColor: Color, elementsColor: Color, onClick: () -> Unit) {
-    val buttonText = if (isRecording) "PAUSE BUFFERING" else "START BUFFERING"
+fun RecordingToggleButton(
+    isRecording: Boolean, backgroundColor: Color, elementsColor: Color, onClick: () -> Unit
+) {
+    val buttonText = if (isRecording) "Pause\nRecording" else "Start\nRecording"
     val iconRes = if (isRecording) R.drawable.baseline_mic_off_24 else R.drawable.baseline_mic_24
 
     Button(
         onClick = onClick,
-        modifier = Modifier.size(180.dp),
+        modifier = Modifier
+            .size(180.dp)
+            .circularShadow(radius = 5.dp, offsetY = 5.dp),
         shape = CircleShape,
         colors = ButtonDefaults.buttonColors(containerColor = backgroundColor),
         border = BorderStroke(2.dp, colorResource(id = R.color.purple_accent)),
@@ -285,7 +283,7 @@ fun RecordingToggleButton(isRecording: Boolean, backgroundColor: Color, elements
                 text = buttonText,
                 color = elementsColor,
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
+                fontSize = 19.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 8.dp)
             )
@@ -298,7 +296,9 @@ fun SecondaryActionButton(text: String, icon: Int, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Button(
             onClick = onClick,
-            modifier = Modifier.size(72.dp),
+            modifier = Modifier
+                .size(72.dp)
+                .roundedRectShadow(shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = 24.dp),
             shape = RoundedCornerShape(24.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = colorResource(id = R.color.teal_350),
@@ -338,45 +338,22 @@ fun MainButton(
     iconSize: Dp = 22.dp,
     maxLines: Int = 1
 ) {
+    // --- ADJUSTED OFFSETS ---
+    // The button calculates its specific insets based on its internal padding.
+    val horizontalInset = (16.dp - contentPadding) / 3.5f
+    val verticalInset = (16.dp - contentPadding) / 1.9f
+
     Button(
         onClick = onClick,
         modifier = modifier
             .padding(bottom = 30.dp)
-            .drawBehind {
-                val shadowColor = Color.Black
-                val transparentColor = Color.Transparent
-                val shadowRadius = 6.dp.toPx()
-                val offsetDown = 3.dp.toPx()
-
-                val paint = Paint().apply {
-                    this.color = transparentColor
-                    this.isAntiAlias = true
-                    this.asFrameworkPaint().setShadowLayer(
-                        shadowRadius, // Half of height
-                        0f, // No horizontal offset
-                        offsetDown, // Vertical offset
-                        shadowColor.toArgb()
-                    )
-                }
-
-                // --- ADJUSTED OFFSETS ---
-                // Use a smaller horizontal offset by dividing by a larger number
-                val horizontalOffset = (16.dp - contentPadding).toPx() / 3.5f
-                // Use a slightly adjusted vertical offset
-                val verticalOffset = (16.dp - contentPadding).toPx() / 1.9f
-
-                drawIntoCanvas { canvas ->
-                    canvas.drawRoundRect(
-                        left = horizontalOffset, // Apply smaller horizontal offset
-                        top = offsetDown + verticalOffset,
-                        right = size.width - horizontalOffset, // Apply smaller horizontal offset
-                        bottom = size.height - verticalOffset,
-                        radiusX = 4.dp.toPx(),
-                        radiusY = 4.dp.toPx(),
-                        paint = paint
-                    )
-                }
-            },
+            .roundedRectShadow(
+                shadowRadius = 5.dp,
+                offsetY = 5.dp,
+                cornerRadius = 8.dp, // This button has 8dp corners
+                insetX = horizontalInset,
+                insetY = verticalInset
+            ),
         colors = ButtonDefaults.buttonColors(
             containerColor = colorResource(id = R.color.teal_350),
             contentColor = colorResource(id = R.color.teal_900),
@@ -426,9 +403,7 @@ fun LoadingIndicator() {
             .clickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
-                onClick = {}
-            ),
-        contentAlignment = Alignment.Center
+                onClick = {}), contentAlignment = Alignment.Center
     ) {
         CircularProgressIndicator(color = colorResource(id = R.color.purple_accent))
     }
@@ -467,7 +442,9 @@ fun DonateBanner(modifier: Modifier = Modifier, onClick: () -> Unit) {
 
 @UnstableApi
 @Composable
-fun PlayerControlViewContainer(mediaPlayerManager: MediaPlayerManager, modifier: Modifier = Modifier) {
+fun PlayerControlViewContainer(
+    mediaPlayerManager: MediaPlayerManager, modifier: Modifier = Modifier
+) {
     var isVisible by remember { mutableStateOf(false) }
     var currentFileName by remember { mutableStateOf("") }
     var currentUri by remember { mutableStateOf<Uri?>(null) }
@@ -499,25 +476,21 @@ fun PlayerControlViewContainer(mediaPlayerManager: MediaPlayerManager, modifier:
                 ConstraintLayout(modifier = Modifier.fillMaxWidth()) {
                     val (playerViewRef, fileNameRef) = createRefs()
 
-                    AndroidView(
-                        modifier = Modifier.constrainAs(playerViewRef) {
-                            top.linkTo(parent.top)
-                            start.linkTo(parent.start)
-                            end.linkTo(parent.end)
-                            bottom.linkTo(parent.bottom)
-                        },
-                        factory = { context ->
-                            PlayerControlView(context).apply {
-                                player = mediaPlayerManager.player
-                                showTimeoutMs = 0
-                            }
-                        },
-                        update = { view ->
-                            view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            view.player = mediaPlayerManager.player
-                            view.show()
+                    AndroidView(modifier = Modifier.constrainAs(playerViewRef) {
+                        top.linkTo(parent.top)
+                        start.linkTo(parent.start)
+                        end.linkTo(parent.end)
+                        bottom.linkTo(parent.bottom)
+                    }, factory = { context ->
+                        PlayerControlView(context).apply {
+                            player = mediaPlayerManager.player
+                            showTimeoutMs = 0
                         }
-                    )
+                    }, update = { view ->
+                        view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        view.player = mediaPlayerManager.player
+                        view.show()
+                    })
                     Text(
                         text = currentFileName,
                         color = Color.White,
@@ -530,15 +503,13 @@ fun PlayerControlViewContainer(mediaPlayerManager: MediaPlayerManager, modifier:
                             start.linkTo(parent.start, margin = 56.dp)
                             end.linkTo(parent.end, margin = 56.dp)
                             bottom.linkTo(parent.bottom, margin = 16.dp)
-                        }
-                    )
+                        })
                 }
                 IconButton(
                     onClick = {
                         mediaPlayerManager.closeMediaPlayer()
                         isVisible = false
-                    },
-                    modifier = Modifier
+                    }, modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(4.dp)
                         .size(40.dp)
@@ -585,8 +556,7 @@ fun MainScreenPreview() {
             showSaveDialog = true,
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
-            onDismissSaveDialog = {}
-        )
+            onDismissSaveDialog = {})
     }
 }
 

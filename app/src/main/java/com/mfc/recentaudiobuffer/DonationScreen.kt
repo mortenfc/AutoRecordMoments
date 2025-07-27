@@ -1,8 +1,5 @@
 package com.mfc.recentaudiobuffer
 
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -44,7 +41,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
@@ -293,40 +289,18 @@ fun CustomPaymentButton(
     Button(
         onClick = onClick, modifier = Modifier
             // Set a minimum height, but allow it to grow if the text wraps
-        .defaultMinSize(minHeight = 48.dp)
-            .drawBehind {
-                val shadowColor = Color.Black
-                val transparentColor = Color.Transparent
-                val shadowRadius = 4.dp.toPx()
-                val offset = 2.dp.toPx() // Offset downwards
-
-                val paint = Paint().apply {
-                    this.color = transparentColor
-                    this.isAntiAlias = true
-                    this.asFrameworkPaint().setShadowLayer(
-                        shadowRadius, // Half of height
-                        0f, // No horizontal offset
-                        offset, // Vertical offset
-                        shadowColor.toArgb()
-                    )
-                }
-                drawIntoCanvas { canvas ->
-                    canvas.drawRoundRect(
-                        left = 0f,
-                        top = offset, // Anchor is 0
-                        right = size.width,
-                        bottom = size.height, // Draw to the bottom of the button
-                        radiusX = size.height / 2, // Half the height for rounded corners
-                        radiusY = size.height / 2, // Half the height for rounded corners
-                        paint = paint
-                    )
-                }
-            }
+            .defaultMinSize(minHeight = 48.dp)
+            .pillShapeShadow(shadowRadius = 5.dp, offsetY = 5.dp)
             .clip(CircleShape) // Fully rounded corners
-        .background(Color.Black), colors = ButtonDefaults.buttonColors(
-        containerColor = Color.Transparent, // Make container transparent
-        contentColor = Color.White // Text color
-    ), shape = CircleShape) {
+            .background(Color.Black), colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Transparent, // Make container transparent
+            contentColor = Color.White,
+        ), border = ButtonDefaults.outlinedButtonBorder.copy(
+            brush = androidx.compose.ui.graphics.SolidColor(
+                colorResource(id = R.color.teal_100)
+            ), width = 2.dp
+        ), shape = CircleShape
+    ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp)
