@@ -147,7 +147,7 @@ class MainActivity : AppCompatActivity() {
             val authError by authenticationManager.authError.collectAsState()
             MainScreen(
                 signInButtonText = authenticationManager.signInButtonText,
-                onSignInClick = { authenticationManager.onSignInClick() },
+                onSignInClick = { authenticationManager.onSignInClick(this) },
                 authError = authError,
                 onDismissSignInErrorDialog = { authenticationManager.clearAuthError() },
                 isRecordingFromService = isRecording,
@@ -202,7 +202,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        authenticationManager.registerLauncher(this)
         if (MyBufferService.isServiceRunning.get() && !foregroundBufferServiceConn.isBound) {
             bindService(
                 Intent(this, MyBufferService::class.java),

@@ -136,79 +136,47 @@ class SettingsRepository @Inject constructor(
         return getUserId() != null
     }
 
-    suspend fun updateAreAdsEnabled(areAdsEnabled: Boolean) {
+    private suspend fun <T> updateSetting(
+        key: Preferences.Key<T>, value: T, firestoreFieldName: String
+    ) {
+        // 1. Update local DataStore
         dataStore.edit { preferences ->
-            preferences[PreferencesKeys.ARE_ADS_ENABLED] = areAdsEnabled
+            preferences[key] = value
         }
-        if (isLoggedIn()) {
+
+        // 2. Update Firestore if logged in
+        auth.currentUser?.uid?.let { userId ->
             try {
-                val userId = getUserId()!!
-                val userDocRef = firestore.collection("users").document(userId)
-                userDocRef.update("areAdsEnabled", areAdsEnabled).await()
+                firestore.collection("users").document(userId).update(firestoreFieldName, value)
+                    .await()
             } catch (e: Exception) {
-                Timber.e(e, "Failed to update areAdsEnabled in Firestore.")
+                Timber.e(e, "Failed to update '$firestoreFieldName' in Firestore.")
             }
         }
+    }
+
+    suspend fun updateAreAdsEnabled(areAdsEnabled: Boolean) {
+        updateSetting(PreferencesKeys.ARE_ADS_ENABLED, areAdsEnabled, "areAdsEnabled")
+
+    }
+
+    suspend fun updateBufferTimeLengthS(bufferTimeLengthS: Int) {
+        updateSetting(PreferencesKeys.BUFFER_TIME_LENGTH_S, bufferTimeLengthS, "bufferTimeLengthS")
     }
 
     suspend fun updateSampleRate(sampleRate: Int) {
-        dataStore.edit { preferences ->
-            preferences[PreferencesKeys.SAMPLE_RATE_HZ] = sampleRate
-        }
-        if (isLoggedIn()) {
-            try {
-                val userId = getUserId()!!
-                val userDocRef = firestore.collection("users").document(userId)
-                userDocRef.update("sampleRateHz", sampleRate).await()
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to update sampleRate in Firestore.")
-            }
-        }
-    }
-
-    suspend fun updateBufferTimeLengthS(bufferTimeLength: Int) {
-        dataStore.edit { preferences ->
-            preferences[PreferencesKeys.BUFFER_TIME_LENGTH_S] = bufferTimeLength
-        }
-        if (isLoggedIn()) {
-            try {
-                val userId = getUserId()!!
-                val userDocRef = firestore.collection("users").document(userId)
-                userDocRef.update("bufferTimeLengthS", bufferTimeLength).await()
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to update bufferTimeLengthS in Firestore.")
-            }
-        }
+        updateSetting(PreferencesKeys.SAMPLE_RATE_HZ, sampleRate, "sampleRateHz")
     }
 
     suspend fun updateBitDepth(bitDepth: BitDepth) {
-        dataStore.edit { preferences ->
-            preferences[PreferencesKeys.BIT_DEPTH] = bitDepth.toString()
-        }
-        if (isLoggedIn()) {
-            try {
-                val userId = getUserId()!!
-                val userDocRef = firestore.collection("users").document(userId)
-                userDocRef.update("bitDepth", bitDepth.toString()).await()
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to update bitDepth in Firestore.")
-            }
-        }
+        updateSetting(PreferencesKeys.BIT_DEPTH, bitDepth.toString(), "bitDepth")
     }
 
     suspend fun updateIsAiAutoClipEnabled(isAiAutoClipEnabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] = isAiAutoClipEnabled
-        }
-        if (isLoggedIn()) {
-            try {
-                val userId = getUserId()!!
-                val userDocRef = firestore.collection("users").document(userId)
-                userDocRef.update("isAiAutoClipEnabled", isAiAutoClipEnabled).await()
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to update isAiAutoClipEnabled in Firestore.")
-            }
-        }
+        updateSetting(
+            PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED, isAiAutoClipEnabled, "isAiAutoClipEnabled"
+        )
+
     }
 
     private fun getBitDepth(key: String): BitDepth {
@@ -244,8 +212,11 @@ class SettingsRepository @Inject constructor(
         val prefs = dataStore.data.first()
         return SettingsConfig(
             sampleRateHz = prefs[PreferencesKeys.SAMPLE_RATE_HZ] ?: DEFAULT_SAMPLE_RATE,
-            bufferTimeLengthS = prefs[PreferencesKeys.BUFFER_TIME_LENGTH_S] ?: DEFAULT_BUFFER_TIME_LENGTH_S,
-            bitDepth = BitDepth.fromString(prefs[PreferencesKeys.BIT_DEPTH] ?: DEFAULT_BIT_DEPTH_KEY) ?: bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
+            bufferTimeLengthS = prefs[PreferencesKeys.BUFFER_TIME_LENGTH_S]
+                ?: DEFAULT_BUFFER_TIME_LENGTH_S,
+            bitDepth = BitDepth.fromString(
+                prefs[PreferencesKeys.BIT_DEPTH] ?: DEFAULT_BIT_DEPTH_KEY
+            ) ?: bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
             areAdsEnabled = prefs[PreferencesKeys.ARE_ADS_ENABLED] ?: true,
             isAiAutoClipEnabled = prefs[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] ?: true
         )

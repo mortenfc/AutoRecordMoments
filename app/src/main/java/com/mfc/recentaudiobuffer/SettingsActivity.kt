@@ -39,7 +39,6 @@ class SettingsActivity : ComponentActivity() {
     override fun onStart() {
         Timber.i("onStart() called")
         super.onStart()
-        authenticationManager.registerLauncher(this)
     }
 
     @SuppressLint("UnrememberedMutableState")
@@ -70,7 +69,7 @@ class SettingsActivity : ComponentActivity() {
         SettingsScreen(
             state = state,
             signInButtonText = authenticationManager.signInButtonText,
-            onSignInClick = { authenticationManager.onSignInClick() },
+            onSignInClick = { authenticationManager.onSignInClick(this) },
             authError = authenticationManager.authError.collectAsState().value,
             onDismissSignInErrorDialog = { authenticationManager.clearAuthError() },
             onSampleRateChanged = { value ->

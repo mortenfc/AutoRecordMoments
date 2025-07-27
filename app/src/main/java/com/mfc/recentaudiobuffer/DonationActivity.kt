@@ -56,7 +56,7 @@ class DonationActivity : AppCompatActivity() {
                 ) {
                     DonationScreen(
                         signInButtonText = authenticationManager.signInButtonText,
-                        onSignInClick = { authenticationManager.onSignInClick() },
+                        onSignInClick = { authenticationManager.onSignInClick(this) },
                         onPayClick = { amount -> sendPaymentRequest(amount) },
                         onCardPayClick = { amount -> sendPaymentRequest(amount) },
                         onBackClick = { this.finish() },
@@ -73,7 +73,6 @@ class DonationActivity : AppCompatActivity() {
     override fun onStart() {
         Timber.i("onStart() called")
         super.onStart()
-        authenticationManager.registerLauncher(this)
     }
 
     private fun setupPaymentMethods() {
