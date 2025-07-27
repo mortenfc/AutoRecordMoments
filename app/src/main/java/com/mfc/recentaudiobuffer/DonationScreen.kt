@@ -134,8 +134,7 @@ fun DonationScreen(
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(48.dp) // Set a fixed height for consistency
-                                        .padding(end = 4.dp),
-                                    factory = { context ->
+                                        .padding(end = 4.dp), factory = { context ->
                                         // Create the PayButton View
                                         PayButton(context).apply {
                                             // Set the click listener to trigger your existing logic
@@ -149,8 +148,7 @@ fun DonationScreen(
                                                 }
                                             }
                                         }
-                                    }
-                                )
+                                    })
 
                                 Spacer(modifier = Modifier.width(8.dp))
 
@@ -280,38 +278,22 @@ fun DonationAmountTextField(
 
 @Composable
 fun CardPayButton(onClick: () -> Unit) {
-    PaymentButton(
+    CustomPaymentButton(
         onClick = onClick,
         painterResource(id = R.drawable.baseline_credit_card_24),
         stringResource(id = R.string.pay_with_credit_card),
-        stringResource(id = R.string.pay_with_credit_card),
-        false
+        stringResource(id = R.string.pay_with_credit_card)
     )
 }
 
 @Composable
-fun PaymentButton(
-    onClick: () -> Unit,
-    icon: Painter,
-    contentDescription: String,
-    text: String,
-    isGooglePay: Boolean
+fun CustomPaymentButton(
+    onClick: () -> Unit, icon: Painter, contentDescription: String, text: String
 ) {
-    // Determine the sizing modifier based on the button type
-    val sizeModifier = if (isGooglePay) {
-        // Google Pay button likely has fixed brand requirements
-        Modifier
-            .width(150.dp)
-            .height(48.dp)
-    } else {
-        // Card button will now be flexible
-        Modifier
-            // Set a minimum height, but allow it to grow if the text wraps
-            .defaultMinSize(minHeight = 48.dp)
-    }
-
     Button(
-        onClick = onClick, modifier = sizeModifier // Apply the appropriate sizing
+        onClick = onClick, modifier = Modifier
+            // Set a minimum height, but allow it to grow if the text wraps
+        .defaultMinSize(minHeight = 48.dp)
             .drawBehind {
                 val shadowColor = Color.White
                 val transparentColor = Color.Transparent
@@ -341,10 +323,10 @@ fun PaymentButton(
                 }
             }
             .clip(CircleShape) // Fully rounded corners
-            .background(Color.Black), colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Transparent, // Make container transparent
-            contentColor = Color.White // Text color
-        ), shape = CircleShape) {
+        .background(Color.Black), colors = ButtonDefaults.buttonColors(
+        containerColor = Color.Transparent, // Make container transparent
+        contentColor = Color.White // Text color
+    ), shape = CircleShape) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp)
@@ -353,11 +335,11 @@ fun PaymentButton(
                 painter = icon,
                 contentDescription = contentDescription,
                 modifier = Modifier.size(24.dp),
-                colorFilter = if (!isGooglePay) ColorFilter.tint(colorResource(id = R.color.teal_900)) else null
+                colorFilter = ColorFilter.tint(colorResource(id = R.color.teal_150))
             )
-            Spacer(modifier = if (isGooglePay) Modifier.width(1.dp) else Modifier.width(5.dp))
+            Spacer(modifier = Modifier.width(5.dp))
             Text(
-                text = text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White
+                text = text, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = Color.White
             )
         }
     }
