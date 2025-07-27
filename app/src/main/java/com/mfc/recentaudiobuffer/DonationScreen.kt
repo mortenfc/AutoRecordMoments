@@ -295,7 +295,7 @@ fun CustomPaymentButton(
             .background(Color.Black), colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent, // Make container transparent
             contentColor = Color.White,
-        ), border = ButtonDefaults.outlinedButtonBorder.copy(
+        ), border = ButtonDefaults.outlinedButtonBorder().copy(
             brush = androidx.compose.ui.graphics.SolidColor(
                 colorResource(id = R.color.teal_100)
             ), width = 2.dp

@@ -17,8 +17,8 @@ android {
         applicationId = "com.mfc.recentaudiobuffer"
         minSdk = 32
         targetSdk = 34
-        versionCode = 16
-        versionName = "1.0.16"
+        versionCode = 17
+        versionName = "1.0.17"
 
         testInstrumentationRunner = "com.mfc.recentaudiobuffer.HiltTestRunner"
         vectorDrawables {
@@ -111,7 +111,7 @@ dependencies {
     kspAndroidTest("com.google.dagger:hilt-android-compiler:2.57")
     // For testing Android Services
     androidTestImplementation("androidx.test:rules:1.6.1")
-    androidTestImplementation("androidx.test.services:storage:1.5.0") // If needed
+    androidTestImplementation("androidx.test.services:storage:1.5.0")
 
     // Donation
     implementation platform("com.google.firebase:firebase-bom:33.8.0")
@@ -119,8 +119,10 @@ dependencies {
     implementation("com.google.firebase:firebase-crashlytics")
     implementation("com.google.firebase:firebase-crashlytics-ktx")
 
-    implementation("androidx.credentials:credentials:1.5.0")
-    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    //noinspection GradleDependency Update requires API >= 35
+    implementation("androidx.credentials:credentials:1.3.0")
+    //noinspection GradleDependency Update requires API >= 35
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation 'com.google.android.gms:play-services-ads:23.6.0'
 
     implementation 'com.stripe:stripe-android:21.21.0'

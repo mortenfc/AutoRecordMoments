@@ -118,6 +118,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     @Inject
     lateinit var vadProcessor: VADProcessor
 
+    private val _trimmingProgress = MutableStateFlow(-1f) // -1f indicates not started
+    val trimmingProgress: StateFlow<Float> = _trimmingProgress.asStateFlow()
+
+    private val _trimmingEta = MutableStateFlow(0L) // ETA in seconds
+    val trimmingEta: StateFlow<Long> = _trimmingEta.asStateFlow()
+
     // 1. Create a private, mutable state flow that the service controls.
     private val _isRecording = MutableStateFlow(false)
 
@@ -505,7 +511,10 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             return
         }
         _isLoading.value = true
-        updateNotification() // Show "saving..." state in notification
+        _trimmingProgress.value = 0f
+        val startTime = System.currentTimeMillis()
+
+        updateNotification() // Show "Trimming... [0% - ETA ...]"
 
         try {
             val settings = settingsRepository.getSettingsConfig()
@@ -514,12 +523,25 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             val bufferToSave = if (settings.isAiAutoClipEnabled) {
                 ByteBuffer.wrap(withContext(Dispatchers.Default) {
                     vadProcessor.process(
-                        originalBuffer, settings.toAudioConfig()
-                    )
+                        originalBuffer, settings.toAudioConfig(), onProgress = { progress ->
+                            _trimmingProgress.value = progress
+                            // Calculate ETA
+                            if (progress > 0.01f) { // Avoid division by zero
+                                val elapsedTime = System.currentTimeMillis() - startTime
+                                val totalTime = elapsedTime / progress
+                                val remainingTime = (totalTime - elapsedTime).toLong()
+                                _trimmingEta.value = TimeUnit.MILLISECONDS.toSeconds(remainingTime)
+                            }
+
+                            updateNotification()
+                        })
                 })
             } else {
                 originalBuffer
             }
+
+            _trimmingProgress.value = -1f // Reset for the next run
+            updateNotification() // This will now show "Saving..."
 
             val tempFileUri = withContext(Dispatchers.IO) {
                 FileSavingUtils.saveBufferToTempFile(this@MyBufferService, bufferToSave)
@@ -729,8 +751,15 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
 
         if (_isLoading.value) {
-            builder.setContentText("Trimming and saving...")
-                .setProgress(0, 0, true) // Indeterminate progress bar
+            if (_trimmingProgress.value >= 0f) {
+                val progressPercent = (_trimmingProgress.value * 100).roundToInt()
+                builder.setContentText("Trimming... [${progressPercent}% - ETA ${_trimmingEta.value}s]")
+                    .setProgress(100, progressPercent, false) // Determinate progress
+            } else {
+                // We are in the saving phase.
+                builder.setContentText("Saving...")
+                    .setProgress(0, 0, true) // Indeterminate progress
+            }
         } else {
             builder.setContentText(
                 "${

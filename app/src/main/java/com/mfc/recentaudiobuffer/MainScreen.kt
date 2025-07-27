@@ -362,7 +362,7 @@ fun MainButton(
         ),
         shape = RoundedCornerShape(8.dp),
         contentPadding = PaddingValues(contentPadding),
-        border = ButtonDefaults.outlinedButtonBorder.copy(
+        border = ButtonDefaults.outlinedButtonBorder().copy(
             brush = androidx.compose.ui.graphics.SolidColor(
                 colorResource(id = R.color.purple_accent)
             ), width = 2.dp

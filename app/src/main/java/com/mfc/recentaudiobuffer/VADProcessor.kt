@@ -68,7 +68,8 @@ class VADProcessor @Inject constructor(
         fullAudioBuffer: ByteBuffer,
         config: AudioConfig,
         paddingMs: Int = DEFAULT_PADDING_MS,
-        debugFileBaseName: String? = null
+        debugFileBaseName: String? = null,
+        onProgress: ((Float) -> Unit)? = null
     ): ByteArray {
         resetStates()
 
@@ -95,6 +96,9 @@ class VADProcessor @Inject constructor(
         val readBuffer = ByteArray(DEFAULT_CHUNK_SIZE_B)
         fullAudioBuffer.rewind()
 
+        val totalBytes = fullAudioBuffer.capacity().toFloat()
+        var lastReportedProgressPercent = -1
+
         while (fullAudioBuffer.hasRemaining()) {
             val toRead = minOf(readBuffer.size, fullAudioBuffer.remaining())
             fullAudioBuffer.get(readBuffer, 0, toRead)
@@ -118,6 +122,14 @@ class VADProcessor @Inject constructor(
                 )
             }
             totalResampledSamples += resampledFloats.size
+
+            val currentProgress = fullAudioBuffer.position() / totalBytes
+            val currentProgressPercent = (currentProgress * 100).toInt()
+            // Only report on whole percentage changes to avoid spamming updates.
+            if (currentProgressPercent > lastReportedProgressPercent) {
+                onProgress?.invoke(currentProgress)
+                lastReportedProgressPercent = currentProgressPercent
+            }
         }
 
         val mergedTimestamps =
