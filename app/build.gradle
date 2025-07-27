@@ -121,7 +121,10 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation 'com.google.android.gms:play-services-ads:23.6.0'
 
-    implementation 'com.stripe:stripe-android:21.3.0'
+    implementation 'com.stripe:stripe-android:21.21.0'
+    implementation("com.stripe:payments-ui-core:21.21.0")
+    implementation("com.google.android.gms:play-services-pay:16.5.0")
+    implementation 'com.google.android.gms:play-services-wallet:19.4.0'
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
 
     // UI

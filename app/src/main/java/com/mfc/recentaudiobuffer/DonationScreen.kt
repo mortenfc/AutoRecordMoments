@@ -49,6 +49,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.viewinterop.AndroidView
+import com.google.android.gms.wallet.button.PayButton
 
 enum class SignInButtonViewState {
     Hidden, Ready
@@ -122,16 +125,32 @@ fun DonationScreen(
                                         it.toIntOrNull() == null || it.toIntOrNull()!! < 5
                                 }, isDonationAmountError = isDonationAmountError
                             )
-                            Row() {
-                                GooglePayButton(onClick = {
-                                    val amount = donationAmount.toIntOrNull()
-                                    if (amount != null && amount >= 5) {
-                                        isDonationAmountError = false
-                                        onPayClick(amount)
-                                    } else {
-                                        isDonationAmountError = true
+                            Row(
+                                modifier = Modifier.fillMaxWidth(fraction = 0.8f),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AndroidView(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp) // Set a fixed height for consistency
+                                        .padding(end = 4.dp),
+                                    factory = { context ->
+                                        // Create the PayButton View
+                                        PayButton(context).apply {
+                                            // Set the click listener to trigger your existing logic
+                                            setOnClickListener {
+                                                val amount = donationAmount.toIntOrNull()
+                                                if (amount != null && amount >= 5) {
+                                                    isDonationAmountError = false
+                                                    onPayClick(amount)
+                                                } else {
+                                                    isDonationAmountError = true
+                                                }
+                                            }
+                                        }
                                     }
-                                })
+                                )
 
                                 Spacer(modifier = Modifier.width(8.dp))
 
@@ -260,17 +279,6 @@ fun DonationAmountTextField(
 }
 
 @Composable
-fun GooglePayButton(onClick: () -> Unit) {
-    PaymentButton(
-        onClick = onClick,
-        painterResource(id = R.drawable.ic_google_logo),
-        stringResource(id = R.string.google_logo),
-        stringResource(id = R.string.pay),
-        true
-    )
-}
-
-@Composable
 fun CardPayButton(onClick: () -> Unit) {
     PaymentButton(
         onClick = onClick,
@@ -280,7 +288,6 @@ fun CardPayButton(onClick: () -> Unit) {
         false
     )
 }
-// Add other necessary imports
 
 @Composable
 fun PaymentButton(
@@ -304,8 +311,7 @@ fun PaymentButton(
     }
 
     Button(
-        onClick = onClick,
-        modifier = sizeModifier // Apply the appropriate sizing
+        onClick = onClick, modifier = sizeModifier // Apply the appropriate sizing
             .drawBehind {
                 val shadowColor = Color.White
                 val transparentColor = Color.Transparent
@@ -335,13 +341,10 @@ fun PaymentButton(
                 }
             }
             .clip(CircleShape) // Fully rounded corners
-            .background(Color.Black),
-        colors = ButtonDefaults.buttonColors(
+            .background(Color.Black), colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent, // Make container transparent
             contentColor = Color.White // Text color
-        ),
-        shape = CircleShape
-    ) {
+        ), shape = CircleShape) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp)
@@ -354,10 +357,7 @@ fun PaymentButton(
             )
             Spacer(modifier = if (isGooglePay) Modifier.width(1.dp) else Modifier.width(5.dp))
             Text(
-                text = text,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White
+                text = text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White
             )
         }
     }
@@ -377,7 +377,8 @@ fun DonationScreenGooglePayPreview() {
         {},
         signInButtonViewState,
         isGooglePayReady,
-        null, {})
+        null,
+        {})
 }
 
 @Preview(showBackground = true)
@@ -394,7 +395,8 @@ fun DonationScreenGooglePaySignInPreview() {
         {},
         signInButtonViewState,
         isGooglePayReady,
-        null, {})
+        null,
+        {})
 }
 
 @Preview(showBackground = true)
@@ -411,7 +413,8 @@ fun DonationScreenGooglePaySignInFailedPreview() {
         {},
         signInButtonViewState,
         isGooglePayReady,
-        "Failure string", {})
+        "Failure string",
+        {})
 }
 
 @Preview(showBackground = true)
