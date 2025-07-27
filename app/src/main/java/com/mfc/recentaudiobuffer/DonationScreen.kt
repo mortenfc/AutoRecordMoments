@@ -133,22 +133,22 @@ fun DonationScreen(
                                 AndroidView(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(48.dp) // Set a fixed height for consistency
+                                        .height(48.dp)
                                         .padding(end = 4.dp), factory = { context ->
-                                        // Create the PayButton View
-                                        PayButton(context).apply {
-                                            // Set the click listener to trigger your existing logic
-                                            setOnClickListener {
-                                                val amount = donationAmount.toIntOrNull()
-                                                if (amount != null && amount >= 5) {
-                                                    isDonationAmountError = false
-                                                    onPayClick(amount)
-                                                } else {
-                                                    isDonationAmountError = true
-                                                }
-                                            }
+                                    // Factory is now only responsible for creating the view
+                                    PayButton(context)
+                                }, update = { view -> // ✅ Use the update block
+                                    // The listener is set here and will always have the latest state
+                                    view.setOnClickListener {
+                                        val amount = donationAmount.toIntOrNull()
+                                        if (amount != null && amount >= 5) {
+                                            isDonationAmountError = false
+                                            onPayClick(amount)
+                                        } else {
+                                            isDonationAmountError = true
                                         }
-                                    })
+                                    }
+                                })
 
                                 Spacer(modifier = Modifier.width(8.dp))
 
@@ -295,7 +295,7 @@ fun CustomPaymentButton(
             // Set a minimum height, but allow it to grow if the text wraps
         .defaultMinSize(minHeight = 48.dp)
             .drawBehind {
-                val shadowColor = Color.White
+                val shadowColor = Color.Black
                 val transparentColor = Color.Transparent
                 val shadowRadius = 4.dp.toPx()
                 val offset = 2.dp.toPx() // Offset downwards
