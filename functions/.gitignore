@@ -4,7 +4,6 @@ lib/**/*.js.map
 
 # TypeScript v1 declaration files
 typings/
-#./lib/
 
 # Node.js dependency directory
 node_modules/

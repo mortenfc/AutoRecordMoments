@@ -133,7 +133,7 @@ fun DonationScreen(
                                         .padding(end = 4.dp), factory = { context ->
                                     // Factory is now only responsible for creating the view
                                     PayButton(context)
-                                }, update = { view -> // ✅ Use the update block
+                                }, update = { view ->
                                     // The listener is set here and will always have the latest state
                                     view.setOnClickListener {
                                         val amount = donationAmount.toIntOrNull()

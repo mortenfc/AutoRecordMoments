@@ -16,6 +16,7 @@ import com.stripe.android.PaymentConfiguration
 import com.stripe.android.googlepaylauncher.GooglePayEnvironment
 import com.stripe.android.googlepaylauncher.GooglePayLauncher
 import com.stripe.android.paymentsheet.PaymentSheet
+import com.stripe.android.paymentsheet.PaymentSheet.Builder
 import com.stripe.android.paymentsheet.PaymentSheetResult
 import dagger.hilt.android.AndroidEntryPoint
 import okhttp3.Call
@@ -77,7 +78,7 @@ class DonationActivity : AppCompatActivity() {
 
     private fun setupPaymentMethods() {
         PaymentConfiguration.init(this, stripeApiKey)
-        stripePaymentSheet = PaymentSheet(this, ::onPaymentSheetResult)
+        stripePaymentSheet = Builder(::onPaymentSheetResult).build(this)
 
         val googlePayEnvironment = if (BuildConfig.DEBUG) {
             GooglePayEnvironment.Test
@@ -187,6 +188,7 @@ class DonationActivity : AppCompatActivity() {
             showGooglePayNotReadyDialog()
         } else {
             signInButtonViewState.value = SignInButtonViewState.Ready
+            Timber.d("Google pay is ready!")
         }
     }
 

@@ -7,6 +7,10 @@
 -keep class com.mfc.recentaudiobuffer.NotificationActionReceiver { *; }
 -keep class com.mfc.recentaudiobuffer.FileSavingService { *; }
 
+# Google pay button rendering
+-keep class com.google.android.gms.wallet.** { *; }
+-dontwarn com.google.android.gms.wallet.**
+
 # Keep all classes in the ONNX Runtime package.
 # This prevents ProGuard/R8 from removing them and causing JNI crashes.
 -keep class ai.onnxruntime.** { *; }
