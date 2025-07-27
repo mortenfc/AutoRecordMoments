@@ -28,9 +28,9 @@ class VADProcessor @Inject constructor(
         private const val VAD_MIN_SAMPLE_RATE = 8000
 
         // TUNINGS:
-        private const val DEFAULT_PADDING_MS = 1300
+        const val DEFAULT_PADDING_MS = 1300
         private const val SPEECH_THRESHOLD = 0.4f
-        private const val DEFAULT_CHUNK_SIZE_S = 60
+        private const val DEFAULT_CHUNK_SIZE_B = 4096
 
     }
 
@@ -59,63 +59,73 @@ class VADProcessor @Inject constructor(
         lastBatchSize = 0
     }
 
+    /**
+     * Processes a full audio buffer by streaming it through the VAD in small,
+     * memory-efficient pieces to detect speech.
+     */
     @SuppressLint("VisibleForTests")
-    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    fun processBuffer(
+    fun process(
         fullAudioBuffer: ByteBuffer,
         config: AudioConfig,
         paddingMs: Int = DEFAULT_PADDING_MS,
         debugFileBaseName: String? = null
     ): ByteArray {
-        if (fullAudioBuffer.remaining() == 0) return ByteArray(0)
+        resetStates()
 
         if (debugFileBaseName != null) {
-            // Note: This requires the new saveDebugFile overload shown in the next section.
             FileSavingUtils.saveDebugFile(
                 context, "${debugFileBaseName}_01_original.wav", fullAudioBuffer, config
             )
         }
-        val audioFloats = bytesToFloats(fullAudioBuffer, config.bitDepth.bits)
-        val originalSampleRate = config.sampleRateHz
-        var processedFloats = audioFloats
-        var vadSampleRate = originalSampleRate
 
         val targetVADRate = when {
-            originalSampleRate >= VAD_MAX_SAMPLE_RATE -> VAD_MAX_SAMPLE_RATE
-            originalSampleRate >= VAD_MIN_SAMPLE_RATE -> VAD_MIN_SAMPLE_RATE
-            else -> {
-                Timber.e("Unsupported sample rate for VAD: $originalSampleRate Hz.")
-                // Return an empty ByteArray, not the ByteBuffer
-                return ByteArray(0)
-            }
+            config.sampleRateHz >= VAD_MAX_SAMPLE_RATE -> VAD_MAX_SAMPLE_RATE
+            config.sampleRateHz >= VAD_MIN_SAMPLE_RATE -> VAD_MIN_SAMPLE_RATE
+            else -> config.sampleRateHz
         }
 
-        if (originalSampleRate != targetVADRate) {
-            processedFloats = resample(
-                processedFloats,
-                originalSampleRate.toFloat(),
-                targetVADRate.toFloat(),
-                config.bitDepth.bits
-            )
-            vadSampleRate = targetVADRate
-            if (debugFileBaseName != null) {
-                val resampledBytes = floatsToBytes(processedFloats)
-                val resampledConfig = config.copy(sampleRateHz = vadSampleRate)
-                FileSavingUtils.saveDebugFile(
-                    context,
-                    "${debugFileBaseName}_02_resampled.wav",
-                    ByteBuffer.wrap(resampledBytes),
-                    resampledConfig
+        val allTimestamps = mutableListOf<SpeechTimestamp>()
+        var totalResampledSamples = 0
+
+        val resampler = RateTransposer((targetVADRate.toDouble() / config.sampleRateHz.toDouble()))
+        val tarsosFormat = TarsosDSPAudioFormat(
+            config.sampleRateHz.toFloat(), config.bitDepth.bits, 1, true, false
+        )
+
+        val readBuffer = ByteArray(DEFAULT_CHUNK_SIZE_B)
+        fullAudioBuffer.rewind()
+
+        while (fullAudioBuffer.hasRemaining()) {
+            val toRead = minOf(readBuffer.size, fullAudioBuffer.remaining())
+            fullAudioBuffer.get(readBuffer, 0, toRead)
+            val audioChunk =
+                if (toRead < DEFAULT_CHUNK_SIZE_B) readBuffer.copyOfRange(0, toRead) else readBuffer
+
+            val floatChunk = bytesToFloats(ByteBuffer.wrap(audioChunk), config.bitDepth.bits)
+
+            val audioEvent = AudioEvent(tarsosFormat).apply { floatBuffer = floatChunk }
+            resampler.process(audioEvent)
+            val resampledFloats = audioEvent.floatBuffer
+
+            val timestampsInChunk = getSpeechTimestamps(resampledFloats, targetVADRate)
+
+            timestampsInChunk.forEach {
+                allTimestamps.add(
+                    SpeechTimestamp(
+                        start = it.start + totalResampledSamples,
+                        end = it.end + totalResampledSamples
+                    )
                 )
             }
+            totalResampledSamples += resampledFloats.size
         }
 
-        val speechTimestamps = getSpeechTimestamps(processedFloats, vadSampleRate)
         val mergedTimestamps =
-            mergeTimestamps(speechTimestamps, paddingMs, vadSampleRate, processedFloats.size)
-        // Call the new overloaded stitchAudio that accepts a ByteBuffer
+            mergeTimestamps(allTimestamps, paddingMs, targetVADRate, totalResampledSamples)
+
+        val bufferForStitching = fullAudioBuffer.asReadOnlyBuffer()
         val finalResultBytes =
-            stitchAudio(fullAudioBuffer, mergedTimestamps, config, vadSampleRate.toFloat())
+            stitchAudio(bufferForStitching, mergedTimestamps, config, targetVADRate.toFloat())
 
         if (debugFileBaseName != null) {
             FileSavingUtils.saveDebugFile(
@@ -129,61 +139,32 @@ class VADProcessor @Inject constructor(
         return finalResultBytes
     }
 
-    fun processBufferInChunks(
-        fullAudioBuffer: ByteBuffer,
-        config: AudioConfig,
-        chunkSizeInSeconds: Int = DEFAULT_CHUNK_SIZE_S
-    ): ByteArray {
-        resetStates()
-
-        val bytesPerSample = config.bitDepth.bits / 8
-        val bytesPerSecond = config.sampleRateHz * bytesPerSample
-        val chunkSizeBytes = chunkSizeInSeconds * bytesPerSecond
-
-        val resultStream = ByteArrayOutputStream()
-        fullAudioBuffer.rewind()
-
-        while (fullAudioBuffer.hasRemaining()) {
-            val currentChunkSize = minOf(chunkSizeBytes, fullAudioBuffer.remaining())
-            val chunkBytes = ByteArray(currentChunkSize)
-            fullAudioBuffer.get(chunkBytes)
-
-            val chunkBuffer = ByteBuffer.wrap(chunkBytes)
-
-            // Process this smaller chunk with your existing function
-            val speechInChunk = processBuffer(chunkBuffer, config)
-
-            if (speechInChunk.isNotEmpty()) {
-                resultStream.write(speechInChunk)
-            }
-        }
-
-        return resultStream.toByteArray()
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun castToStateArray(value: Any?): Array<Array<FloatArray>>? {
-        if (value !is Array<*> || value.any { it !is Array<*> }) {
-            return null
-        }
-        // At this point, we have manually checked the structure is Array<Array<*>>.
-        // The final cast is as safe as it can be.
-        return value as? Array<Array<FloatArray>>
-    }
-
     private fun bytesToFloats(buffer: ByteBuffer, bitsPerSample: Int): FloatArray {
-        // Ensure the buffer is read from the beginning
         buffer.rewind()
 
-        // Create a view of the ByteBuffer as a ShortBuffer
-        val shortBuffer: ShortBuffer = buffer.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
-        val shortArray = ShortArray(shortBuffer.remaining())
-        shortBuffer.get(shortArray)
+        return when (bitsPerSample) {
+            16 -> {
+                val shortBuffer = buffer.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                val shortArray = ShortArray(shortBuffer.remaining())
+                shortBuffer.get(shortArray)
+                FloatArray(shortArray.size) { i ->
+                    shortArray[i] / 32768.0f
+                }
+            }
 
-        // Convert short array to float array
-        return FloatArray(shortArray.size) { i ->
-            // Normalize to the range [-1.0, 1.0]
-            shortArray[i] / 32768.0f
+            8 -> {
+                val byteArray = ByteArray(buffer.remaining())
+                buffer.get(byteArray)
+                FloatArray(byteArray.size) { i ->
+                    // Convert unsigned 8-bit int to signed float in [-1.0, 1.0]
+                    (byteArray[i].toUByte().toInt() - 128) / 128.0f
+                }
+            }
+
+            else -> {
+                Timber.e("Unsupported bit depth for VAD processing: $bitsPerSample")
+                throw IllegalArgumentException("Unsupported bit depth: $bitsPerSample")
+            }
         }
     }
 
@@ -196,55 +177,34 @@ class VADProcessor @Inject constructor(
         val speechSegments = mutableListOf<SpeechTimestamp>()
         var currentSpeechStart: Int? = null
 
-        // Since we process one buffer at a time, batchSize is always 1.
-        val batchSize = 1
-
-        // Reset state if sample rate or batch size changes (as per Java example)
-        if (lastSr != sampleRate || lastBatchSize != batchSize) {
-            resetStates()
-        }
-        lastSr = sampleRate
-        lastBatchSize = batchSize
-
-        // Initialize context buffer if it's null
         if (vadContext == null) {
             vadContext = FloatArray(contextSize)
         }
 
-        // Process audio in chunks
         audioFloats.toList().chunked(windowSize).forEachIndexed { i, chunk ->
-            if (chunk.size < windowSize) return@forEachIndexed // Skip incomplete chunks at the end
+            if (chunk.size < windowSize) return@forEachIndexed
 
             val chunkArray = chunk.toFloatArray()
-
-            // Concatenate context from previous chunk with the current chunk
             val concatenatedInput = vadContext!! + chunkArray
 
             try {
-                // Create Tensors
                 val inputTensor =
                     OnnxTensor.createTensor(ortEnvironment, arrayOf(concatenatedInput))
                 val srTensor =
                     OnnxTensor.createTensor(ortEnvironment, longArrayOf(sampleRate.toLong()))
                 val stateTensor = OnnxTensor.createTensor(ortEnvironment, state)
 
-                val inputs = mapOf(
-                    "input" to inputTensor, "sr" to srTensor, "state" to stateTensor
-                )
+                val inputs = mapOf("input" to inputTensor, "sr" to srTensor, "state" to stateTensor)
 
                 session.run(inputs).use { result ->
                     val score =
                         ((result[0].value as? Array<*>)?.firstOrNull() as? FloatArray)?.firstOrNull()
                             ?: 0.0f
-
-                    // --- Use the new helper function for a clean, warning-free cast ---
                     val newState = castToStateArray(result[1].value)
 
-                    // Update state and context for the next iteration
                     this.state = newState
                     this.vadContext = chunkArray.takeLast(contextSize).toFloatArray()
 
-                    // Find speech segments based on score
                     val currentSamplePosition = i * windowSize
                     if (score >= SPEECH_THRESHOLD && currentSpeechStart == null) {
                         currentSpeechStart = currentSamplePosition
@@ -269,54 +229,10 @@ class VADProcessor @Inject constructor(
         }
 
         if (currentSpeechStart != null) {
-            speechSegments.add(
-                SpeechTimestamp(start = currentSpeechStart, end = audioFloats.size)
-            )
+            speechSegments.add(SpeechTimestamp(start = currentSpeechStart, end = audioFloats.size))
         }
 
         return speechSegments
-    }
-
-    // Helper to convert float array back to bytes for saving
-    private fun floatsToBytes(floats: FloatArray): ByteArray {
-        val bytes = ByteArray(floats.size * 2)
-        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        for (f in floats) {
-            val x = (f * 32767.0f).coerceIn(-32768f, 32767f).toInt().toShort()
-            buffer.putShort(x)
-        }
-        return bytes
-    }
-
-    private fun bytesToFloats(bytes: ByteArray, bitDepth: Int): FloatArray {
-        if (bytes.isEmpty()) return FloatArray(0)
-        return when (bitDepth) {
-            16 -> {
-                val shorts = ShortArray(bytes.size / 2)
-                ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(shorts)
-                FloatArray(shorts.size) { shorts[it] / 32768.0f }
-            }
-
-            8 -> {
-                FloatArray(bytes.size) { (bytes[it].toUByte().toInt() - 128) / 128.0f }
-            }
-
-            else -> {
-                Timber.e("Unsupported bit depth for VAD processing: $bitDepth")
-                throw IllegalArgumentException("Unsupported bit depth: $bitDepth")
-            }
-        }
-    }
-
-    private fun resample(
-        input: FloatArray, fromRate: Float, toRate: Float, bitDepth: Int
-    ): FloatArray {
-        val format = TarsosDSPAudioFormat(fromRate, bitDepth, 1, true, false)
-        val audioEvent = AudioEvent(format)
-        audioEvent.floatBuffer = input
-        val rateTransposer = RateTransposer((toRate / fromRate).toDouble())
-        rateTransposer.process(audioEvent)
-        return audioEvent.floatBuffer
     }
 
     private fun mergeTimestamps(
@@ -351,6 +267,17 @@ class VADProcessor @Inject constructor(
             it.copy(start = start, end = end)
         }
     }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun castToStateArray(value: Any?): Array<Array<FloatArray>>? {
+        if (value !is Array<*> || value.any { it !is Array<*> }) {
+            return null
+        }
+        // At this point, we have manually checked the structure is Array<Array<*>>.
+        // The final cast is as safe as it can be.
+        return value as? Array<Array<FloatArray>>
+    }
+
 
     private fun stitchAudio(
         originalBuffer: ByteBuffer,

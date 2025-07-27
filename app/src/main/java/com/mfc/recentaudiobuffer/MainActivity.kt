@@ -274,7 +274,7 @@ class MainActivity : AppCompatActivity() {
                 val originalBuffer = myBufferService!!.pauseSortAndGetBuffer()
                 val bufferToSave = if (settings.isAiAutoClipEnabled) {
                     withContext(Dispatchers.Default) {
-                        vadProcessor.processBufferInChunks(originalBuffer, settings.toAudioConfig())
+                        vadProcessor.process(originalBuffer, settings.toAudioConfig())
                     }
                 } else {
                     originalBuffer.rewind()
@@ -410,7 +410,7 @@ class MainActivity : AppCompatActivity() {
                 val config = WavUtils.readWavHeader(originalBytes)
                 val audioData = originalBytes.drop(WavUtils.WAV_HEADER_SIZE).toByteArray()
                 val processedBytes = withContext(Dispatchers.Default) {
-                    vadProcessor.processBufferInChunks(ByteBuffer.wrap(audioData), config)
+                    vadProcessor.process(ByteBuffer.wrap(audioData), config)
                 }
                 vadProcessedByteArray = processedBytes
                 audioConfigState = config

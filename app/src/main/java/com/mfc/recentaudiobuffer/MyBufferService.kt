@@ -94,14 +94,13 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     companion object {
         const val CHRONIC_NOTIFICATION_ID = 1
         private const val CHRONIC_NOTIFICATION_CHANNEL_ID = "recording_channel"
-        private const val CHRONIC_NOTIFICATION_CHANNEL_NAME = "Recording Into RingBuffer"
-        private const val CHRONIC_NOTIFICATION_CHANNEL_DESCRIPTION =
-            "Channel for the persistent recording notification banner"
         const val ACTION_STOP_RECORDING_SERVICE = "com.example.app.ACTION_STOP_RECORDING_SERVICE"
         const val ACTION_START_RECORDING_SERVICE = "com.example.app.ACTION_START_RECORDING_SERVICE"
         const val ACTION_SAVE_RECORDING_SERVICE = "com.example.app.ACTION_SAVE_RECORDING_SERVICE"
         const val ACTION_RESTART_WITH_NEW_SETTINGS =
             "com.mfc.recentaudiobuffer.ACTION_RESTART_WITH_NEW_SETTINGS"
+        const val ACTION_ON_SAVE_SUCCESS = "com.mfc.recentaudiobuffer.ACTION_ON_SAVE_SUCCESS"
+        const val ACTION_ON_SAVE_FAIL = "com.mfc.recentaudiobuffer.ACTION_ON_SAVE_FAIL"
 
         @VisibleForTesting
         const val ACTION_SAVE_COMPLETE = "com.mfc.recentaudiobuffer.ACTION_SAVE_COMPLETE"
@@ -128,13 +127,14 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     private val _isLoading = MutableStateFlow(false)
     override val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val hasOverflowed: AtomicReference<Boolean> = AtomicReference(false)
+    @VisibleForTesting
+    val hasOverflowed: AtomicReference<Boolean> = AtomicReference(false)
 
     private val recorderIndex: AtomicReference<Int> = AtomicReference(0)
 
     private val totalRingBufferSize: AtomicReference<Int> = AtomicReference(100)
 
-    private val recorded_duration: AtomicReference<String> = AtomicReference("00:00:00")
+    private val recordedDuration: AtomicReference<String> = AtomicReference("00:00:00")
 
     private val lock: ReentrantLock = ReentrantLock()
 
@@ -177,6 +177,30 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                     stopRecording()
                     quickSaveBuffer()
                 }
+            }
+
+            ACTION_ON_SAVE_SUCCESS -> {
+                Timber.d("Got ACTION_ON_SAVE_SUCCESS intent")
+                resetBuffer()
+                startRecording() // Restart
+                _isLoading.value = false
+                updateNotification() // Revert to normal notification state
+                val intent = Intent(ACTION_SAVE_COMPLETE).apply {
+                    setPackage(packageName)
+                }
+                sendBroadcast(intent)
+                Timber.d("Sent ACTION_SAVE_COMPLETE broadcast.")
+            }
+
+            ACTION_ON_SAVE_FAIL -> {
+                Timber.d("Got ACTION_ON_SAVE_FAIL intent")
+                _isLoading.value = false
+                updateNotification() // Revert to normal notification state
+                val intent = Intent(ACTION_SAVE_COMPLETE).apply {
+                    setPackage(packageName)
+                }
+                sendBroadcast(intent)
+                Timber.d("Sent ACTION_SAVE_COMPLETE broadcast.")
             }
         }
 
@@ -360,7 +384,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         // 1. Calculate how many bytes are generated per second.
         val bytesPerSecond = config.sampleRateHz * (config.bitDepth.bits / 8)
 
-        // 2. Set our target: we want to read audio in 250ms chunks (4 times per second).
+        // 2. Set our target: we want to read audio in eg 250ms chunks (4 times per second).
         // This ensures the read() call returns quickly.
         val readChunkSize = (bytesPerSecond * 0.5).toInt()
 
@@ -398,7 +422,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         val channels = 1
 
         if (sampleRate == 0 || bitsPerSample == 0) {
-            recorded_duration.set("00:00:00")
+            recordedDuration.set("00:00:00")
             return
         }
 
@@ -422,7 +446,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds
         )
 
-        recorded_duration.set(durationFormatted)
+        recordedDuration.set(durationFormatted)
     }
 
     override fun pauseSortAndGetBuffer(): ByteBuffer {
@@ -457,10 +481,10 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 recorderIndex.set(0)
 
                 // The original audioDataStorage is now correctly ordered. Return it.
-                ByteBuffer.wrap(audioDataStorage)
+                ByteBuffer.wrap(audioDataStorage).asReadOnlyBuffer()
             } else {
                 // ✅ Create a zero-copy view of the relevant part of the array.
-                ByteBuffer.wrap(audioDataStorage, 0, recorderIndex.get())
+                ByteBuffer.wrap(audioDataStorage, 0, recorderIndex.get()).asReadOnlyBuffer()
             }
         } finally {
             lock.unlock()
@@ -489,7 +513,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
             val bufferToSave = if (settings.isAiAutoClipEnabled) {
                 ByteBuffer.wrap(withContext(Dispatchers.Default) {
-                    vadProcessor.processBufferInChunks(originalBuffer, settings.toAudioConfig())
+                    vadProcessor.process(
+                        originalBuffer, settings.toAudioConfig()
+                    )
                 })
             } else {
                 originalBuffer
@@ -514,25 +540,22 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                     putExtra(FileSavingService.EXTRA_AUDIO_CONFIG, settings.toAudioConfig())
                 }
                 startService(saveIntent)
-                resetBuffer()
             } else {
                 Timber.e("Failed to quick save. Temp URI: $tempFileUri, Dest Dir URI: $destDirUri")
                 Toast.makeText(this, "Quick save failed. No save directory set.", Toast.LENGTH_LONG)
                     .show()
+                val selfIntent = Intent(this, MyBufferService::class.java).apply {
+                    action = ACTION_ON_SAVE_FAIL
+                }
+                onStartCommand(selfIntent, 0, 0)
             }
         } catch (e: Exception) {
             Timber.e(e, "Error during quick save process")
             Toast.makeText(this, "Error: Could not save file.", Toast.LENGTH_LONG).show()
-        } finally {
-
-            startRecording() // Restart
-            _isLoading.value = false
-            updateNotification() // Revert to normal notification state
-            val intent = Intent(ACTION_SAVE_COMPLETE).apply {
-                setPackage(packageName)
+            val selfIntent = Intent(this, MyBufferService::class.java).apply {
+                action = ACTION_ON_SAVE_FAIL
             }
-            sendBroadcast(intent)
-            Timber.d("Sent ACTION_SAVE_COMPLETE broadcast.")
+            onStartCommand(selfIntent, 0, 0)
         }
     }
 
@@ -715,7 +738,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                         ((recorderIndex.get()
                             .toFloat() / totalRingBufferSize.get()) * 100).roundToInt()
                     }%"
-                } - ${recorded_duration.get()}"
+                } - ${recordedDuration.get()}"
             ).setProgress(
                 totalRingBufferSize.get(),
                 if (hasOverflowed.get()) totalRingBufferSize.get() else recorderIndex.get(),

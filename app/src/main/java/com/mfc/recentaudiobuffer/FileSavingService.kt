@@ -61,6 +61,13 @@ class FileSavingService : Service() {
 
         // Post the result notification
         if (savedFileUri != null) {
+            // Tell the buffer service to reset itself
+            Timber.d("Sent ACTION_ON_SAVE_SUCCESS intent after file saving success!")
+            val resetIntent = Intent(this, MyBufferService::class.java).apply {
+                action = MyBufferService.ACTION_ON_SAVE_SUCCESS
+            }
+            startService(resetIntent)
+
             postResultNotification(
                 success = true,
                 title = "Audio Saved",
@@ -68,6 +75,12 @@ class FileSavingService : Service() {
                 savedFileUri = savedFileUri
             )
         } else {
+            Timber.d("Sent ACTION_ON_SAVE_FAIL intent after file saving fail!")
+            val resetIntent = Intent(this, MyBufferService::class.java).apply {
+                action = MyBufferService.ACTION_ON_SAVE_FAIL
+            }
+            startService(resetIntent)
+
             postResultNotification(
                 success = false,
                 title = "ERROR: Save Failed",
