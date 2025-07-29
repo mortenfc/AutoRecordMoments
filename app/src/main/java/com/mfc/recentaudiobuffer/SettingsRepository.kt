@@ -105,7 +105,11 @@ fun SettingsConfig.toAudioConfig(): AudioConfig {
     return AudioConfig(this.sampleRateHz, this.bufferTimeLengthS, this.bitDepth)
 }
 
-const val MAX_BUFFER_SIZE: Int = 100 * 1024 * 1024 // 100 MB
+const val MAX_BUFFER_SIZE_B: Int = 120_000_000 // Bytes
+
+const val LOW_MEMORY_MAX_BUFFER_SIZE_B: Int = 20_000_000
+
+const val AI_ENABLED_EXTRA_MEMORY_USAGE_FRACTION = 1.5f
 
 // DataStore setup
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -314,21 +318,30 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
     }
 
     fun validateSettings() {
-        val calculatedValue: Long =
+        val calculatedBytes: Long =
             sampleRateTemp.intValue.toLong() * (bitDepthTemp.value.bits / 8).toLong() * bufferTimeLengthTemp.intValue.toLong()
 
-        Timber.d("calculatedValue:  $calculatedValue")
-        isMaxExceeded.value = calculatedValue > MAX_BUFFER_SIZE
+        var maxAdjustedBufferSizeB = MAX_BUFFER_SIZE_B
+
+        if (isAiAutoClipEnabled.value) {
+            maxAdjustedBufferSizeB =
+                (maxAdjustedBufferSizeB / AI_ENABLED_EXTRA_MEMORY_USAGE_FRACTION).toInt()
+        }
+
+        val calculatedMB = calculatedBytes / (1_000_000)
+        val maxMB = maxAdjustedBufferSizeB / (1_000_000)
+
+        Timber.d("Calculated buffer size: $calculatedMB MB")
+        isMaxExceeded.value = calculatedBytes > maxAdjustedBufferSizeB
         isBufferTimeLengthNull.value = bufferTimeLengthTemp.intValue == 0
         Timber.d(
             "isBufferTimeLengthNull, isMaxExceeded: $isBufferTimeLengthNull, $isMaxExceeded"
         )
         isSubmitEnabled.value = !isMaxExceeded.value && !isBufferTimeLengthNull.value
 
-        // Only update errorMessage if input is invalid
         errorMessage.value = when {
-            isMaxExceeded.value -> "Value(s) too high: Multiplication of settings exceeds X MB"
-            isBufferTimeLengthNull.value -> "Invalid buffer length. Must be a number greater than 0"
+            isMaxExceeded.value -> "Buffer size is too large ($calculatedMB MB). The maximum is $maxMB MB. Please lower settings."
+            isBufferTimeLengthNull.value -> "Buffer length must be greater than 0."
             else -> null
         }
 

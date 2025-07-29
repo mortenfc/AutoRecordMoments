@@ -112,7 +112,11 @@ fun SignInErrorDialog(errorMessage: String, onDismiss: () -> Unit) {
             )
         },
         text = {
-            Text(text = errorMessage, color = colorResource(id = R.color.teal_900), fontSize = 16.sp)
+            Text(
+                text = errorMessage,
+                color = colorResource(id = R.color.teal_900),
+                fontSize = 16.sp
+            )
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("OK") }
@@ -121,7 +125,32 @@ fun SignInErrorDialog(errorMessage: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-fun FileSaveDialog(suggestedName: String, onDismiss: () -> Unit, onSave: (fileName: String) -> Unit) {
+fun RecordingErrorDialog(message: String, onDismiss: () -> Unit) {
+    CustomAlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                "Recording Error",
+                color = colorResource(id = R.color.teal_900),
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp
+            )
+        },
+        text = {
+            Text(text = message, color = colorResource(id = R.color.teal_900), fontSize = 16.sp)
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("OK") }
+        }
+    )
+}
+
+@Composable
+fun FileSaveDialog(
+    suggestedName: String,
+    onDismiss: () -> Unit,
+    onSave: (fileName: String) -> Unit
+) {
     var text by remember { mutableStateOf(suggestedName) }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -188,7 +217,11 @@ fun PrivacyInfoDialog(onDismissRequest: () -> Unit) {
         },
         confirmButton = {
             TextButton(onClick = onDismissRequest) {
-                Text("GOT IT", fontWeight = FontWeight.Bold, color = colorResource(id = R.color.purple_accent))
+                Text(
+                    "GOT IT",
+                    fontWeight = FontWeight.Bold,
+                    color = colorResource(id = R.color.purple_accent)
+                )
             }
         }
     )
@@ -203,5 +236,9 @@ fun DialogsPreview() {
             onDismiss = {}
         )
         DirectoryPickerDialog(onDismiss = {})
+        RecordingErrorDialog(
+            message = "Not enough memory to start recording. Please reduce config values in settings.",
+            onDismiss = {}
+        )
     }
 }

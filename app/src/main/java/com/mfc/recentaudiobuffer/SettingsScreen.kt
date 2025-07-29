@@ -128,7 +128,8 @@ fun SettingsScreen(
                     }
                 },
                 authError = authError,
-                onDismissErrorDialog = onDismissSignInErrorDialog)
+                onDismissErrorDialog = onDismissSignInErrorDialog
+            )
         }) { innerPadding ->
         // The Box is now the single, styled container. It acts as our "card".
         Box(
@@ -261,7 +262,8 @@ fun SettingsScreen(
                         checked = state.value.isAiAutoClipEnabled.value, // Get value from state
                         onCheckedChange = { isEnabled ->
                             onAiAutoClipChanged(isEnabled) // New callback
-                        }, colors = SwitchDefaults.colors(
+                        },
+                        colors = SwitchDefaults.colors(
                             checkedThumbColor = colorResource(id = R.color.purple_accent),
                             checkedBorderColor = colorResource(id = R.color.teal_350),
                             checkedTrackColor = colorResource(id = R.color.teal_350),
@@ -331,6 +333,7 @@ fun SettingsScreen(
             sampleRate = sampleRate.value,
             bitDepth = bitDepth.value,
             bufferTimeLength = bufferTimeLengthTemp.intValue,
+            isAiAutoClipEnabled = state.value.isAiAutoClipEnabled.value,
             onDismissRequest = { showHelpDialog = false })
     }
 }
@@ -488,13 +491,20 @@ private data class QualityEstimate(val label: String, val color: Color)
  * @return An [ImpactEstimate] object containing separate labels for battery and quality.
  */
 private fun estimateAudioImpact(
-    sampleRate: Int, bitDepth: BitDepth, bufferTimeLength: Int
+    sampleRate: Int, bitDepth: BitDepth, bufferTimeLength: Int, isAiAutoClipEnabled: Boolean
 ): ImpactEstimate {
     // Calculate RAM usage once, as it's a key factor for battery drain.
-    val ramUsageMb = (sampleRate.toLong() * bufferTimeLength * (bitDepth.bits / 8)) / (1024 * 1024)
+
+    var vadUsageFactor = 1f
+    if (isAiAutoClipEnabled) {
+        vadUsageFactor = AI_ENABLED_EXTRA_MEMORY_USAGE_FRACTION
+    }
+
+    val ramUsageMB =
+        (sampleRate.toLong() * bufferTimeLength * (bitDepth.bits / 8)) * vadUsageFactor / (1_000_000)
 
     // 1. Get the estimated battery impact, which includes a label and a color.
-    val batteryImpact = getBatteryImpact(sampleRate, bitDepth, ramUsageMb)
+    val batteryImpact = getBatteryImpact(sampleRate, bitDepth, ramUsageMB.toLong())
 
     // 2. Get the estimated sound quality label, calculated independently.
     val qualityEstimate = getQualityLabel(sampleRate, bitDepth)
@@ -565,7 +575,11 @@ private fun getQualityLabel(sampleRate: Int, bitDepth: BitDepth): QualityEstimat
 
 @Composable
 fun ComprehensiveHelpDialog(
-    sampleRate: Int, bitDepth: BitDepth, bufferTimeLength: Int, onDismissRequest: () -> Unit
+    sampleRate: Int,
+    bitDepth: BitDepth,
+    bufferTimeLength: Int,
+    isAiAutoClipEnabled: Boolean,
+    onDismissRequest: () -> Unit
 ) {
     // --- Calculations ---
     val (formattedRamUsage, estimate) = remember(sampleRate, bitDepth, bufferTimeLength) {
@@ -574,7 +588,7 @@ fun ComprehensiveHelpDialog(
         val megabytes = totalBytes / (1024.0 * 1024.0)
         val ram = String.format("~%.0f", megabytes)
 
-        Pair(ram, estimateAudioImpact(sampleRate, bitDepth, bufferTimeLength))
+        Pair(ram, estimateAudioImpact(sampleRate, bitDepth, bufferTimeLength, isAiAutoClipEnabled))
     }
 
     AlertDialog(

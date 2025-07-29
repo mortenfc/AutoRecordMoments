@@ -25,6 +25,7 @@ package com.mfc.recentaudiobuffer
 
 import android.Manifest
 import android.app.ActivityManager
+import android.app.AlertDialog
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -85,7 +86,7 @@ interface MyBufferServiceInterface {
 
 @AndroidEntryPoint
 class MyBufferService : Service(), MyBufferServiceInterface {
-    private var config: AudioConfig = AudioConfig()
+    private var config: SettingsConfig = SettingsConfig()
     private lateinit var audioDataStorage: ByteArray
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var recordingJob: Job? = null
@@ -111,6 +112,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         // Static variable to hold the buffer
         var isServiceRunning = AtomicBoolean(false)
     }
+
+    private val _serviceError = MutableStateFlow<String?>(null)
+    val serviceError: StateFlow<String?> = _serviceError.asStateFlow()
 
     @Inject
     lateinit var settingsRepository: SettingsRepository
@@ -231,7 +235,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         // The test will provide the audio data directly via writeDataToBufferForTest().
         serviceScope.launch {
             // We still need to initialize the config and buffer size
-            config = settingsRepository.getAudioConfig()
+            config = settingsRepository.getSettingsConfig()
             updateTotalBufferSize(config)
         }
         // We can still start the notification updates if we want
@@ -313,63 +317,44 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         audioManager.abandonAudioFocus(audioFocusChangeListener)
     }
 
-    private fun updateTotalBufferSize(config: AudioConfig) {
+    private fun updateTotalBufferSize(config: SettingsConfig) {
         var idealBufferSize =
             (config.sampleRateHz.toLong() * (config.bitDepth.bits / 8) * config.bufferTimeLengthS).toInt()
-
         Timber.d("Ideal buffer size calculated: $idealBufferSize bytes")
 
-        // 1. Get the ActivityManager service
-        val activityManager =
-            applicationContext.getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
         val memoryInfo = ActivityManager.MemoryInfo()
         activityManager.getMemoryInfo(memoryInfo)
 
-        // 2. Check if the device is in a low memory situation
+        val bytesPerSecond = config.sampleRateHz * (config.bitDepth.bits / 8)
+
         if (memoryInfo.lowMemory) {
-            Timber.e("Device is in a low memory state. Aborting large buffer allocation.")
-            Toast.makeText(
-                applicationContext,
-                "Warning: Low memory detected. Buffer size may be limited.",
-                Toast.LENGTH_LONG
-            ).show()
-            // You could decide to cap the buffer at a very small "safe" size here
-            if (idealBufferSize > 20 * 1024 * 1024) { // e.g., cap at 20MB if low memory
-                idealBufferSize = 20 * 1024 * 1024
+            Timber.e("Device is in a low memory state.")
+            if (idealBufferSize > LOW_MEMORY_MAX_BUFFER_SIZE_B) {
+                val cappedDuration = LOW_MEMORY_MAX_BUFFER_SIZE_B / bytesPerSecond
+                _serviceError.value =
+                    "Warning: Low memory detected. Buffer length limited to $cappedDuration seconds."
+                idealBufferSize = LOW_MEMORY_MAX_BUFFER_SIZE_B
             }
         }
 
-        // 3. Check against your app's absolute max size
-        if (idealBufferSize > MAX_BUFFER_SIZE) {
-            Timber.e("Ideal buffer size exceeds app's MAX_BUFFER_SIZE. Capping at $MAX_BUFFER_SIZE.")
-            idealBufferSize = MAX_BUFFER_SIZE
-            Toast.makeText(
-                applicationContext,
-                "Buffer size exceeds 100MB limit. Capping size.",
-                Toast.LENGTH_LONG
-            ).show()
+        if (idealBufferSize > MAX_BUFFER_SIZE_B) {
+            Timber.e("Ideal buffer size exceeds app's MAX_BUFFER_SIZE_B. Capping.")
+            val cappedDuration = MAX_BUFFER_SIZE_B / bytesPerSecond
+            _serviceError.value =
+                "Buffer size exceeds ${MAX_BUFFER_SIZE_B / 1_000_000} MB limit. Capping buffer length to $cappedDuration seconds."
+            idealBufferSize = MAX_BUFFER_SIZE_B
         }
 
-        // 4. Safely try to allocate the final calculated size
-        try {
-            totalRingBufferSize.set(idealBufferSize)
-            audioDataStorage = ByteArray(idealBufferSize)
-            audioDataStorage = ByteArray(idealBufferSize)
-            Timber.d("Successfully allocated buffer of size: $idealBufferSize bytes")
-        } catch (e: OutOfMemoryError) {
-            Timber.e(
-                "Still failed to allocate buffer of size $idealBufferSize after checks: $e"
-            )
-            Toast.makeText(
-                applicationContext,
-                "Error: Not enough memory to create the audio buffer.",
-                Toast.LENGTH_LONG
-            ).show()
-            // Reset to a zero-size buffer to prevent crashes
-            totalRingBufferSize.set(0)
-            audioDataStorage = ByteArray(0)
+        totalRingBufferSize.set(idealBufferSize)
+        var allocationSize = idealBufferSize.toFloat()
+        if (config.isAiAutoClipEnabled) {
+            allocationSize *= AI_ENABLED_EXTRA_MEMORY_USAGE_FRACTION // VAD needs extra memory for float conversion
         }
+        audioDataStorage = ByteArray(allocationSize.toInt())
+        Timber.d("Successfully allocated buffer of size: ${allocationSize.toInt()} bytes")
     }
+
 
     private fun initializeAndBuildRecorder(): RecorderInfo {
         val micPermission =
@@ -517,13 +502,12 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         updateNotification() // Show "Trimming... [0% - ETA ...]"
 
         try {
-            val settings = settingsRepository.getSettingsConfig()
             val originalBuffer = pauseSortAndGetBuffer()
 
-            val bufferToSave = if (settings.isAiAutoClipEnabled) {
+            val bufferToSave = if (config.isAiAutoClipEnabled) {
                 ByteBuffer.wrap(withContext(Dispatchers.Default) {
                     vadProcessor.process(
-                        originalBuffer, settings.toAudioConfig(), onProgress = { progress ->
+                        originalBuffer, config.toAudioConfig(), onProgress = { progress ->
                             _trimmingProgress.value = progress
                             // Calculate ETA
                             if (progress > 0.01f) { // Avoid division by zero
@@ -559,7 +543,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                     putExtra(FileSavingService.EXTRA_TEMP_FILE_URI, tempFileUri)
                     putExtra(FileSavingService.EXTRA_DEST_DIR_URI, destDirUri)
                     putExtra(FileSavingService.EXTRA_DEST_FILENAME, fileName)
-                    putExtra(FileSavingService.EXTRA_AUDIO_CONFIG, settings.toAudioConfig())
+                    putExtra(FileSavingService.EXTRA_AUDIO_CONFIG, config.toAudioConfig())
                 }
                 startService(saveIntent)
             } else {
@@ -573,7 +557,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             }
         } catch (e: Exception) {
             Timber.e(e, "Error during quick save process")
-            Toast.makeText(this, "Error: Could not save file.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Error: Could not save file: $e", Toast.LENGTH_LONG).show()
             val selfIntent = Intent(this, MyBufferService::class.java).apply {
                 action = ACTION_ON_SAVE_FAIL
             }
@@ -596,7 +580,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 if (isNewSession) {
                     Timber.d("Starting a new session. Fetching latest config.")
                     // If it's new, fetch the latest config and set up the buffer.
-                    config = settingsRepository.getAudioConfig()
+                    config = settingsRepository.getSettingsConfig()
                     updateTotalBufferSize(config)
                 } else {
                     Timber.d("Continuing a paused session. Using existing config.")
@@ -671,9 +655,15 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                         )
                     }
                 }
-            } catch (e: Exception) {
-                Timber.e("Failed to start or run recording $e")
-                _isRecording.value = false // Revert state on any failure.
+            } catch (t: Throwable) {
+                Timber.e("Failed to start or run recording $t")
+
+                val errorMessage = if (t is OutOfMemoryError) {
+                    "Not enough memory to start recording. Please lower the buffer size in settings."
+                } else {
+                    "Failed to start recording. Please try again."
+                }
+                _serviceError.value = errorMessage
             } finally {
                 recorder?.stop()
                 recorder?.release()
@@ -696,6 +686,15 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 tickerChannel.receive()
             }
         }
+    }
+
+    fun clearServiceError() {
+        _serviceError.value = null
+    }
+
+    private fun showErrorDialog(message: String) {
+        AlertDialog.Builder(this).setTitle("Recording Error").setMessage(message)
+            .setPositiveButton("OK", null).show()
     }
 
     inner class MyBinder : Binder() {

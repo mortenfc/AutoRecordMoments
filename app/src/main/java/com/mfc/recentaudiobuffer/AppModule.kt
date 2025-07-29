@@ -28,7 +28,7 @@ object AppModule {
     fun provideFirebaseFirestore(@ApplicationContext context: Context): FirebaseFirestore {
         Timber.d("provideFirebaseFirestore started")
         val firestore = FirebaseFirestore.getInstance()
-        val cacheSizeBytes = 100 * 1024 * 1024L // 100 MB
+        val cacheSizeBytes = MAX_BUFFER_SIZE_B.toLong()
         val settings = PersistentCacheSettings.newBuilder().setSizeBytes(cacheSizeBytes).build()
         firestore.firestoreSettings =
             FirebaseFirestoreSettings.Builder().setLocalCacheSettings(settings).build()

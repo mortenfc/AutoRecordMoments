@@ -29,6 +29,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -54,6 +57,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var vadProcessor: VADProcessor
+
+    private var serviceError by mutableStateOf<String?>(null)
+
 
     private var myBufferService: MyBufferServiceInterface? = null
 
@@ -101,6 +107,14 @@ class MainActivity : AppCompatActivity() {
             }
             lifecycleScope.launch {
                 myBufferService?.isLoading?.collect { isLoading = it }
+            }
+            lifecycleScope.launch {
+                (myBufferService as? MyBufferService)?.serviceError?.collect { error ->
+                    if (error != null) {
+                        serviceError = error
+                        (myBufferService as? MyBufferService)?.clearServiceError()
+                    }
+                }
             }
             Timber.d("onServiceConnected()")
         }
@@ -188,6 +202,11 @@ class MainActivity : AppCompatActivity() {
                     audioConfigState = null
                     suggestedFileNameState = ""
                 })
+
+            serviceError?.let { message ->
+                RecordingErrorDialog(
+                    message = message, onDismiss = { serviceError = null })
+            }
         }
 
         if (FileSavingUtils.getCachedGrantedUri(this) == null) {
