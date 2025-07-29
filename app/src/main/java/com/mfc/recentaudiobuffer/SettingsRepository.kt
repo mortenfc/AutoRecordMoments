@@ -105,9 +105,9 @@ fun SettingsConfig.toAudioConfig(): AudioConfig {
     return AudioConfig(this.sampleRateHz, this.bufferTimeLengthS, this.bitDepth)
 }
 
-const val MAX_BUFFER_SIZE_B: Int = 120_000_000 // Bytes
+const val MAX_BUFFER_SIZE_B: Int = 150_000_000 // Bytes
 
-const val LOW_MEMORY_MAX_BUFFER_SIZE_B: Int = 20_000_000
+const val LOW_MEMORY_MAX_BUFFER_SIZE_B: Int = 25_000_000
 
 const val AI_ENABLED_EXTRA_MEMORY_USAGE_FRACTION = 1.5f
 
