@@ -65,7 +65,8 @@ fun DonationScreen(
     signInButtonViewState: MutableState<SignInButtonViewState>,
     isGooglePayReady: MutableState<Boolean>,
     authError: String?,
-    onDismissErrorDialog: () -> Unit
+    onDismissErrorDialog: () -> Unit,
+    allowedPaymentMethods: String
 ) {
     var donationAmount by remember { mutableStateOf("") }
     val signInAttempted = rememberSaveable { mutableStateOf(false) }
@@ -136,7 +137,11 @@ fun DonationScreen(
                                         PayButton(context)
                                     }, update = { view ->
                                         val buttonOptions = ButtonOptions.newBuilder()
-                                            .setButtonType(ButtonConstants.ButtonType.PAY).build()
+                                            .setButtonType(ButtonConstants.ButtonType.PAY)
+                                            .setAllowedPaymentMethods(allowedPaymentMethods)
+                                            .setButtonTheme(ButtonConstants.ButtonTheme.DARK)
+                                            .build()
+
                                         view.initialize(buttonOptions)
 
                                         // Set the listener after initializing
@@ -340,7 +345,8 @@ fun DonationScreenGooglePayPreview() {
         signInButtonViewState,
         isGooglePayReady,
         null,
-        {})
+        {},
+        "")
 }
 
 @Preview(showBackground = true)
@@ -358,7 +364,8 @@ fun DonationScreenGooglePaySignInPreview() {
         signInButtonViewState,
         isGooglePayReady,
         null,
-        {})
+        {},
+        "")
 }
 
 @Preview(showBackground = true)
@@ -376,7 +383,8 @@ fun DonationScreenGooglePaySignInFailedPreview() {
         signInButtonViewState,
         isGooglePayReady,
         "Failure string",
-        {})
+        {},
+        "")
 }
 
 @Preview(showBackground = true)
@@ -394,5 +402,6 @@ fun DonationScreenCardPaymentPreview() {
         signInButtonViewState,
         isGooglePayReady,
         null,
-        {})
+        {},
+        "")
 }

@@ -13,9 +13,6 @@
         </DropdownSelection>
         <DialogSelection />
       </SelectionState>
-      <SelectionState runConfigName="startRecording_withSettingsCausingIntegerOverflow_doesNotCrash()">
-        <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
       <SelectionState runConfigName="VADProcessorInstrumentedTest">
         <option name="selectionMode" value="DROPDOWN" />
         <DropdownSelection timestamp="2025-07-24T07:33:59.180465100Z">

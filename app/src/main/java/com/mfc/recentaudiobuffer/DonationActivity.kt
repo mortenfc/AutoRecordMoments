@@ -49,6 +49,27 @@ class DonationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         setupPaymentMethods()
+
+        val allowedPaymentMethodsJson = """
+            [
+              {
+                "type": "CARD",
+                "parameters": {
+                  "allowedAuthMethods": ["PAN_ONLY", "CRYPTOGRAM_3DS"],
+                  "allowedCardNetworks": ["AMEX", "DISCOVER", "JCB", "MASTERCARD", "VISA"]
+                },
+                "tokenizationSpecification": {
+                  "type": "PAYMENT_GATEWAY",
+                  "parameters": {
+                    "gateway": "stripe",
+                    "stripe:version": "2024-06-20",
+                    "stripe:publishableKey": "$stripeApiKey"
+                  }
+                }
+              }
+            ]
+            """.trimIndent()
+
         setContent {
             MaterialTheme {
                 Surface(
@@ -63,7 +84,8 @@ class DonationActivity : AppCompatActivity() {
                         signInButtonViewState = signInButtonViewState,
                         isGooglePayReady = isGooglePayReady,
                         authError = authenticationManager.authError.collectAsState().value,
-                        onDismissErrorDialog = { authenticationManager.clearAuthError() }
+                        onDismissErrorDialog = { authenticationManager.clearAuthError() },
+                        allowedPaymentMethods = allowedPaymentMethodsJson
                     )
                 }
             }

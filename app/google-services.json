@@ -54,6 +54,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "341850391115-1srvspgedmttdn0n7c73elff00cc616f.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mfc.recentaudiobuffer.debug",
+            "certificate_hash": "35125af0c9d20479c127d5e4d305a58f7e25baa3"
+          }
+        },
+        {
           "client_id": "341850391115-r46l5f9bbh1o46vrii1vnj76ilemfltb.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

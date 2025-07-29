@@ -498,16 +498,18 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         _isLoading.value = true
         _trimmingProgress.value = 0f
 
-        updateNotification() // Show "Trimming... [5% -- ETA 30s]"
+        // --- Simple Moving Average (SMA) setup ---
+        val movingAverageWindow = 5
+        val etaHistory = ArrayDeque<Long>(movingAverageWindow)
 
-        var smoothedEtaSeconds = -1L
-        val smoothingFactor = 0.2 // EMA smoothing factor
+        updateNotification() // Show "Trimming... [5% -- ETA 30s]"
 
         try {
             val originalBuffer = pauseSortAndGetBuffer()
 
             val bufferToSave = if (config.isAiAutoClipEnabled && originalBuffer.hasRemaining()) {
                 var startTime = System.currentTimeMillis()
+                var isFirst = true
                 ByteBuffer.wrap(withContext(Dispatchers.Default) {
                     // Now that the progress calculation in VADProcessor is fixed,
                     // we can just let it report progress normally.
@@ -515,29 +517,31 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                         originalBuffer, config.toAudioConfig(), onProgress = { progress ->
                             _trimmingProgress.value = progress
 
-                            // Calculate and smooth the ETA
+                            if(isFirst)
+                            {
+                                startTime = System.currentTimeMillis()
+                                isFirst = false
+                            }
                             if (progress > 0.01f) {
+                                // 1. Calculate a raw, instantaneous ETA
+                                val elapsedTime = System.currentTimeMillis() - startTime
+                                val totalTime = elapsedTime / progress
+                                val rawRemainingTime = (totalTime - elapsedTime).toLong()
+                                val rawEtaSeconds =
+                                    TimeUnit.MILLISECONDS.toSeconds(rawRemainingTime)
 
-                                if (smoothedEtaSeconds == -1L) {
-                                    startTime = System.currentTimeMillis()
+                                // 2. Add the new estimate to our history
+                                etaHistory.addLast(rawEtaSeconds)
 
-                                    val elapsedTime = System.currentTimeMillis() - startTime
-                                    val totalTime = elapsedTime / progress
-                                    val rawRemainingTime: Long = (totalTime - elapsedTime).toLong()
-
-                                    smoothedEtaSeconds =
-                                        TimeUnit.MILLISECONDS.toSeconds(rawRemainingTime)
-                                } else {
-                                    val elapsedTime = System.currentTimeMillis() - startTime
-                                    val totalTime = elapsedTime / progress
-                                    val rawRemainingTime: Long = (totalTime - elapsedTime).toLong()
-                                    val rawEtaSeconds =
-                                        TimeUnit.MILLISECONDS.toSeconds(rawRemainingTime)
-
-                                    smoothedEtaSeconds =
-                                        (smoothingFactor * rawEtaSeconds + (1 - smoothingFactor) * smoothedEtaSeconds).toLong()
+                                // 3. Trim the history if it exceeds the window size
+                                if (etaHistory.size > movingAverageWindow) {
+                                    etaHistory.removeFirst()
                                 }
-                                _trimmingEta.value = smoothedEtaSeconds
+
+                                // 4. Calculate the average of the current history for a smooth ETA
+                                if (etaHistory.isNotEmpty()) {
+                                    _trimmingEta.value = etaHistory.average().toLong()
+                                }
                             }
                             updateNotification()
                         })
@@ -782,7 +786,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         if (_isLoading.value) {
             if (_trimmingProgress.value >= 0f) {
                 val progressPercent = (_trimmingProgress.value * 100).roundToInt()
-                val etaText = if (_trimmingEta.value > 0) " -- ETA ${_trimmingEta.value}s]" else ""
+                val etaText = if (_trimmingEta.value > 0) " -- ETA ${_trimmingEta.value}s" else ""
                 builder.setContentText("AI Trimming... [${progressPercent}%${etaText}]")
                     .setProgress(100, progressPercent, false)
             } else {
