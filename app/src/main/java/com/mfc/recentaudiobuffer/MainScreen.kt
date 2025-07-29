@@ -10,7 +10,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -29,11 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,7 +38,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -354,13 +348,12 @@ fun SecondaryActionButton(text: String, icon: Int, onClick: () -> Unit) {
     }
 }
 
-
 /**
- * A compact Card that matches the DonateBanner's style and clearly shows the reward status.
+ * A golden reward card
  */
 @Composable
 fun RewardStatusCard(
-    expiryTimestamp: Long, modifier: Modifier = Modifier
+    expiryTimestamp: Long
 ) {
     val remainingMillis = expiryTimestamp - System.currentTimeMillis()
     val days = TimeUnit.MILLISECONDS.toDays(remainingMillis)
@@ -383,7 +376,9 @@ fun RewardStatusCard(
     ) {
         Card(
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.roundedRectShadow(4.dp, 4.dp, 16.dp, colorResource(id = R.color.gold_premium_border)),
+            modifier = Modifier.roundedRectShadow(
+                4.dp, 4.dp, 16.dp, colorResource(id = R.color.gold_premium_border)
+            ),
             border = BorderStroke(2.dp, colorResource(id = R.color.gold_premium_border)),
             colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.green_start))
         ) {
