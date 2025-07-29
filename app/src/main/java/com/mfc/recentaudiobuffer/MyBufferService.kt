@@ -508,8 +508,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             val originalBuffer = pauseSortAndGetBuffer()
 
             val bufferToSave = if (config.isAiAutoClipEnabled && originalBuffer.hasRemaining()) {
-                var startTime = System.currentTimeMillis()
-                var isFirst = true
+                var startTime = 0L
                 ByteBuffer.wrap(withContext(Dispatchers.Default) {
                     // Now that the progress calculation in VADProcessor is fixed,
                     // we can just let it report progress normally.
@@ -517,12 +516,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                         originalBuffer, config.toAudioConfig(), onProgress = { progress ->
                             _trimmingProgress.value = progress
 
-                            if(isFirst)
-                            {
+                            if (progress == 0f) {
                                 startTime = System.currentTimeMillis()
-                                isFirst = false
-                            }
-                            if (progress > 0.01f) {
+                            } else if (progress > 0.01f) {
                                 // 1. Calculate a raw, instantaneous ETA
                                 val elapsedTime = System.currentTimeMillis() - startTime
                                 val totalTime = elapsedTime / progress
@@ -568,9 +564,10 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             val destDirUri = FileSavingUtils.getCachedGrantedUri(this)
 
             if (tempFileUri != null && destDirUri != null) {
-                val timestamp = SimpleDateFormat("yy-MM-dd_HH-mm-ss", Locale.getDefault()).format(
-                    Date()
-                )
+                val timestamp =
+                    SimpleDateFormat("yy-MM-dd_HH-mm-ss", Locale.getDefault()).format(
+                        Date()
+                    )
                 val fileName = "quicksave_${timestamp}.wav"
 
                 val saveIntent = Intent(this, FileSavingService::class.java).apply {
@@ -582,7 +579,11 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 startService(saveIntent)
             } else {
                 Timber.e("Failed to quick save. Temp URI: $tempFileUri, Dest Dir URI: $destDirUri")
-                Toast.makeText(this, "Quick save failed. No save directory set.", Toast.LENGTH_LONG)
+                Toast.makeText(
+                    this,
+                    "Quick save failed. No save directory set.",
+                    Toast.LENGTH_LONG
+                )
                     .show()
                 val selfIntent = Intent(this, MyBufferService::class.java).apply {
                     action = ACTION_ON_SAVE_FAIL
@@ -744,21 +745,30 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     @OptIn(UnstableApi::class)
     private fun createNotification(): Notification {
         val stopIntent = PendingIntent.getBroadcast(
-            this, REQUEST_CODE_STOP, Intent(this, NotificationActionReceiver::class.java).apply {
+            this,
+            REQUEST_CODE_STOP,
+            Intent(this, NotificationActionReceiver::class.java).apply {
                 action = NotificationActionReceiver.ACTION_STOP_RECORDING
-            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val startIntent = PendingIntent.getBroadcast(
-            this, REQUEST_CODE_START, Intent(this, NotificationActionReceiver::class.java).apply {
+            this,
+            REQUEST_CODE_START,
+            Intent(this, NotificationActionReceiver::class.java).apply {
                 action = NotificationActionReceiver.ACTION_START_RECORDING
-            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val saveIntent = PendingIntent.getBroadcast(
-            this, REQUEST_CODE_SAVE, Intent(this, NotificationActionReceiver::class.java).apply {
+            this,
+            REQUEST_CODE_SAVE,
+            Intent(this, NotificationActionReceiver::class.java).apply {
                 action = NotificationActionReceiver.ACTION_SAVE_RECORDING
-            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         // Intent to open MainActivity when the notification body is clicked
@@ -786,7 +796,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         if (_isLoading.value) {
             if (_trimmingProgress.value >= 0f) {
                 val progressPercent = (_trimmingProgress.value * 100).roundToInt()
-                val etaText = if (_trimmingEta.value > 0) " -- ETA ${_trimmingEta.value}s" else ""
+                val etaText =
+                    if (_trimmingEta.value > 0) " -- ETA ${_trimmingEta.value}s" else ""
                 builder.setContentText("AI Trimming... [${progressPercent}%${etaText}]")
                     .setProgress(100, progressPercent, false)
             } else {
@@ -811,7 +822,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 if (_isRecording.value) "Pause" else "Continue",
                 if (_isRecording.value) stopIntent else startIntent
             ).addAction(
-                R.drawable.baseline_save_alt_24, "Save and Clear", if (canSave) saveIntent else null
+                R.drawable.baseline_save_alt_24,
+                "Save and Clear",
+                if (canSave) saveIntent else null
             )
         }
 

@@ -99,6 +99,8 @@ class VADProcessor @Inject constructor(
         val totalBytes = fullAudioBuffer.limit().toFloat()
         var lastReportedProgressPercent = -1
 
+        onProgress?.invoke(0f) // Start timer
+
         while (fullAudioBuffer.hasRemaining()) {
             val toRead = minOf(readBuffer.size, fullAudioBuffer.remaining())
             fullAudioBuffer.get(readBuffer, 0, toRead)
