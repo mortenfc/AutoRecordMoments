@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +29,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -38,6 +43,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -65,6 +71,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
+import java.util.concurrent.TimeUnit
 
 @UnstableApi
 @Composable
@@ -82,6 +89,9 @@ fun MainScreen(
     showRecentFilesDialog: Boolean,
     onFileSelected: (Uri) -> Unit,
     onDonateClick: () -> Unit,
+    hasDonated: Boolean,
+    isRewardActive: Boolean,
+    rewardExpiryTimestamp: Long,
     onSettingsClick: () -> Unit,
     showDirectoryPermissionDialog: Boolean,
     onDirectoryAlertDismiss: () -> Unit,
@@ -98,7 +108,6 @@ fun MainScreen(
 ) {
     var showPrivacyInfoDialog by remember { mutableStateOf(false) }
 
-    // FIXED: Use animateColorAsState for color animations
     val recordingButtonBackgroundColor by animateColorAsState(
         targetValue = if (isRecordingFromService) colorResource(id = R.color.red_pause).copy(
             alpha = 1f, red = 0.65f, blue = 0.3f
@@ -108,7 +117,6 @@ fun MainScreen(
         label = "recordingButtonBackgroundColor"
     )
 
-    // FIXED: Use animateColorAsState for color animations
     val recordingButtonElementsColor by animateColorAsState(
         targetValue = if (isRecordingFromService) Color.White else colorResource(id = R.color.teal_900),
         animationSpec = tween(durationMillis = 400, delayMillis = 50, easing = EaseInOutCubic),
@@ -124,7 +132,7 @@ fun MainScreen(
             authError = authError,
             onDismissErrorDialog = onDismissSignInErrorDialog
         )
-        if (!isPreview) {
+        if (!isPreview && !hasDonated && !isRewardActive) {
             AdMobBanner()
         }
 
@@ -135,6 +143,11 @@ fun MainScreen(
                     .padding(innerPadding)
                     .background(colorResource(id = R.color.teal_100))
             ) {
+                if (isRewardActive) {
+                    RewardStatusCard(
+                        expiryTimestamp = rewardExpiryTimestamp
+                    )
+                }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -193,13 +206,29 @@ fun MainScreen(
                         onClick = onResetBufferClick
                     )
                 }
-
-                DonateBanner(
+                Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(16.dp),
-                    onClick = onDonateClick
-                )
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                ) {
+                    if (hasDonated) {
+                        ThankYouButton(
+                            modifier = Modifier.align(Alignment.CenterEnd), onClick = onDonateClick
+                        )
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // The Donate Banner for permanent ad removal
+                            DonateBanner(onClick = onDonateClick)
+                        }
+                    }
+                }
 
                 if (!isPreview) {
                     PlayerControlViewContainer(
@@ -326,6 +355,62 @@ fun SecondaryActionButton(text: String, icon: Int, onClick: () -> Unit) {
 }
 
 
+/**
+ * A compact Card that matches the DonateBanner's style and clearly shows the reward status.
+ */
+@Composable
+fun RewardStatusCard(
+    expiryTimestamp: Long, modifier: Modifier = Modifier
+) {
+    val remainingMillis = expiryTimestamp - System.currentTimeMillis()
+    val days = TimeUnit.MILLISECONDS.toDays(remainingMillis)
+    val hours = TimeUnit.MILLISECONDS.toHours(remainingMillis) % 24
+
+    val expiryText = when {
+        days > 0 -> "Reward: No ads for ${days}d ${hours}h"
+        hours > 0 -> "Reward: No ads for ${hours}h"
+        remainingMillis > 0 -> "Reward: No ads for <1h"
+        else -> "Reward Expired"
+    }
+
+    Row(
+        // Increased padding to give the text more room
+        modifier = Modifier
+            .padding(vertical = 12.dp)
+            .fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.roundedRectShadow(4.dp, 4.dp, 16.dp, colorResource(id = R.color.gold_premium_border)),
+            border = BorderStroke(2.dp, colorResource(id = R.color.gold_premium_border)),
+            colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.green_start))
+        ) {
+            Row(
+                // Increased padding to give the text more room
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ad_off_24),
+                    contentDescription = "Reward Active",
+                    tint = colorResource(id = R.color.purple_accent),
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = expiryText,
+                    color = colorResource(id = R.color.teal_900),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun MainButton(
     text: String,
@@ -413,12 +498,13 @@ fun LoadingIndicator() {
 fun DonateBanner(modifier: Modifier = Modifier, onClick: () -> Unit) {
     Card(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.roundedRectShadow(5.dp, 5.dp, 16.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.teal_350)),
         border = BorderStroke(2.dp, colorResource(id = R.color.purple_accent))
     ) {
         Row(
+            // Padding is applied inside to keep content snug
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
@@ -437,6 +523,44 @@ fun DonateBanner(modifier: Modifier = Modifier, onClick: () -> Unit) {
                 fontSize = 20.sp
             )
         }
+    }
+}
+
+@Composable
+fun ThankYouButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Button(
+            onClick = onClick,
+            modifier = Modifier
+                .size(72.dp)
+                .roundedRectShadow(shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = 36.dp),
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = colorResource(id = R.color.teal_350),
+                contentColor = colorResource(id = R.color.teal_900)
+            ),
+            border = BorderStroke(2.dp, colorResource(id = R.color.purple_accent)),
+            contentPadding = PaddingValues(0.dp)
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.volunteer_activism_24),
+                contentDescription = "Thank you for your support",
+                modifier = Modifier.size(32.dp),
+                tint = colorResource(id = R.color.gold)
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Supporter",
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            color = colorResource(id = R.color.teal_900),
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -544,6 +668,9 @@ fun MainScreenPreview() {
             showRecentFilesDialog = false,
             onFileSelected = {},
             onDonateClick = {},
+            hasDonated = false,
+            isRewardActive = true,
+            rewardExpiryTimestamp = System.currentTimeMillis() + TimeUnit.DAYS.toMillis(2),
             onSettingsClick = {},
             showDirectoryPermissionDialog = false,
             onDirectoryAlertDismiss = {},
@@ -553,7 +680,7 @@ fun MainScreenPreview() {
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
             isLoading = false,
             isPreview = true,
-            showSaveDialog = true,
+            showSaveDialog = false,
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {})

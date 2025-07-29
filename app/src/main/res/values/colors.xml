@@ -17,6 +17,9 @@
     <color name="red_pause">#6B3030</color>
     <color name="orange_pause">#FF9800</color>
     <color name="gold">#FFD700</color>
+    <color name="dark_gold">#E1B900</color>
+    <color name="gold_premium_bg">#FFF8E1</color>
+    <color name="gold_premium_border">#FFD700</color> ```
     <color name="green_start">#8ADCBD</color>
     <color name="grey">#454A4E</color>
     <color name="light_grey">#727D85</color>

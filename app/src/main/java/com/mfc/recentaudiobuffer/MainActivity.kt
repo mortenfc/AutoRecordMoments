@@ -23,12 +23,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
+import com.google.android.gms.ads.MobileAds
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,18 +62,18 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var vadProcessor: VADProcessor
 
-    private var serviceError by mutableStateOf<String?>(null)
-
-
+    private lateinit var interstitialAdManager: InterstitialAdManager
     private var myBufferService: MyBufferServiceInterface? = null
 
     // --- UI State Management ---
+    private var serviceError by mutableStateOf<String?>(null)
     private var isRecording by mutableStateOf(false)
     private var isLoading by mutableStateOf(false)
     private var showRecentFilesDialog by mutableStateOf(false)
     private var showTrimFileDialog by mutableStateOf(false)
     private var showSaveDialog by mutableStateOf(false)
     private var showDirectoryPermissionDialog by mutableStateOf(false)
+    private var hasDonated by mutableStateOf(false)
 
     // State for the save dialog
     private var vadProcessedByteArray by mutableStateOf<ByteArray?>(null)
@@ -79,6 +81,9 @@ class MainActivity : AppCompatActivity() {
     private var suggestedFileNameState by mutableStateOf("")
 
     private var wasStartRecordingButtonPress = false
+
+    private var isRewardActive by mutableStateOf(false)
+    private var rewardExpiryTimestamp by mutableLongStateOf(0L)
 
     private val requiredPermissions = buildList {
         add(Manifest.permission.RECORD_AUDIO)
@@ -157,8 +162,7 @@ class MainActivity : AppCompatActivity() {
             // to the public "Recordings" directory as a starting suggestion.
             val documentId = "primary:${Environment.DIRECTORY_RECORDINGS}"
             val initialUri = DocumentsContract.buildTreeDocumentUri(
-                "com.android.externalstorage.documents",
-                documentId
+                "com.android.externalstorage.documents", documentId
             )
 
             // Pass this URI to the launcher. The system will try to open here.
@@ -183,6 +187,17 @@ class MainActivity : AppCompatActivity() {
         mediaPlayerManager =
             MediaPlayerManager(context = this) { _, _ -> Timber.i("Player is ready.") }
 
+        MobileAds.initialize(this)
+        interstitialAdManager = InterstitialAdManager(this)
+        rewardExpiryTimestamp = interstitialAdManager.getRewardExpiryTimestamp()
+        isRewardActive = System.currentTimeMillis() < rewardExpiryTimestamp
+        interstitialAdManager.showAdOnSecondOpen(this) {
+            // This callback fires when the user earns the reward.
+            // Update the UI state instantly.
+            isRewardActive = true
+            rewardExpiryTimestamp = interstitialAdManager.getRewardExpiryTimestamp()
+        }
+
         setContent {
             val authError by authenticationManager.authError.collectAsState()
             MainScreen(
@@ -202,6 +217,9 @@ class MainActivity : AppCompatActivity() {
                     if (uri != Uri.EMPTY) setUpMediaPlayer(uri)
                 },
                 onDonateClick = { onClickDonate() },
+                hasDonated = hasDonated,
+                isRewardActive = isRewardActive,
+                rewardExpiryTimestamp = rewardExpiryTimestamp,
                 onSettingsClick = { onClickSettings() },
                 onTrimFileClick = { showTrimFileDialog = true },
                 showTrimFileDialog = showTrimFileDialog,
@@ -247,6 +265,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        // Refresh donation status when the activity (re)starts
+        lifecycleScope.launch {
+            // hasDonated is true if ads are disabled
+            hasDonated = !settingsRepository.getSettingsConfig().areAdsEnabled
+        }
         if (MyBufferService.isServiceRunning.get() && !foregroundBufferServiceConn.isBound) {
             bindService(
                 Intent(this, MyBufferService::class.java),

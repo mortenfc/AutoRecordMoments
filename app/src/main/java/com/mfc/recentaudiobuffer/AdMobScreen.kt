@@ -21,58 +21,50 @@ import timber.log.Timber
 
 @Composable
 fun AdMobBanner(
-    modifier: Modifier = Modifier, settingsViewModel: SettingsViewModel = hiltViewModel()
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val config by settingsViewModel.config.collectAsState()
-    val areAdsEnabled = config.areAdsEnabled
-
-    LaunchedEffect(key1 = Unit) {
-        MobileAds.initialize(context)
+    val density = LocalDensity.current
+    val adWidth = with(density) {
+        val displayMetrics: DisplayMetrics = context.resources.displayMetrics
+        displayMetrics.widthPixels.toDp()
     }
 
-    if (areAdsEnabled) {
-        val density = LocalDensity.current
-        val adWidth = with(density) {
-            val displayMetrics: DisplayMetrics = context.resources.displayMetrics
-            displayMetrics.widthPixels.toDp()
-        }
-        val adSize: AdSize =
-            AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(context, adWidth.value.toInt())
+    val adSize: AdSize =
+        AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(context, adWidth.value.toInt())
 
-        AndroidView(modifier = modifier, factory = {
-            AdView(it).apply {
-                Timber.d("AdView created")
-                setAdSize(adSize)
-                adUnitId = "ca-app-pub-5330230981165217/6883566605"
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-                adListener = object : AdListener() {
-                    override fun onAdLoaded() {
-                        Timber.d("onAdLoaded")
-                    }
-
-                    override fun onAdFailedToLoad(adError: LoadAdError) {
-                        Timber.e("onAdFailedToLoad: ${adError.message}")
-                    }
-
-                    override fun onAdOpened() {
-                        Timber.d("onAdOpened")
-                    }
-
-                    override fun onAdClicked() {
-                        Timber.d("onAdClicked")
-                    }
-
-                    override fun onAdClosed() {
-                        Timber.d("onAdClosed")
-                    }
+    AndroidView(modifier = modifier, factory = {
+        AdView(it).apply {
+            Timber.d("AdView created")
+            setAdSize(adSize)
+            adUnitId = "ca-app-pub-5330230981165217/6883566605"
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            adListener = object : AdListener() {
+                override fun onAdLoaded() {
+                    Timber.d("onAdLoaded")
                 }
-                loadAd(AdRequest.Builder().build())
+
+                override fun onAdFailedToLoad(adError: LoadAdError) {
+                    Timber.e("onAdFailedToLoad: ${adError.message}")
+                }
+
+                override fun onAdOpened() {
+                    Timber.d("onAdOpened")
+                }
+
+                override fun onAdClicked() {
+                    Timber.d("onAdClicked")
+                }
+
+                override fun onAdClosed() {
+                    Timber.d("onAdClosed")
+                }
             }
-        }, update = {
-            it.loadAd(AdRequest.Builder().build())
-        })
-    }
+            loadAd(AdRequest.Builder().build())
+        }
+    }, update = {
+        it.loadAd(AdRequest.Builder().build())
+    })
 }
