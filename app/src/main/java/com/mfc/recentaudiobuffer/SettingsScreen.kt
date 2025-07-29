@@ -76,6 +76,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import timber.log.Timber
+import java.util.Locale
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
@@ -178,7 +179,7 @@ fun SettingsScreen(
 
                 // Sample Rate
                 SettingsButton(
-                    text = "Sample Rate: ${sampleRate.value} Hz",
+                    text = "Sample Rate: ${sampleRate.intValue} Hz",
                     icon = Icons.Filled.ArrowDropDown,
                     onClick = { showSampleRateMenu = true })
                 DropdownMenu(
@@ -330,7 +331,7 @@ fun SettingsScreen(
 
     if (showHelpDialog) {
         ComprehensiveHelpDialog(
-            sampleRate = sampleRate.value,
+            sampleRate = sampleRate.intValue,
             bitDepth = bitDepth.value,
             bufferTimeLength = bufferTimeLengthTemp.intValue,
             isAiAutoClipEnabled = state.value.isAiAutoClipEnabled.value,
@@ -586,7 +587,8 @@ fun ComprehensiveHelpDialog(
         val bytesPerSample = bitDepth.bits / 8
         val totalBytes = sampleRate.toLong() * bufferTimeLength * bytesPerSample
         val megabytes = totalBytes / (1024.0 * 1024.0)
-        val ram = String.format("~%.0f", megabytes)
+//        val ram = String.format("~%.0f", megabytes)
+        val ram = String.format(Locale.getDefault(), "~%.0f", megabytes)
 
         Pair(ram, estimateAudioImpact(sampleRate, bitDepth, bufferTimeLength, isAiAutoClipEnabled))
     }

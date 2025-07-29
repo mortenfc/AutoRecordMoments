@@ -12,7 +12,9 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.IBinder
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -143,11 +145,35 @@ class MainActivity : AppCompatActivity() {
 
     private fun pickDirectory() {
         try {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-            directoryPickerLauncher.launch(null)
+            // First, check if the user has already picked a directory.
+            // If so, start them there for convenience.
+            val cachedUri = FileSavingUtils.getCachedGrantedUri(this)
+            if (cachedUri != null) {
+                directoryPickerLauncher.launch(cachedUri)
+                return
+            }
+
+            // If no directory is cached (first run), create a URI that points
+            // to the public "Recordings" directory as a starting suggestion.
+            val documentId = "primary:${Environment.DIRECTORY_RECORDINGS}"
+            val initialUri = DocumentsContract.buildTreeDocumentUri(
+                "com.android.externalstorage.documents",
+                documentId
+            )
+
+            // Pass this URI to the launcher. The system will try to open here.
+            // If the directory doesn't exist, it will fall back gracefully to the root.
+            directoryPickerLauncher.launch(initialUri)
+
         } catch (e: Exception) {
+            // If building the URI fails for any reason, launch the picker normally.
             Toast.makeText(this, "Could not open directory picker.", Toast.LENGTH_SHORT).show()
-            Timber.e(e, "Directory picker failed")
+            Timber.e(e, "Directory picker failed, falling back to default.")
+            try {
+                directoryPickerLauncher.launch(null)
+            } catch (fallbackException: Exception) {
+                Timber.e(fallbackException, "Fallback directory picker also failed.")
+            }
         }
     }
 
