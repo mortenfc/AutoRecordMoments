@@ -48,6 +48,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.wallet.button.PayButton
+import com.google.android.gms.wallet.button.ButtonOptions
+import com.google.android.gms.wallet.button.ButtonConstants
 
 enum class SignInButtonViewState {
     Hidden, Ready
@@ -131,20 +133,24 @@ fun DonationScreen(
                                         .weight(1f)
                                         .height(48.dp)
                                         .padding(end = 4.dp), factory = { context ->
-                                    // Factory is now only responsible for creating the view
-                                    PayButton(context)
-                                }, update = { view ->
-                                    // The listener is set here and will always have the latest state
-                                    view.setOnClickListener {
-                                        val amount = donationAmount.toIntOrNull()
-                                        if (amount != null && amount >= 5) {
-                                            isDonationAmountError = false
-                                            onPayClick(amount)
-                                        } else {
-                                            isDonationAmountError = true
+                                        PayButton(context)
+                                    }, update = { view ->
+                                        val buttonOptions = ButtonOptions.newBuilder()
+                                            .setButtonType(ButtonConstants.ButtonType.PAY).build()
+                                        view.initialize(buttonOptions)
+
+                                        // Set the listener after initializing
+                                        view.setOnClickListener {
+                                            val amount = donationAmount.toIntOrNull()
+                                            if (amount != null && amount >= 5) {
+                                                isDonationAmountError = false
+                                                onPayClick(amount)
+                                            } else {
+                                                isDonationAmountError = true
+                                            }
                                         }
                                     }
-                                })
+                                )
 
                                 Spacer(modifier = Modifier.width(8.dp))
 
