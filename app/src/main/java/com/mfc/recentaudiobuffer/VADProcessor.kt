@@ -96,7 +96,7 @@ class VADProcessor @Inject constructor(
         val readBuffer = ByteArray(DEFAULT_CHUNK_SIZE_B)
         fullAudioBuffer.rewind()
 
-        val totalBytes = fullAudioBuffer.capacity().toFloat()
+        val totalBytes = fullAudioBuffer.limit().toFloat()
         var lastReportedProgressPercent = -1
 
         while (fullAudioBuffer.hasRemaining()) {
