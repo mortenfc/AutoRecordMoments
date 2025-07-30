@@ -12,13 +12,25 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import androidx.core.content.edit
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.FullScreenContentCallback
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.launch
 
 @Singleton
 class InterstitialAdManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    // A SharedFlow to notify the UI when the reward state changes.
+    private val _rewardStateChanged = MutableSharedFlow<Unit>()
+    val rewardStateChanged = _rewardStateChanged.asSharedFlow()
+
     private var rewardedInterstitialAd: RewardedInterstitialAd? = null
 
     companion object {
@@ -45,7 +57,7 @@ class InterstitialAdManager @Inject constructor(
         Timber.d("Reward granted. Launch ads disabled until: $expiryTimestamp")
     }
 
-    fun showAdOnSecondOpen(activity: Activity, onRewardGranted: () -> Unit) {
+    fun showAdOnSecondOpen(activity: Activity) {
         if (isRewardActive()) {
             Timber.d("Reward is active. Skipping ad check.")
             return
@@ -103,7 +115,9 @@ class InterstitialAdManager @Inject constructor(
                     rewardedInterstitialAd?.show(activity) {
                         Timber.d("User earned reward: ${it.amount} ${it.type}")
                         grantReward()
-                        onRewardGranted()
+                        CoroutineScope(Dispatchers.Main).launch {
+                            _rewardStateChanged.emit(Unit)
+                        }
                     }
                 }
             })

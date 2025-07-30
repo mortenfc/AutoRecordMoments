@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.input.pointer.motionEventSpy
 import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.wallet.button.PayButton
 import com.google.android.gms.wallet.button.ButtonOptions
@@ -125,7 +126,7 @@ fun DonationScreen(
                                 }, isDonationAmountError = isDonationAmountError
                             )
                             Row(
-                                modifier = Modifier.fillMaxWidth(fraction = 0.8f),
+                                modifier = Modifier.fillMaxWidth(fraction = 0.9f),
                                 horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -134,30 +135,35 @@ fun DonationScreen(
                                         .weight(1f)
                                         .height(48.dp)
                                         .padding(end = 4.dp), factory = { context ->
-                                        PayButton(context)
-                                    }, update = { view ->
-                                        val buttonOptions = ButtonOptions.newBuilder()
-                                            .setButtonType(ButtonConstants.ButtonType.PAY)
-                                            .setAllowedPaymentMethods(allowedPaymentMethods)
-                                            .setButtonTheme(ButtonConstants.ButtonTheme.DARK)
-                                            .build()
+                                    PayButton(context)
+                                }, update = { view ->
+                                    val buttonOptions = ButtonOptions.newBuilder()
+                                        .setButtonType(ButtonConstants.ButtonType.PAY)
+                                        .setAllowedPaymentMethods(allowedPaymentMethods)
+                                        .setButtonTheme(ButtonConstants.ButtonTheme.DARK).build()
 
-                                        view.initialize(buttonOptions)
+                                    view.initialize(buttonOptions)
 
-                                        // Set the listener after initializing
-                                        view.setOnClickListener {
-                                            val amount = donationAmount.toIntOrNull()
-                                            if (amount != null && amount >= 5) {
-                                                isDonationAmountError = false
-                                                onPayClick(amount)
-                                            } else {
-                                                isDonationAmountError = true
-                                            }
+                                    // Set the listener after initializing
+                                    view.setOnClickListener {
+                                        val amount = donationAmount.toIntOrNull()
+                                        if (amount != null && amount >= 5) {
+                                            isDonationAmountError = false
+                                            onPayClick(amount)
+                                        } else {
+                                            isDonationAmountError = true
                                         }
                                     }
-                                )
+                                })
+                            }
 
-                                Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(Modifier.height(22.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
 
                                 GoogleSignInButton(
                                     onClick = onSignInClick, signInButtonText
@@ -346,7 +352,8 @@ fun DonationScreenGooglePayPreview() {
         isGooglePayReady,
         null,
         {},
-        "")
+        ""
+    )
 }
 
 @Preview(showBackground = true)
@@ -365,7 +372,8 @@ fun DonationScreenGooglePaySignInPreview() {
         isGooglePayReady,
         null,
         {},
-        "")
+        ""
+    )
 }
 
 @Preview(showBackground = true)
@@ -384,7 +392,8 @@ fun DonationScreenGooglePaySignInFailedPreview() {
         isGooglePayReady,
         "Failure string",
         {},
-        "")
+        ""
+    )
 }
 
 @Preview(showBackground = true)
@@ -403,5 +412,6 @@ fun DonationScreenCardPaymentPreview() {
         isGooglePayReady,
         null,
         {},
-        "")
+        ""
+    )
 }

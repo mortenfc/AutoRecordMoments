@@ -62,6 +62,7 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var vadProcessor: VADProcessor
 
+    @Inject
     private lateinit var interstitialAdManager: InterstitialAdManager
     private var myBufferService: MyBufferServiceInterface? = null
 
@@ -181,6 +182,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateRewardState() {
+        rewardExpiryTimestamp = interstitialAdManager.getRewardExpiryTimestamp()
+        isRewardActive = System.currentTimeMillis() < rewardExpiryTimestamp
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
@@ -188,14 +194,13 @@ class MainActivity : AppCompatActivity() {
             MediaPlayerManager(context = this) { _, _ -> Timber.i("Player is ready.") }
 
         MobileAds.initialize(this)
-        interstitialAdManager = InterstitialAdManager(this)
-        rewardExpiryTimestamp = interstitialAdManager.getRewardExpiryTimestamp()
-        isRewardActive = System.currentTimeMillis() < rewardExpiryTimestamp
-        interstitialAdManager.showAdOnSecondOpen(this) {
-            // This callback fires when the user earns the reward.
-            // Update the UI state instantly.
-            isRewardActive = true
-            rewardExpiryTimestamp = interstitialAdManager.getRewardExpiryTimestamp()
+        updateRewardState()
+
+        // Listen for reward state changes from the AdManager
+        lifecycleScope.launch {
+            interstitialAdManager.rewardStateChanged.collect {
+                updateRewardState()
+            }
         }
 
         setContent {

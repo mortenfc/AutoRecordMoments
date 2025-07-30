@@ -63,8 +63,7 @@ fun CustomAlertDialog(
                 text()
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End
                 ) {
                     dismissButton?.invoke()
                     confirmButton()
@@ -76,80 +75,61 @@ fun CustomAlertDialog(
 
 @Composable
 fun DirectoryPickerDialog(onDismiss: () -> Unit) {
-    CustomAlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = stringResource(id = R.string.select_directory),
-                color = colorResource(id = R.color.teal_900),
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp
-            )
-        },
-        text = {
-            Text(
-                text = "To save recordings, please grant permission to a directory. You will be prompted to select one now.",
-                color = colorResource(id = R.color.teal_900),
-                fontSize = 16.sp
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("OK") }
-        }
-    )
+    CustomAlertDialog(onDismissRequest = onDismiss, title = {
+        Text(
+            text = stringResource(id = R.string.select_directory),
+            color = colorResource(id = R.color.teal_900),
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp
+        )
+    }, text = {
+        Text(
+            text = "To save recordings, please grant permission to a directory. You will be prompted to select one now.",
+            color = colorResource(id = R.color.teal_900),
+            fontSize = 16.sp
+        )
+    }, confirmButton = {
+        TextButton(onClick = onDismiss) { Text("OK") }
+    })
 }
 
 @Composable
 fun SignInErrorDialog(errorMessage: String, onDismiss: () -> Unit) {
-    CustomAlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                "Sign-In Failed",
-                color = colorResource(id = R.color.teal_900),
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp
-            )
-        },
-        text = {
-            Text(
-                text = errorMessage,
-                color = colorResource(id = R.color.teal_900),
-                fontSize = 16.sp
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("OK") }
-        }
-    )
+    CustomAlertDialog(onDismissRequest = onDismiss, title = {
+        Text(
+            "Sign-In Failed",
+            color = colorResource(id = R.color.teal_900),
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp
+        )
+    }, text = {
+        Text(
+            text = errorMessage, color = colorResource(id = R.color.teal_900), fontSize = 16.sp
+        )
+    }, confirmButton = {
+        TextButton(onClick = onDismiss) { Text("OK") }
+    })
 }
 
 @Composable
 fun RecordingErrorDialog(message: String, onDismiss: () -> Unit) {
-    CustomAlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                "Recording Error",
-                color = colorResource(id = R.color.teal_900),
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp
-            )
-        },
-        text = {
-            Text(text = message, color = colorResource(id = R.color.teal_900), fontSize = 16.sp)
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("OK") }
-        }
-    )
+    CustomAlertDialog(onDismissRequest = onDismiss, title = {
+        Text(
+            "Recording Error",
+            color = colorResource(id = R.color.teal_900),
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp
+        )
+    }, text = {
+        Text(text = message, color = colorResource(id = R.color.teal_900), fontSize = 16.sp)
+    }, confirmButton = {
+        TextButton(onClick = onDismiss) { Text("OK") }
+    })
 }
 
 @Composable
 fun FileSaveDialog(
-    suggestedName: String,
-    onDismiss: () -> Unit,
-    onSave: (fileName: String) -> Unit
+    suggestedName: String, onDismiss: () -> Unit, onSave: (fileName: String) -> Unit
 ) {
     var text by remember { mutableStateOf(suggestedName) }
 
@@ -179,8 +159,7 @@ fun FileSaveDialog(
                 )
                 Spacer(modifier = Modifier.height(20.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) { Text("CANCEL") }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -193,38 +172,33 @@ fun FileSaveDialog(
 
 @Composable
 fun PrivacyInfoDialog(onDismissRequest: () -> Unit) {
-    CustomAlertDialog(
-        onDismissRequest = onDismissRequest,
-        title = {
+    CustomAlertDialog(onDismissRequest = onDismissRequest, title = {
+        Text(
+            "Privacy Info",
+            fontWeight = FontWeight.Bold,
+            color = colorResource(id = R.color.teal_900),
+            fontSize = 20.sp
+        )
+    }, text = {
+        Text(
+            "This app continuously records audio to a ring-buffer (limited size) in your phone's memory (RAM). No audio data is saved or sent anywhere unless you explicitly press the 'Save' button, which only processes and stores it on your local device. Clearing the buffer or closing the persistent notification will discard the buffered audio.",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                textAlign = TextAlign.Justify,
+                hyphens = Hyphens.Auto,
+                lineBreak = LineBreak.Paragraph,
+            ),
+            color = colorResource(id = R.color.teal_900),
+            lineHeight = 20.sp,
+        )
+    }, confirmButton = {
+        TextButton(onClick = onDismissRequest) {
             Text(
-                "Privacy Info",
+                "GOT IT",
                 fontWeight = FontWeight.Bold,
-                color = colorResource(id = R.color.teal_900),
-                fontSize = 20.sp
+                color = colorResource(id = R.color.purple_accent)
             )
-        },
-        text = {
-            Text(
-                "This app continuously records audio to a temporary buffer in your phone's memory (RAM). No audio data is saved or sent anywhere unless you explicitly press the 'Save' button. Clearing the buffer or closing the persistent notification will discard the buffered audio.",
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    textAlign = TextAlign.Justify,
-                    hyphens = Hyphens.Auto,
-                    lineBreak = LineBreak.Paragraph,
-                ),
-                color = colorResource(id = R.color.teal_900),
-                lineHeight = 20.sp,
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onDismissRequest) {
-                Text(
-                    "GOT IT",
-                    fontWeight = FontWeight.Bold,
-                    color = colorResource(id = R.color.purple_accent)
-                )
-            }
         }
-    )
+    })
 }
 
 @Preview(showBackground = true)
@@ -233,12 +207,10 @@ fun DialogsPreview() {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SignInErrorDialog(
             errorMessage = "A network error occurred. Please check your connection and try again.",
-            onDismiss = {}
-        )
+            onDismiss = {})
         DirectoryPickerDialog(onDismiss = {})
         RecordingErrorDialog(
             message = "Not enough memory to start recording. Please reduce config values in settings.",
-            onDismiss = {}
-        )
+            onDismiss = {})
     }
 }
