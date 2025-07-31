@@ -1,5 +1,5 @@
 # Keep necessary application classes and components that are referenced by the OS.
--keep class com.mfc.recentaudiobuffer.RecentAudioBufferApplication { *; }
+-keep class com.mfc.recentaudiobuffer.AutoRecordMomentsApp { *; }
 -keep class com.mfc.recentaudiobuffer.MainActivity { *; }
 -keep class com.mfc.recentaudiobuffer.SettingsActivity { *; }
 -keep class com.mfc.recentaudiobuffer.DonationActivity { *; }
