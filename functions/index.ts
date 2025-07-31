@@ -9,7 +9,7 @@ const stripeTestSecret = defineSecret("STRIPE_SECRET");
 
 // --- Currency Configuration ---
 // This is your source of truth. For an even better approach, store this in Firebase Remote Config.
-const currencyRules = {
+const currencyRules : Record<string, {multiplier: number, min: number}> = {
   "SEK": { multiplier: 100, min: 500 },      // 5.00 SEK
   "DKK": { multiplier: 100, min: 500 },      // 5.00 DKK
   "NOK": { multiplier: 100, min: 500 },      // 5.00 NOK
@@ -17,7 +17,7 @@ const currencyRules = {
   "EUR": { multiplier: 100, min: 50 },       // €0.50 EUR
   "GBP": { multiplier: 100, min: 30 },       // £0.30 GBP
   "JPY": { multiplier: 1,   min: 50 },       // ¥50 JPY
-};
+} as const;
 
 // 1. Cloud Function to provide currency rules to the app
 export const getCurrencyRules = onRequest({cors: true}, (req, res) => {
@@ -31,7 +31,7 @@ export const createPaymentIntent = onRequest({secrets: [stripeLiveSecret, stripe
       // Amount from client is in major units (e.g., 5.00 for 5 dollars)
       const {amount, environment, currency} = req.body;
 
-      if (!currency || !currencyRules[currency]) {
+      if (typeof currency !== "string" || !(currency in currencyRules)) {
         logger.error("Unsupported currency received:", currency);
         res.status(400).json({error: "Currency not supported."});
         return;
