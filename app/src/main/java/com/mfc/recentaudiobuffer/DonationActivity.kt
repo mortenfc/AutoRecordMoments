@@ -1,6 +1,5 @@
 package com.mfc.recentaudiobuffer
 
-import android.app.AlertDialog
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -10,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import com.stripe.android.PaymentConfiguration
 import com.stripe.android.googlepaylauncher.GooglePayEnvironment
@@ -26,9 +24,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import org.joda.money.CurrencyUnit
 import org.json.JSONObject
 import timber.log.Timber
 import java.io.IOException
+import java.util.Locale
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -36,39 +36,45 @@ class DonationActivity : AppCompatActivity() {
     @Inject
     lateinit var authenticationManager: AuthenticationManager
     private val httpClient = OkHttpClient()
-    private val serverUrl = DonationConstants.SERVER_URL
+    private val donationViewModel: DonationViewModel by viewModels()
+    private val settingsViewModel: SettingsViewModel by viewModels()
+
     private lateinit var googlePayLauncher: GooglePayLauncher
     private lateinit var stripePaymentSheet: PaymentSheet
     private var clientSecret: String? = null
-    private val stripeApiKey = DonationConstants.STRIPE_API_KEY
-    private var signInButtonViewState = mutableStateOf(SignInButtonViewState.Ready)
-    private var isGooglePayReady = mutableStateOf(false)
-    private val settingsViewModel: SettingsViewModel by viewModels()
+
+    // User's locale information
+    private val userLocale: Locale by lazy { Locale.getDefault() }
+    private val userCurrency: CurrencyUnit by lazy { CurrencyUnit.of(userLocale) }
+
+    // JSON configuration for the Google Pay button
+    private val allowedPaymentMethodsJson: String by lazy {
+        // Using lazy to ensure stripeApiKey is initialized
+        """
+        [
+          {
+            "type": "CARD",
+            "parameters": {
+              "allowedAuthMethods": ["PAN_ONLY", "CRYPTOGRAM_3DS"],
+              "allowedCardNetworks": ["AMEX", "DISCOVER", "JCB", "MASTERCARD", "VISA"]
+            },
+            "tokenizationSpecification": {
+              "type": "PAYMENT_GATEWAY",
+              "parameters": {
+                "gateway": "stripe",
+                "stripe:version": "2025-07-30.basil",
+                "stripe:publishableKey": "${DonationConstants.STRIPE_API_KEY}"
+              }
+            }
+          }
+        ]
+        """.trimIndent()
+    }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setupPaymentMethods()
-
-        val allowedPaymentMethodsJson = """
-            [
-              {
-                "type": "CARD",
-                "parameters": {
-                  "allowedAuthMethods": ["PAN_ONLY", "CRYPTOGRAM_3DS"],
-                  "allowedCardNetworks": ["AMEX", "DISCOVER", "JCB", "MASTERCARD", "VISA"]
-                },
-                "tokenizationSpecification": {
-                  "type": "PAYMENT_GATEWAY",
-                  "parameters": {
-                    "gateway": "stripe",
-                    "stripe:version": "2024-06-20",
-                    "stripe:publishableKey": "$stripeApiKey"
-                  }
-                }
-              }
-            ]
-            """.trimIndent()
 
         setContent {
             MaterialTheme {
@@ -76,106 +82,52 @@ class DonationActivity : AppCompatActivity() {
                     modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background
                 ) {
                     DonationScreen(
-                        signInButtonText = authenticationManager.signInButtonText,
-                        onSignInClick = { authenticationManager.onSignInClick(this) },
-                        onPayClick = { amount -> sendPaymentRequest(amount) },
-                        onCardPayClick = { amount -> sendPaymentRequest(amount) },
-                        onBackClick = { this.finish() },
-                        signInButtonViewState = signInButtonViewState,
-                        isGooglePayReady = isGooglePayReady,
+                        // State and authentication
+                        viewModel = donationViewModel,
                         authError = authenticationManager.authError.collectAsState().value,
                         onDismissErrorDialog = { authenticationManager.clearAuthError() },
-                        allowedPaymentMethods = allowedPaymentMethodsJson
+                        signInButtonText = authenticationManager.signInButtonText,
+                        onSignInClick = { authenticationManager.onSignInClick(this) },
+                        // Payment actions
+                        onPayClick = ::fetchClientSecret,
+                        onBackClick = { this.finish() },
+                        allowedPaymentMethodsJson = allowedPaymentMethodsJson,
                     )
                 }
             }
         }
     }
 
-    override fun onStart() {
-        Timber.i("onStart() called")
-        super.onStart()
-    }
-
     private fun setupPaymentMethods() {
-        PaymentConfiguration.init(this, stripeApiKey)
+        PaymentConfiguration.init(this, DonationConstants.STRIPE_API_KEY)
         stripePaymentSheet = Builder(::onPaymentSheetResult).build(this)
 
-        val googlePayEnvironment = if (BuildConfig.DEBUG) {
-            GooglePayEnvironment.Test
-        } else {
-            GooglePayEnvironment.Production
-        }
+        val googlePayEnvironment =
+            if (BuildConfig.DEBUG) GooglePayEnvironment.Test else GooglePayEnvironment.Production
         googlePayLauncher = GooglePayLauncher(
-            activity = this, config = GooglePayLauncher.Config(
+            activity = this,
+            config = GooglePayLauncher.Config(
                 environment = googlePayEnvironment,
-                merchantCountryCode = "SE",
+                merchantCountryCode = userLocale.country,
                 merchantName = "Auto Record Moments"
-            ), readyCallback = ::onGooglePayReady, resultCallback = ::onGooglePayResult
+            ),
+            readyCallback = { isReady -> donationViewModel.setGooglePayReady(isReady) },
+            resultCallback = ::onGooglePayResult
         )
     }
 
-    private fun presentPaymentSheet(clientSecret: String) {
-        val configuration = PaymentSheet.Configuration(
-            merchantDisplayName = "Auto Record Moments", allowsDelayedPaymentMethods = true
-        )
-        stripePaymentSheet.presentWithPaymentIntent(clientSecret, configuration)
-    }
-
-    private fun onPaymentSheetResult(paymentSheetResult: PaymentSheetResult) {
-        when (paymentSheetResult) {
-            is PaymentSheetResult.Completed -> {
-                showPaymentResultToast("Payment complete!")
-                settingsViewModel.updateAreAdsEnabled(false)
-            }
-
-            is PaymentSheetResult.Canceled -> showPaymentResultToast("Payment canceled.")
-            is PaymentSheetResult.Failed -> showPaymentError(
-                paymentSheetResult.error.toString(), paymentSheetResult.error
-            )
-        }
-    }
-
-    private fun sendPaymentRequest(amount: Int) {
-        fetchClientSecret(amount)
-    }
-
-    private fun handlePaymentWithClientSecret() {
-        runOnUiThread {
-            if (clientSecret == null) {
-                showPaymentError("Failed to get client secret")
-                return@runOnUiThread
-            }
-            if (isGooglePayReady.value) {
-                handleGooglePayPayment()
-            } else {
-                handleCardPayment()
-            }
-        }
-    }
-
-    private fun handleGooglePayPayment() {
-        Timber.d("handleGooglePayPayment: Paying with GPay ...")
-        googlePayLauncher.presentForPaymentIntent(clientSecret!!)
-    }
-
-    private fun handleCardPayment() {
-        Timber.d("handleCardPayment: Paying with Card ...")
-        presentPaymentSheet(clientSecret!!)
-    }
-
-    private fun fetchClientSecret(amount: Int) {
+    private fun fetchClientSecret(amount: Double, currency: CurrencyUnit) {
         val mediaType = "application/json; charset=utf-8".toMediaType()
-        // Determine the environment based on the build type
         val environment = if (BuildConfig.DEBUG) "debug" else "production"
-        // Add the 'environment' key to the JSON body
+
         val jsonBody = JSONObject().apply {
-            put("amount", amount * 100) // Convert to cents
+            put("amount", amount) // Send the major unit amount as a double
             put("environment", environment)
+            put("currency", currency.code)
         }
         val requestBody = jsonBody.toString().toRequestBody(mediaType)
-        val request =
-            Request.Builder().url("$serverUrl/createPaymentIntent").post(requestBody).build()
+        val request = Request.Builder().url("${DonationConstants.SERVER_URL}/createPaymentIntent")
+            .post(requestBody).build()
 
         httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
@@ -187,50 +139,59 @@ class DonationActivity : AppCompatActivity() {
                     logServerError(response.code)
                     return
                 }
-                val responseBody = response.body?.string() ?: run {
-                    logEmptyResponse()
-                    return
-                }
-                try {
-                    val jsonObject = JSONObject(responseBody)
-                    clientSecret = jsonObject.getString("clientSecret")
-                    handlePaymentWithClientSecret()
-                } catch (e: Exception) {
-                    logJsonError(e)
+                val responseBody = response.body?.string() ?: return
+                clientSecret = JSONObject(responseBody).getString("clientSecret")
+
+                runOnUiThread {
+                    val showGooglePay =
+                        donationViewModel.uiState.isGooglePayReady && authenticationManager.authError.value == null
+
+                    if (showGooglePay) {
+                        googlePayLauncher.presentForPaymentIntent(clientSecret!!)
+                    } else {
+                        presentCardPaymentSheet()
+                    }
                 }
             }
         })
     }
 
-    private fun onGooglePayReady(isReady: Boolean) {
-        isGooglePayReady.value = isReady
-        if (!isReady) {
-            signInButtonViewState.value = SignInButtonViewState.Hidden
-            showGooglePayNotReadyDialog()
-        } else {
-            signInButtonViewState.value = SignInButtonViewState.Ready
-            Timber.d("Google pay is ready!")
+    private fun presentCardPaymentSheet() {
+        clientSecret?.let {
+            val configuration = PaymentSheet.Configuration(
+                merchantDisplayName = "Auto Record Moments",
+                allowsDelayedPaymentMethods = true,
+                defaultBillingDetails = PaymentSheet.BillingDetails(
+                    address = PaymentSheet.Address(country = userLocale.country)
+                )
+            )
+            stripePaymentSheet.presentWithPaymentIntent(it, configuration)
+        }
+    }
+
+    private fun handleSuccessfulPayment() {
+        showPaymentResultToast("Payment complete!")
+        settingsViewModel.updateAreAdsEnabled(false)
+    }
+
+    private fun onPaymentSheetResult(paymentSheetResult: PaymentSheetResult) {
+        when (paymentSheetResult) {
+            is PaymentSheetResult.Completed -> handleSuccessfulPayment()
+            is PaymentSheetResult.Canceled -> showPaymentResultToast("Payment canceled.")
+            is PaymentSheetResult.Failed -> showPaymentError(
+                "Card payment failed", paymentSheetResult.error
+            )
         }
     }
 
     private fun onGooglePayResult(result: GooglePayLauncher.Result) {
         when (result) {
-            is GooglePayLauncher.Result.Completed -> {
-                showPaymentResultToast("Payment Successful!")
-                settingsViewModel.updateAreAdsEnabled(false)
-            }
-
+            is GooglePayLauncher.Result.Completed -> handleSuccessfulPayment()
             is GooglePayLauncher.Result.Canceled -> showPaymentResultToast("Payment Canceled")
             is GooglePayLauncher.Result.Failed -> showPaymentError(
-                result.error.toString(), result.error
+                "Google Pay failed", result.error
             )
         }
-    }
-
-    private fun showGooglePayNotReadyDialog() {
-        AlertDialog.Builder(this).setTitle("Google Pay Not Available")
-            .setMessage("No worries! Google Pay is just one way to donate. If you want to use it, make sure you've installed the Google Wallet app and added a credit or debit card.")
-            .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }.create().show()
     }
 
     private fun showPaymentResultToast(message: String) {
@@ -239,7 +200,8 @@ class DonationActivity : AppCompatActivity() {
 
     private fun showPaymentError(message: String, error: Throwable? = null) {
         error?.let { Timber.e("Payment Failed $it") }
-        Toast.makeText(this, "Payment failed: $message", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Payment failed: ${error?.localizedMessage}", Toast.LENGTH_SHORT)
+            .show()
     }
 
     private fun logNetworkError(e: IOException) {
@@ -253,20 +215,6 @@ class DonationActivity : AppCompatActivity() {
         Timber.e("sendPaymentRequest: Server returned an error: $code")
         runOnUiThread {
             showPaymentError("Server error: $code")
-        }
-    }
-
-    private fun logEmptyResponse() {
-        Timber.e("sendPaymentRequest: Empty response body")
-        runOnUiThread {
-            showPaymentError("Empty response from server")
-        }
-    }
-
-    private fun logJsonError(e: Exception) {
-        Timber.e("sendPaymentRequest: Failed to parse JSON $e")
-        runOnUiThread {
-            showPaymentError("Failed to parse server response")
         }
     }
 }

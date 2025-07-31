@@ -357,7 +357,7 @@ class MainActivity : AppCompatActivity() {
                 vadProcessedByteArray = bufferToSave
                 audioConfigState = settings.toAudioConfig()
                 val timestamp =
-                    SimpleDateFormat("yy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
+                    SimpleDateFormat("yy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
                 suggestedFileNameState = "recording_${timestamp}.wav"
                 val destDirUri = FileSavingUtils.getCachedGrantedUri(this@MainActivity)
                 if (FileSavingUtils.isUriValidAndAccessible(this@MainActivity, destDirUri)) {

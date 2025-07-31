@@ -18,8 +18,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
@@ -28,7 +26,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
@@ -37,179 +34,210 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TextField
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.ui.input.pointer.motionEventSpy
 import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.wallet.button.PayButton
 import com.google.android.gms.wallet.button.ButtonOptions
 import com.google.android.gms.wallet.button.ButtonConstants
-
-enum class SignInButtonViewState {
-    Hidden, Ready
-}
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import org.joda.money.CurrencyUnit
+import org.joda.money.Money
+import org.joda.money.format.MoneyFormatterBuilder
+import java.util.Locale
 
 @Composable
 fun DonationScreen(
+    viewModel: DonationViewModel,
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
-    onPayClick: (Int) -> Unit,
-    onCardPayClick: (Int) -> Unit,
+    onPayClick: (Double, CurrencyUnit) -> Unit,
     onBackClick: () -> Unit,
-    signInButtonViewState: MutableState<SignInButtonViewState>,
-    isGooglePayReady: MutableState<Boolean>,
     authError: String?,
     onDismissErrorDialog: () -> Unit,
-    allowedPaymentMethods: String
+    allowedPaymentMethodsJson: String
 ) {
-    var donationAmount by remember { mutableStateOf("") }
-    val signInAttempted = rememberSaveable { mutableStateOf(false) }
-    var isDonationAmountError by rememberSaveable { mutableStateOf(false) }
-    val isLoggedIn: Boolean = (signInButtonText.value == "Sign Out")
+    val state = viewModel.uiState
+    // This stateless composable is now easily previewable
+    DonationScreenContent(
+        state = state,
+        signInButtonText = signInButtonText,
+        onSignInClick = onSignInClick,
+        onPayClick = onPayClick,
+        onBackClick = onBackClick,
+        authError = authError,
+        onDismissErrorDialog = onDismissErrorDialog,
+        allowedPaymentMethodsJson = allowedPaymentMethodsJson
+    )
+}
 
-    LaunchedEffect(authError) {
-        if (authError != null) {
-            signInAttempted.value = true
+// Stateless content composable that handles all UI logic
+@Composable
+private fun DonationScreenContent(
+    state: DonationScreenState,
+    signInButtonText: MutableState<String>,
+    onSignInClick: () -> Unit,
+    onPayClick: (Double, CurrencyUnit) -> Unit,
+    onBackClick: () -> Unit,
+    authError: String?,
+    onDismissErrorDialog: () -> Unit,
+    allowedPaymentMethodsJson: String
+) {
+    val userLocale = Locale.getDefault()
+    var currencyToUse = CurrencyUnit.of(userLocale)
+    var ruleToUse: CurrencyRule? = state.rules[currencyToUse.code]
+
+    if (ruleToUse == null) {
+        currencyToUse = CurrencyUnit.EUR
+        ruleToUse = state.rules["EUR"]
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = "Donate",
+                signInButtonText = signInButtonText,
+                onSignInClick = onSignInClick,
+                onBackButtonClicked = onBackClick,
+                authError = authError,
+                onDismissErrorDialog = onDismissErrorDialog
+            )
+        }) { innerPadding ->
+        when {
+            state.isLoading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(colorResource(R.color.teal_100)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = colorResource(id = R.color.purple_accent))
+                }
+            }
+
+            state.error != null -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(colorResource(R.color.teal_100))
+                        .padding(16.dp), contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Error: ${state.error}\nPlease try again later.",
+                        textAlign = TextAlign.Center,
+                        color = colorResource(R.color.teal_900)
+                    )
+                }
+            }
+
+            // If even EUR is not available, show a final error
+            ruleToUse == null -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(colorResource(R.color.teal_100))
+                        .padding(16.dp), contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Somehow, a valid currency\ncould not be found",
+                        textAlign = TextAlign.Center,
+                        color = colorResource(R.color.teal_900)
+                    )
+                }
+            }
+
+            else -> {
+                DonationContent(
+                    modifier = Modifier.padding(innerPadding),
+                    rule = ruleToUse,
+                    userCurrency = currencyToUse,
+                    onPayClick = onPayClick,
+                    isGooglePayReady = state.isGooglePayReady && authError == null,
+                    allowedPaymentMethodsJson = allowedPaymentMethodsJson
+                )
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun DonationContent(
+    modifier: Modifier = Modifier,
+    rule: CurrencyRule,
+    // The currency to use, which may be the user's or the EUR fallback
+    userCurrency: CurrencyUnit,
+    onPayClick: (Double, CurrencyUnit) -> Unit,
+    isGooglePayReady: Boolean,
+    allowedPaymentMethodsJson: String
+) {
+    var amountString by remember { mutableStateOf("") }
+    var isAmountError by remember { mutableStateOf(false) }
+
+    val minAmountMajorUnit = rule.min.toDouble() / rule.multiplier
+
+    fun performPayClick() {
+        val amount = amountString.toDoubleOrNull()
+        if (amount != null && amount >= minAmountMajorUnit) {
+            isAmountError = false
+            onPayClick(amount, userCurrency)
+        } else {
+            isAmountError = true
         }
     }
 
-    Scaffold(topBar = {
-        TopAppBar(
-            title = stringResource(id = R.string.donate),
-            signInButtonText = signInButtonText,
-            onSignInClick = onSignInClick,
-            onBackButtonClicked = onBackClick,
-            authError = authError,
-            onDismissErrorDialog = onDismissErrorDialog
-        )
-    }, content = { innerPadding ->
-        ConstraintLayout(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(colorResource(id = R.color.teal_100))
-        ) {
-            val (contentColumn) = createRefs()
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colorResource(id = R.color.teal_100))
+            .padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        DonationHeader()
 
-            Column(
+        Spacer(Modifier.height(32.dp))
+
+        DonationAmountTextField(
+            donationAmount = amountString,
+            onValueChange = {
+                amountString = it
+                val amount = it.toDoubleOrNull()
+                isAmountError = amount == null || amount < minAmountMajorUnit
+            },
+            isDonationAmountError = isAmountError,
+            userCurrency = userCurrency,
+            minAmountMajorUnit = minAmountMajorUnit
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        if (isGooglePayReady) {
+            AndroidView(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 25.dp, end = 25.dp)
-                    .constrainAs(contentColumn) {
-                        top.linkTo(parent.top)
-                    }, horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                DonationHeader()
-                Spacer(modifier = Modifier.height(16.dp))
-
-                val showGooglePay = isGooglePayReady.value && isLoggedIn
-                // Show card payment if Google Pay isn't ready, OR if sign-in has failed.
-                val showCardPay = !isGooglePayReady.value || signInAttempted.value
-
-                if (showGooglePay) {
-                    // User is logged in and GPay is ready. Show GPay button.
-                    when (signInButtonViewState.value) {
-                        SignInButtonViewState.Hidden -> {}
-                        SignInButtonViewState.Ready -> {
-                            DonationAmountTextField(
-                                donationAmount = donationAmount, onValueChange = {
-                                    donationAmount = it
-                                    isDonationAmountError =
-                                        it.toIntOrNull() == null || it.toIntOrNull()!! < 5
-                                }, isDonationAmountError = isDonationAmountError
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(fraction = 0.9f),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                AndroidView(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp)
-                                        .padding(end = 4.dp), factory = { context ->
-                                    PayButton(context)
-                                }, update = { view ->
-                                    val buttonOptions = ButtonOptions.newBuilder()
-                                        .setButtonType(ButtonConstants.ButtonType.PAY)
-                                        .setAllowedPaymentMethods(allowedPaymentMethods)
-                                        .setButtonTheme(ButtonConstants.ButtonTheme.DARK).build()
-
-                                    view.initialize(buttonOptions)
-
-                                    // Set the listener after initializing
-                                    view.setOnClickListener {
-                                        val amount = donationAmount.toIntOrNull()
-                                        if (amount != null && amount >= 5) {
-                                            isDonationAmountError = false
-                                            onPayClick(amount)
-                                        } else {
-                                            isDonationAmountError = true
-                                        }
-                                    }
-                                })
-                            }
-
-                            Spacer(Modifier.height(22.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-
-                                GoogleSignInButton(
-                                    onClick = onSignInClick, signInButtonText
-                                )
-                            }
-                        }
+                    .height(48.dp), factory = { context ->
+                    PayButton(context).apply {
+                        val buttonOptions = ButtonOptions.newBuilder()
+                            .setButtonType(ButtonConstants.ButtonType.DONATE)
+                            .setButtonTheme(ButtonConstants.ButtonTheme.DARK)
+                            .setAllowedPaymentMethods(allowedPaymentMethodsJson).build()
+                        initialize(buttonOptions)
+                        setOnClickListener { performPayClick() }
                     }
-                } else if (showCardPay) {
-                    // Fallback to card payment.
-                    DonationAmountTextField(
-                        donationAmount = donationAmount, onValueChange = {
-                            donationAmount = it
-                            isDonationAmountError =
-                                it.toIntOrNull() == null || it.toIntOrNull()!! < 5
-                        }, isDonationAmountError = isDonationAmountError
-                    )
-                    CardPayButton(onClick = {
-                        val amount = donationAmount.toIntOrNull()
-                        if (amount != null && amount >= 5) {
-                            isDonationAmountError = false
-                            onCardPayClick(amount)
-                        } else {
-                            isDonationAmountError = true
-                        }
-                    })
-                } else {
-                    // Initial state: GPay is ready, user is not logged in, and hasn't tried yet.
-                    // Prompt them to sign in.
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "Google Pay is ready, sign in to use it",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        GoogleSignInButton(
-                            onClick = onSignInClick, signInButtonText
-                        )
-                    }
-                }
-            }
+                })
+        } else {
+            CardPayButton(onClick = ::performPayClick)
         }
-    })
+    }
 }
 
 @Composable
@@ -251,8 +279,21 @@ fun DonationHeader() {
 
 @Composable
 fun DonationAmountTextField(
-    donationAmount: String, onValueChange: (String) -> Unit, isDonationAmountError: Boolean
+    donationAmount: String,
+    onValueChange: (String) -> Unit,
+    isDonationAmountError: Boolean,
+    userCurrency: CurrencyUnit,
+    minAmountMajorUnit: Double,
 ) {
+
+    val userLocale = Locale.getDefault()
+    val formatter = remember(userCurrency) {
+        MoneyFormatterBuilder().appendCurrencySymbolLocalized().appendAmount()
+            .toFormatter(userLocale)
+    }
+
+    val minAmountFormatted = formatter.print(Money.of(userCurrency, minAmountMajorUnit))
+
     Column(
         modifier = Modifier
             .padding(bottom = 16.dp)
@@ -263,11 +304,11 @@ fun DonationAmountTextField(
         TextField(
             value = donationAmount,
             onValueChange = onValueChange,
-            label = { Text("Donation Amount ≥5 SEK") },
+            label = { Text("Donation Amount ≥$minAmountFormatted") },
             modifier = Modifier.fillMaxWidth(fraction = 0.7f),
             isError = isDonationAmountError,
             singleLine = true,
-            colors = androidx.compose.material3.TextFieldDefaults.colors(
+            colors = TextFieldDefaults.colors(
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
                 disabledIndicatorColor = Color.Transparent,
@@ -282,7 +323,7 @@ fun DonationAmountTextField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 2.dp),
-                text = "Error: Amount must be at least 5 SEK",
+                text = "Error: Amount must be at least $minAmountFormatted",
                 color = MaterialTheme.colorScheme.error
             )
         }
@@ -336,82 +377,119 @@ fun CustomPaymentButton(
     }
 }
 
-@Preview(showBackground = true)
+// Mock data for previews
+private val mockRules = mapOf(
+    "USD" to CurrencyRule(100, 50), "EUR" to CurrencyRule(100, 50)
+)
+
+@Preview(showBackground = true, name = "State: Google Pay Ready")
 @Composable
-fun DonationScreenGooglePayPreview() {
-    val signInTextState = remember { mutableStateOf("Sign Out") }
-    val signInButtonViewState = remember { mutableStateOf(SignInButtonViewState.Ready) }
-    val isGooglePayReady = remember { mutableStateOf(true) }
-    DonationScreen(
-        signInTextState,
-        {},
-        {},
-        {},
-        {},
-        signInButtonViewState,
-        isGooglePayReady,
-        null,
-        {},
-        ""
-    )
+private fun DonationScreenGooglePayPreview() {
+    MaterialTheme {
+        DonationScreenContent(
+            state = DonationScreenState(
+            isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
+        ),
+            signInButtonText = remember { mutableStateOf("Sign Out") },
+            onSignInClick = {},
+            onPayClick = { amount, currency -> },
+            onBackClick = {},
+            authError = null,
+            onDismissErrorDialog = {},
+            allowedPaymentMethodsJson = ""
+        )
+    }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, name = "State: Card Payment Only")
 @Composable
-fun DonationScreenGooglePaySignInPreview() {
-    val signInTextState = remember { mutableStateOf("Sign In") }
-    val signInButtonViewState = remember { mutableStateOf(SignInButtonViewState.Ready) }
-    val isGooglePayReady = remember { mutableStateOf(true) }
-    DonationScreen(
-        signInTextState,
-        {},
-        {},
-        {},
-        {},
-        signInButtonViewState,
-        isGooglePayReady,
-        null,
-        {},
-        ""
-    )
+private fun DonationScreenCardPaymentPreview() {
+    MaterialTheme {
+        DonationScreenContent(
+            state = DonationScreenState(
+            isLoading = false, error = null, rules = mockRules, isGooglePayReady = false
+        ),
+            signInButtonText = remember { mutableStateOf("Sign In") },
+            onSignInClick = {},
+            onPayClick = { amount, currency -> },
+            onBackClick = {},
+            authError = null,
+            onDismissErrorDialog = {},
+            allowedPaymentMethodsJson = ""
+        )
+    }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, name = "State: Sign-In Failed")
 @Composable
-fun DonationScreenGooglePaySignInFailedPreview() {
-    val signInTextState = remember { mutableStateOf("Sign In") }
-    val signInButtonViewState = remember { mutableStateOf(SignInButtonViewState.Ready) }
-    val isGooglePayReady = remember { mutableStateOf(true) }
-    DonationScreen(
-        signInTextState,
-        {},
-        {},
-        {},
-        {},
-        signInButtonViewState,
-        isGooglePayReady,
-        "Failure string",
-        {},
-        ""
-    )
+private fun DonationScreenSignInFailedPreview() {
+    MaterialTheme {
+        DonationScreenContent(
+            state = DonationScreenState(
+            isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
+        ),
+            signInButtonText = remember { mutableStateOf("Sign In") },
+            onSignInClick = {},
+            onPayClick = { amount, currency -> },
+            onBackClick = {},
+            authError = "There was a problem signing you in with Google.",
+            onDismissErrorDialog = {},
+            allowedPaymentMethodsJson = ""
+        )
+    }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, name = "State: Loading")
 @Composable
-fun DonationScreenCardPaymentPreview() {
-    val signInTextState = remember { mutableStateOf("Sign In") }
-    val signInButtonViewState = remember { mutableStateOf(SignInButtonViewState.Ready) }
-    val isGooglePayReady = remember { mutableStateOf(false) }
-    DonationScreen(
-        signInTextState,
-        {},
-        {},
-        {},
-        {},
-        signInButtonViewState,
-        isGooglePayReady,
-        null,
-        {},
-        ""
-    )
+private fun DonationScreenLoadingPreview() {
+    MaterialTheme {
+        DonationScreenContent(
+            state = DonationScreenState(isLoading = true), // Loading state
+            signInButtonText = remember { mutableStateOf("Sign In") },
+            onSignInClick = {},
+            onPayClick = { amount, currency -> },
+            onBackClick = {},
+            authError = null,
+            onDismissErrorDialog = {},
+            allowedPaymentMethodsJson = ""
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "State: Network Error")
+@Composable
+private fun DonationScreenErrorPreview() {
+    MaterialTheme {
+        DonationScreenContent(
+            state = DonationScreenState(
+            isLoading = false, error = "Failed to connect"
+        ), // Error state
+            signInButtonText = remember { mutableStateOf("Sign In") },
+            onSignInClick = {},
+            onPayClick = { amount, currency -> },
+            onBackClick = {},
+            authError = null,
+            onDismissErrorDialog = {},
+            allowedPaymentMethodsJson = ""
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "State: No Currency Available")
+@Composable
+private fun DonationScreenNoCurrencyPreview() {
+    MaterialTheme {
+        DonationScreenContent(
+            state = DonationScreenState(
+            isLoading = false, error = null, rules = mapOf(), isGooglePayReady = true
+        ),
+            signInButtonText = remember { mutableStateOf("Sign In") },
+            onSignInClick = {},
+            onPayClick = { amount, currency -> },
+            onBackClick = {},
+            authError = null,
+            onDismissErrorDialog = {},
+            allowedPaymentMethodsJson = ""
+        )
+    }
 }

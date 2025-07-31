@@ -565,7 +565,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
             if (tempFileUri != null && destDirUri != null) {
                 val timestamp =
-                    SimpleDateFormat("yy-MM-dd_HH-mm-ss", Locale.getDefault()).format(
+                    SimpleDateFormat("yy-MM-dd_HH-mm", Locale.getDefault()).format(
                         Date()
                     )
                 val fileName = "quicksave_${timestamp}.wav"

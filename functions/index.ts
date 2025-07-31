@@ -3,39 +3,65 @@ import {logger} from "firebase-functions/v2";
 import {defineSecret} from "firebase-functions/params";
 import Stripe from "stripe";
 
-// 1. Define both secrets
+// --- Secret Definition ---
 const stripeLiveSecret = defineSecret("STRIPE_LIVE_SECRET");
 const stripeTestSecret = defineSecret("STRIPE_SECRET");
 
-// 2. Add both to the function's secrets array
-export const createPaymentIntent = onRequest({secrets: [stripeLiveSecret, stripeTestSecret]},
+// --- Currency Configuration ---
+// This is your source of truth. For an even better approach, store this in Firebase Remote Config.
+const currencyRules = {
+  "SEK": { multiplier: 100, min: 500 },      // 5.00 SEK
+  "DKK": { multiplier: 100, min: 500 },      // 5.00 DKK
+  "NOK": { multiplier: 100, min: 500 },      // 5.00 NOK
+  "USD": { multiplier: 100, min: 50 },       // $0.50 USD
+  "EUR": { multiplier: 100, min: 50 },       // €0.50 EUR
+  "GBP": { multiplier: 100, min: 30 },       // £0.30 GBP
+  "JPY": { multiplier: 1,   min: 50 },       // ¥50 JPY
+};
+
+// 1. Cloud Function to provide currency rules to the app
+export const getCurrencyRules = onRequest({cors: true}, (req, res) => {
+  logger.info("Serving currency rules");
+  res.json(currencyRules);
+});
+
+export const createPaymentIntent = onRequest({secrets: [stripeLiveSecret, stripeTestSecret], cors: true},
   async (req, res) => {
     try {
-      // 3. Get the amount AND the new environment flag from the request
-      const {amount, environment} = req.body;
+      // Amount from client is in major units (e.g., 5.00 for 5 dollars)
+      const {amount, environment, currency} = req.body;
 
-      // Validate amount...
-      if (!amount || typeof amount !== "number" || amount < 500) {
-        logger.error("Invalid amount received:", amount);
-        res.status(400).json({error: "Invalid amount. Amount must be a number and at least 500 (5 SEK)."});
+      if (!currency || !currencyRules[currency]) {
+        logger.error("Unsupported currency received:", currency);
+        res.status(400).json({error: "Currency not supported."});
         return;
       }
 
-      // 4. Choose the secret key based on the environment flag
+      const rule = currencyRules[currency];
+      const minAmountInMajorUnit = rule.min / rule.multiplier;
+
+      if (!amount || typeof amount !== "number" || amount < minAmountInMajorUnit) {
+        logger.error(`Invalid amount for ${currency}: ${amount}`);
+        res.status(400).json({error: `Amount must be at least ${minAmountInMajorUnit} ${currency}.`});
+        return;
+      }
+
+      const amountInSmallestUnit = Math.round(amount * rule.multiplier);
+
       const stripeSecret = environment === "production" ?
         stripeLiveSecret.value() :
         stripeTestSecret.value();
 
+      logger.info(`Creating intent for ${amountInSmallestUnit} ${currency.toLowerCase()}`);
       logger.info("Using environment: " + (environment || "test"));
 
       const stripe = new Stripe(stripeSecret, {
-        apiVersion: "2024-12-18.acacia",
+        apiVersion: "2025-07-30.basil",
       });
 
-      // Create the PaymentIntent...
       const paymentIntent = await stripe.paymentIntents.create({
-        amount: amount,
-        currency: "SEK",
+        amount: amountInSmallestUnit,
+        currency: currency.toLowerCase(),
         automatic_payment_methods: {enabled: true},
       });
 
