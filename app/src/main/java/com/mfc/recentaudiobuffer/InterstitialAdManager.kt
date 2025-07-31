@@ -17,6 +17,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.FullScreenContentCallback
+import com.google.android.gms.ads.rewarded.ServerSideVerificationOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -92,6 +93,11 @@ class InterstitialAdManager @Inject constructor(
                 override fun onAdLoaded(ad: RewardedInterstitialAd) {
                     Timber.d("Ad was loaded.")
                     rewardedInterstitialAd = ad
+
+                    val options = ServerSideVerificationOptions.Builder()
+                        .setCustomData("3 Ad-Free Days") // A string to identify the reward
+                        .build()
+                    rewardedInterstitialAd?.setServerSideVerificationOptions(options)
 
                     rewardedInterstitialAd?.fullScreenContentCallback =
                         object : FullScreenContentCallback() {
