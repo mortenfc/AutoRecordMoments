@@ -63,7 +63,7 @@ class MainActivity : AppCompatActivity() {
     lateinit var vadProcessor: VADProcessor
 
     @Inject
-    private lateinit var interstitialAdManager: InterstitialAdManager
+    lateinit var interstitialAdManager: InterstitialAdManager
     private var myBufferService: MyBufferServiceInterface? = null
 
     // --- UI State Management ---

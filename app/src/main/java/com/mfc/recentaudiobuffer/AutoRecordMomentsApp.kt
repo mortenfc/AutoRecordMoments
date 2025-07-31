@@ -13,33 +13,24 @@ import com.google.android.gms.ads.MobileAds
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
 import javax.inject.Inject
+import javax.inject.Singleton
 
 @HiltAndroidApp
-class AutoRecordMomentsApp : Application(), Application.ActivityLifecycleCallbacks,
-    DefaultLifecycleObserver {
+class AutoRecordMomentsApp : Application(), Application.ActivityLifecycleCallbacks {
     @Inject
-    lateinit var interstitialAdManager: InterstitialAdManager
-
-    var currentActivity: Activity? = null
+    lateinit var lifecycleObserver: AppLifecycleObserver
 
     override fun onCreate() {
-        super<Application>.onCreate()
+        super.onCreate()
+        ProcessLifecycleOwner.get().lifecycle.addObserver(lifecycleObserver)
         registerActivityLifecycleCallbacks(this)
-        ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+        MobileAds.initialize(this)
+
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
             Timber.d("Timber logging is enabled for debug build.")
         }
         createNotificationChannels()
-        MobileAds.initialize(this)
-    }
-
-    override fun onStart(owner: LifecycleOwner) {
-        super<DefaultLifecycleObserver>.onCreate(owner)
-        // Use the currently visible Activity to show the ad
-        currentActivity?.let { activity ->
-            interstitialAdManager.showAdOnSecondOpen(activity)
-        }
     }
 
     private fun createNotificationChannels() {
@@ -68,14 +59,31 @@ class AutoRecordMomentsApp : Application(), Application.ActivityLifecycleCallbac
     override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
     override fun onActivityStarted(activity: Activity) {}
     override fun onActivityResumed(activity: Activity) {
-        currentActivity = activity
+        lifecycleObserver.showAdIfAppropriate(activity)
     }
-
-    override fun onActivityPaused(activity: Activity) {
-        currentActivity = null
-    }
-
+    override fun onActivityPaused(activity: Activity) {}
     override fun onActivityStopped(activity: Activity) {}
     override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
     override fun onActivityDestroyed(activity: Activity) {}
+}
+
+@Singleton
+class AppLifecycleObserver @Inject constructor(
+    private val interstitialAdManager: InterstitialAdManager
+) : DefaultLifecycleObserver {
+
+    private var isAppInForeground = false
+
+    // This is the "on app open" event
+    override fun onStart(owner: LifecycleOwner) {
+        isAppInForeground = true
+    }
+
+    fun showAdIfAppropriate(activity: Activity) {
+        // Only show the ad on the first activity that resumes after the app opens
+        if (isAppInForeground) {
+            interstitialAdManager.showAdOnSecondOpen(activity)
+            isAppInForeground = false // Reset the flag
+        }
+    }
 }
