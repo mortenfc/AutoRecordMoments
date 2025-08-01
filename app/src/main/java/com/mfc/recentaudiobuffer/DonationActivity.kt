@@ -134,12 +134,12 @@ class DonationActivity : AppCompatActivity() {
         )
     }
 
-    private fun fetchClientSecret(amount: Double, currency: CurrencyUnit) {
+    private fun fetchClientSecret(amount: Int, currency: CurrencyUnit) {
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val environment = if (BuildConfig.DEBUG) "debug" else "production"
 
         val jsonBody = JSONObject().apply {
-            put("amount", amount) // Send the major unit amount as a double
+            put("amount", amount)
             put("environment", environment)
             put("currency", currency.code)
         }

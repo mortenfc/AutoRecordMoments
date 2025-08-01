@@ -85,7 +85,7 @@ fun DonationScreen(
     viewModel: DonationViewModel,
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
-    onPayClick: (Double, CurrencyUnit) -> Unit,
+    onPayClick: (Int, CurrencyUnit) -> Unit,
     onBackClick: () -> Unit,
     authError: String?,
     onDismissErrorDialog: () -> Unit,
@@ -111,15 +111,14 @@ private fun DonationScreenContent(
     state: DonationScreenState,
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
-    onPayClick: (Double, CurrencyUnit) -> Unit,
+    onPayClick: (Int, CurrencyUnit) -> Unit,
     onBackClick: () -> Unit,
     authError: String?,
     onDismissErrorDialog: () -> Unit,
     allowedPaymentMethodsJson: String,
     onCurrencySelected: (String) -> Unit,
 ) {
-    val userLocale = Locale.getDefault()
-    var currencyToUse = CurrencyUnit.of(userLocale)
+    var currencyToUse = state.selectedCurrency
     var ruleToUse: CurrencyRule? = state.rules[currencyToUse.code]
 
     if (ruleToUse == null) {
@@ -204,7 +203,7 @@ private fun DonationContent(
     rule: CurrencyRule,
     // The currency to use, which may be the user's or the EUR fallback
     currencyToUse: CurrencyUnit,
-    onPayClick: (Double, CurrencyUnit) -> Unit,
+    onPayClick: (Int, CurrencyUnit) -> Unit,
     isGooglePayReady: Boolean,
     allowedPaymentMethodsJson: String,
     supportedCurrencies: List<String>,
@@ -213,11 +212,9 @@ private fun DonationContent(
     var amountString by remember { mutableStateOf("") }
     var isAmountError by remember { mutableStateOf(false) }
 
-    val minAmountMajorUnit = rule.min.toDouble() / rule.multiplier
-
     fun performPayClick() {
-        val amount = amountString.toDoubleOrNull()
-        if (amount != null && amount >= minAmountMajorUnit) {
+        val amount = amountString.toDoubleOrNull()?.times(rule.multiplier)?.toInt()
+        if (amount != null && amount >= rule.min) {
             isAmountError = false
             onPayClick(amount, currencyToUse)
         } else {
@@ -246,13 +243,14 @@ private fun DonationContent(
                 onCurrencySelected(currencyCode)
             },
             amount = amountString,
-            onAmountChange = {
-                amountString = it
-                val amount = it.toDoubleOrNull()
-                isAmountError = amount == null || amount < minAmountMajorUnit
+            onAmountChange = { newAmountString ->
+                amountString = newAmountString
+                val amount = newAmountString.toDoubleOrNull()
+                val minMajorUnit = rule.min.toDouble() / rule.multiplier
+                isAmountError = amount == null || amount < minMajorUnit
             },
             isAmountError = isAmountError,
-            minAmountMajorUnit = minAmountMajorUnit
+            rule = rule
         )
 
         Spacer(Modifier.height(16.dp))
@@ -287,15 +285,18 @@ private fun DonationInput(
     supportedCurrencies: List<String>,
     onCurrencySelected: (String) -> Unit,
     modifier: Modifier = Modifier,
-    minAmountMajorUnit: Double
+    rule: CurrencyRule
 ) {
+    val minAmountMoney = Money.ofMinor(selectedCurrency, rule.min.toLong())
     val userLocale = Locale.getDefault()
     val formatter = remember(selectedCurrency) {
         MoneyFormatterBuilder().appendCurrencySymbolLocalized().appendAmount()
             .toFormatter(userLocale)
     }
 
-    val minAmountFormatted = formatter.print(Money.of(selectedCurrency, minAmountMajorUnit))
+    val minAmountFormatted: String = formatter.print(minAmountMoney)
+
+    val minAmountMajorUnit = rule.min.toDouble() / rule.multiplier
 
     var isDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -328,7 +329,7 @@ private fun DonationInput(
             onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }) {
             OutlinedTextField(
                 value = amount,
-                onValueChange = onAmountChange,
+                onValueChange = { text -> onAmountChange(text) },
                 label = { Text("Donation Amount") }, // Label is simpler now
                 supportingText = {
                     // Supporting text is a better place for the minimum amount hint
@@ -485,8 +486,8 @@ private fun DonationScreenGooglePayPreview() {
     MaterialTheme {
         DonationScreenContent(
             state = DonationScreenState(
-                isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
-            ),
+            isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
+        ),
             signInButtonText = remember { mutableStateOf("Sign Out") },
             onSignInClick = {},
             onPayClick = { _, _ -> },
@@ -505,8 +506,8 @@ private fun DonationScreenCardPaymentPreview() {
     MaterialTheme {
         DonationScreenContent(
             state = DonationScreenState(
-                isLoading = false, error = null, rules = mockRules, isGooglePayReady = false
-            ),
+            isLoading = false, error = null, rules = mockRules, isGooglePayReady = false
+        ),
             signInButtonText = remember { mutableStateOf("Sign In") },
             onSignInClick = {},
             onPayClick = { _, _ -> },
@@ -525,8 +526,8 @@ private fun DonationScreenSignInFailedPreview() {
     MaterialTheme {
         DonationScreenContent(
             state = DonationScreenState(
-                isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
-            ),
+            isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
+        ),
             signInButtonText = remember { mutableStateOf("Sign In") },
             onSignInClick = {},
             onPayClick = { _, _ -> },
@@ -563,8 +564,8 @@ private fun DonationScreenErrorPreview() {
     MaterialTheme {
         DonationScreenContent(
             state = DonationScreenState(
-                isLoading = false, error = "Failed to connect"
-            ),
+            isLoading = false, error = "Failed to connect"
+        ),
             signInButtonText = remember { mutableStateOf("Sign In") },
             onSignInClick = {},
             onPayClick = { _, _ -> },
@@ -583,8 +584,8 @@ private fun DonationScreenNoCurrencyPreview() {
     MaterialTheme {
         DonationScreenContent(
             state = DonationScreenState(
-                isLoading = false, error = null, rules = mapOf(), isGooglePayReady = true
-            ),
+            isLoading = false, error = null, rules = mapOf(), isGooglePayReady = true
+        ),
             signInButtonText = remember { mutableStateOf("Sign In") },
             onSignInClick = {},
             onPayClick = { _, _ -> },

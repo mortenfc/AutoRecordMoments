@@ -28,7 +28,7 @@ export const getCurrencyRules = onRequest({cors: true}, (req, res) => {
 export const createPaymentIntent = onRequest({secrets: [stripeLiveSecret, stripeTestSecret], cors: true},
   async (req, res) => {
     try {
-      // Amount from client is in major units (e.g., 5.00 for 5 dollars)
+      // The amount from the client in the smallest unit (e.g., cents)
       const {amount, environment, currency} = req.body;
 
       if (typeof currency !== "string" || !(currency in currencyRules)) {
@@ -38,21 +38,20 @@ export const createPaymentIntent = onRequest({secrets: [stripeLiveSecret, stripe
       }
 
       const rule = currencyRules[currency];
-      const minAmountInMajorUnit = rule.min / rule.multiplier;
 
-      if (!amount || typeof amount !== "number" || amount < minAmountInMajorUnit) {
+      // VALIDATION: Amount must be a whole number and meet the minimum
+      if (!Number.isInteger(amount) || amount < rule.min) {
+        const minAmountInMajorUnit = rule.min / rule.multiplier;
         logger.error(`Invalid amount for ${currency}: ${amount}`);
         res.status(400).json({error: `Amount must be at least ${minAmountInMajorUnit} ${currency}.`});
         return;
       }
 
-      const amountInSmallestUnit = Math.round(amount * rule.multiplier);
-
       const stripeSecret = environment === "production" ?
         stripeLiveSecret.value() :
         stripeTestSecret.value();
 
-      logger.info(`Creating intent for ${amountInSmallestUnit} ${currency.toLowerCase()}`);
+      logger.info(`Creating intent for ${amount} ${currency.toLowerCase()}`);
       logger.info("Using environment: " + (environment || "test"));
 
       const stripe = new Stripe(stripeSecret, {
@@ -60,7 +59,7 @@ export const createPaymentIntent = onRequest({secrets: [stripeLiveSecret, stripe
       });
 
       const paymentIntent = await stripe.paymentIntents.create({
-        amount: amountInSmallestUnit,
+        amount: amount,
         currency: currency.toLowerCase(),
         automatic_payment_methods: {enabled: true},
       });
