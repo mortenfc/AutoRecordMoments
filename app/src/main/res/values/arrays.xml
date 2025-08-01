@@ -1,38 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string-array name="bit_depths">
-        <item>8 bit</item>
-        <item>16 bit</item>
-        <item>24 bit</item>
-        <item>32 bit</item>
-    </string-array>
-    <string-array name="bit_depth_values">
-        <item>8</item>
-        <item>16</item>
-        <item>24</item>
-        <item>32</item>
-    </string-array>
 
-    <string-array name="sample_rates">
-        <item>8000 Hz</item>
-        <item>11025 Hz</item>
-        <item>16000 Hz</item>
-        <item>22050 Hz</item>
-        <item>44100 Hz</item>
-        <item>48000 Hz</item>
-        <item>88200 Hz</item>
-        <item>96000 Hz</item>
-        <item>192000 Hz</item>
-    </string-array>
-    <string-array name="sample_rate_values">
-        <item>8000</item>
-        <item>11025</item>
-        <item>16000</item>
-        <item>22050</item>
-        <item>44100</item>
-        <item>48000</item>
-        <item>88200</item>
-        <item>96000</item>
-        <item>192000</item>
-    </string-array>
 </resources>

@@ -1,7 +1,8 @@
 package com.mfc.recentaudiobuffer
 
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.junit.Assert.*
 
 // Create a new class for your readFromBuffer tests
 class ReadFromBufferUnitTest {
@@ -49,8 +50,10 @@ class ReadFromBufferUnitTest {
     }
 
     // Helper function to simulate readFromBuffer behavior
-    private fun readFromBuffer(dest: ByteArray, offset: Int, bytesToRead: Int,
-                               buffer: ByteArray, writeIndex: Int, readIndex: Int): Int {
+    private fun readFromBuffer(
+        dest: ByteArray, offset: Int, bytesToRead: Int,
+        buffer: ByteArray, writeIndex: Int, readIndex: Int
+    ): Int {
         val bytesAvailable = if (writeIndex >= readIndex) {
             writeIndex - readIndex
         } else {

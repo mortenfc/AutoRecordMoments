@@ -3,11 +3,26 @@ package com.mfc.recentaudiobuffer
 import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -18,7 +33,8 @@ import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 // A simple data class to hold our file info
 data class AudioFile(
@@ -97,7 +113,10 @@ fun RecentFilesDialog(
 @Composable
 private fun FileListItem(file: AudioFile, onClick: () -> Unit) {
     val date = remember {
-        SimpleDateFormat("MMM dd, yyyy, hh:mm a", Locale.getDefault()).format(Date(file.dateModified))
+        SimpleDateFormat(
+            "MMM dd, yyyy, hh:mm a",
+            Locale.getDefault()
+        ).format(Date(file.dateModified))
     }
     Column(
         modifier = Modifier
@@ -119,22 +138,23 @@ private fun FileListItem(file: AudioFile, onClick: () -> Unit) {
 }
 
 // It's good practice to run file system access off the main thread
-private suspend fun queryRecentAudio(context: Context, directoryUri: Uri?): List<AudioFile> = withContext(Dispatchers.IO) {
-    if (directoryUri == null) {
-        return@withContext emptyList()
-    }
-
-    val directory = DocumentFile.fromTreeUri(context, directoryUri)
-        ?: return@withContext emptyList()
-
-    directory.listFiles()
-        .filter { it.isFile && it.name?.endsWith(".wav", ignoreCase = true) == true }
-        .map { file ->
-            AudioFile(
-                uri = file.uri,
-                name = file.name ?: "Unknown",
-                dateModified = file.lastModified()
-            )
+private suspend fun queryRecentAudio(context: Context, directoryUri: Uri?): List<AudioFile> =
+    withContext(Dispatchers.IO) {
+        if (directoryUri == null) {
+            return@withContext emptyList()
         }
-        .sortedByDescending { it.dateModified }
-}
+
+        val directory = DocumentFile.fromTreeUri(context, directoryUri)
+            ?: return@withContext emptyList()
+
+        directory.listFiles()
+            .filter { it.isFile && it.name?.endsWith(".wav", ignoreCase = true) == true }
+            .map { file ->
+                AudioFile(
+                    uri = file.uri,
+                    name = file.name ?: "Unknown",
+                    dateModified = file.lastModified()
+                )
+            }
+            .sortedByDescending { it.dateModified }
+    }

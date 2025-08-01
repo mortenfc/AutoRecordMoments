@@ -3,54 +3,35 @@
     <string name="app_name">Auto Record Moments</string>
     <string name="default_web_client_id">341850391115-esant6sul9ghjb3k96gqfgr7rg8sr0ca.apps.googleusercontent.com</string>
 
-    <string name="start_buffering_in_the_background">Start\nrecording</string>
-    <string name="pause_buffering_in_the_background">Pause\nrecording</string>
     <string name="clear_the_buffer">Clear recording</string>
     <string name="save_the_buffer_as_a_recording">Save recording</string>
     <string name="play_a_recording">Play file</string>
     <string name="title_activity_settings">SettingsActivity</string>
 
     <!-- Preference Titles -->
-    <string name="messages_header">Messages</string>
-    <string name="sync_header">Sync</string>
 
     <!-- Messages Preferences -->
-    <string name="signature_title">Your signature</string>
-    <string name="reply_title">Default reply action</string>
 
     <!-- Sync Preferences -->
     <string name="settings">Configuration</string>
 
     <!-- Media -->
-    <string name="time_display">%1$s / %2$s</string>
-    <string name="initial_duration">%1$02d:%2$02d:%3$03d</string>
-    <string name="rename_file">Rename File</string>
-    <string name="DefaultRecordingName">recording.wav</string>
+
     <string name="exo_controls_close_description">Close</string>
 
     <!-- GPay -->
-    <string name="googlepay_button_content_description">Google Pay</string>
-    <string name="buy_with_googlepay_button_content_description">Buy with Google Pay</string>
-    <string name="add_to_google_wallet_button_content_description">Add to Google Wallet</string>
     <string name="donate_and_remove_ads">Donate and get rid of ADs</string>
     <string name="sign_in">Sign In</string>
     <string name="sign_out">Sign Out</string>
     <string name="google_logo">Google Logo</string>
     <string name="pay_with_credit_card">Credit Card</string>
-    <string name="pay">Pay</string>
     <string name="it_supports_the_developer_and_gets_rid_of_ads">It supports the developer and gets rid of ads</string>
-    <string name="or_add_a_pass_to_your_google_wallet">Or add a pass to your Google Wallet:</string>
     <string name="donate_your_heart_out">Donate Your Heart Out</string>
     <string name="donate_ads_away">Donate ads away</string>
     <string name="buffer_length_seconds">Buffer length in Seconds</string>
     <string name="submit">Apply, Save, and\nRestart Recording</string>
     <string name="back">Return</string>
-    <string name="donate">Donate</string>
-    <string name="enter_filename">Select Filename</string>
-    <string name="cancel">Cancel</string>
-    <string name="ok">OK</string>
     <string name="select_directory">You will be prompted to select a default saving directory for quick saves through the persistent notification, that\'s created when you start recording to buffer.</string>
-    <string name="go_back_to_main">Return</string>
     <string name="close_media_player">Close Media Player</string>
 
 </resources>

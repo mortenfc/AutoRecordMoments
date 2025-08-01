@@ -62,11 +62,11 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun updateIsAiAutoClipEnabled(isEnabled: Boolean): Job {
-    return viewModelScope.launch {
-        settingsRepository.updateIsAiAutoClipEnabled(isEnabled) // We will add this function next
-        _config.update { it.copy(isAiAutoClipEnabled = isEnabled) }
+        return viewModelScope.launch {
+            settingsRepository.updateIsAiAutoClipEnabled(isEnabled) // We will add this function next
+            _config.update { it.copy(isAiAutoClipEnabled = isEnabled) }
+        }
     }
-}
 
     suspend fun refreshSettings() {
         Timber.d("refreshSettings() called")

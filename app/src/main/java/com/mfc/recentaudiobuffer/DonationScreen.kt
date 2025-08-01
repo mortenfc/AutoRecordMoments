@@ -2,53 +2,61 @@ package com.mfc.recentaudiobuffer
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.TextField
-import androidx.compose.runtime.MutableState
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.viewinterop.AndroidView
-import com.google.android.gms.wallet.button.PayButton
-import com.google.android.gms.wallet.button.ButtonOptions
 import com.google.android.gms.wallet.button.ButtonConstants
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
+import com.google.android.gms.wallet.button.ButtonOptions
+import com.google.android.gms.wallet.button.PayButton
 import org.joda.money.CurrencyUnit
 import org.joda.money.Money
 import org.joda.money.format.MoneyFormatterBuilder
@@ -75,8 +83,8 @@ fun DonationScreen(
         onBackClick = onBackClick,
         authError = authError,
         onDismissErrorDialog = onDismissErrorDialog,
-        allowedPaymentMethodsJson = allowedPaymentMethodsJson
-    )
+        allowedPaymentMethodsJson = allowedPaymentMethodsJson,
+        onCurrencySelected = { currency -> viewModel.updateSelectedCurrency(currency) })
 }
 
 // Stateless content composable that handles all UI logic
@@ -89,7 +97,8 @@ private fun DonationScreenContent(
     onBackClick: () -> Unit,
     authError: String?,
     onDismissErrorDialog: () -> Unit,
-    allowedPaymentMethodsJson: String
+    allowedPaymentMethodsJson: String,
+    onCurrencySelected: (String) -> Unit,
 ) {
     val userLocale = Locale.getDefault()
     var currencyToUse = CurrencyUnit.of(userLocale)
@@ -158,10 +167,12 @@ private fun DonationScreenContent(
                 DonationContent(
                     modifier = Modifier.padding(innerPadding),
                     rule = ruleToUse,
-                    userCurrency = currencyToUse,
+                    currencyToUse = currencyToUse,
                     onPayClick = onPayClick,
                     isGooglePayReady = state.isGooglePayReady && authError == null,
-                    allowedPaymentMethodsJson = allowedPaymentMethodsJson
+                    allowedPaymentMethodsJson = allowedPaymentMethodsJson,
+                    supportedCurrencies = state.rules.keys.toList(),
+                    onCurrencySelected = onCurrencySelected
                 )
             }
         }
@@ -174,10 +185,12 @@ private fun DonationContent(
     modifier: Modifier = Modifier,
     rule: CurrencyRule,
     // The currency to use, which may be the user's or the EUR fallback
-    userCurrency: CurrencyUnit,
+    currencyToUse: CurrencyUnit,
     onPayClick: (Double, CurrencyUnit) -> Unit,
     isGooglePayReady: Boolean,
-    allowedPaymentMethodsJson: String
+    allowedPaymentMethodsJson: String,
+    supportedCurrencies: List<String>,
+    onCurrencySelected: (String) -> Unit
 ) {
     var amountString by remember { mutableStateOf("") }
     var isAmountError by remember { mutableStateOf(false) }
@@ -188,7 +201,7 @@ private fun DonationContent(
         val amount = amountString.toDoubleOrNull()
         if (amount != null && amount >= minAmountMajorUnit) {
             isAmountError = false
-            onPayClick(amount, userCurrency)
+            onPayClick(amount, currencyToUse)
         } else {
             isAmountError = true
         }
@@ -204,17 +217,23 @@ private fun DonationContent(
     ) {
         DonationHeader()
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(24.dp))
 
-        DonationAmountTextField(
-            donationAmount = amountString,
-            onValueChange = {
+        DonationInput(
+            supportedCurrencies = supportedCurrencies,
+            selectedCurrency = currencyToUse,
+            onCurrencySelected = { currencyCode ->
+                amountString = ""
+                isAmountError = false
+                onCurrencySelected(currencyCode)
+            },
+            amount = amountString,
+            onAmountChange = {
                 amountString = it
                 val amount = it.toDoubleOrNull()
                 isAmountError = amount == null || amount < minAmountMajorUnit
             },
-            isDonationAmountError = isAmountError,
-            userCurrency = userCurrency,
+            isAmountError = isAmountError,
             minAmountMajorUnit = minAmountMajorUnit
         )
 
@@ -236,6 +255,119 @@ private fun DonationContent(
                 })
         } else {
             CardPayButton(onClick = ::performPayClick)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DonationInput(
+    amount: String,
+    onAmountChange: (String) -> Unit,
+    isAmountError: Boolean,
+    selectedCurrency: CurrencyUnit,
+    supportedCurrencies: List<String>,
+    onCurrencySelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    minAmountMajorUnit: Double
+) {
+    val userLocale = Locale.getDefault()
+    val formatter = remember(selectedCurrency) {
+        MoneyFormatterBuilder().appendCurrencySymbolLocalized().appendAmount()
+            .toFormatter(userLocale)
+    }
+
+    val minAmountFormatted = formatter.print(Money.of(selectedCurrency, minAmountMajorUnit))
+
+    var isDropdownExpanded by remember { mutableStateOf(false) }
+
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        // Border and Label
+        focusedBorderColor = colorResource(R.color.purple_accent),
+        unfocusedBorderColor = colorResource(R.color.purple_accent),
+        focusedLabelColor = colorResource(R.color.purple_accent),
+        unfocusedLabelColor = colorResource(R.color.teal_900),
+
+        // Container background changes on focus
+        focusedContainerColor = colorResource(R.color.teal_150).copy(alpha = 0.9f),
+        unfocusedContainerColor = Color.White.copy(alpha = 0.35f),
+
+        // Text and Icon
+        focusedTextColor = colorResource(R.color.teal_900),
+        unfocusedTextColor = colorResource(R.color.teal_900),
+        focusedTrailingIconColor = colorResource(R.color.purple_accent),
+        unfocusedTrailingIconColor = colorResource(R.color.purple_accent),
+
+        // Error state colors
+        errorBorderColor = MaterialTheme.colorScheme.error,
+        errorSupportingTextColor = MaterialTheme.colorScheme.error,
+        errorContainerColor = colorResource(id = R.color.teal_150)
+    )
+
+    Column(modifier = modifier) {
+        ExposedDropdownMenuBox(
+            expanded = isDropdownExpanded,
+            onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }) {
+            OutlinedTextField(
+                value = amount,
+                onValueChange = onAmountChange,
+                label = { Text("Donation Amount") }, // Label is simpler now
+                supportingText = {
+                    // Supporting text is a better place for the minimum amount hint
+                    if (!isAmountError) {
+                        Text("Minimum: $minAmountFormatted")
+                    }
+                },
+                isError = isAmountError,
+                singleLine = true,
+                colors = fieldColors,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                trailingIcon = {
+                    Row(
+                        modifier = Modifier.clickable { isDropdownExpanded = true },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            selectedCurrency.code,
+                            color = colorResource(R.color.purple_accent),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Icon(
+                            imageVector = Icons.Default.CurrencyExchange,
+                            contentDescription = "Change Currency",
+                            tint = colorResource(R.color.purple_accent)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                    }
+                },
+                modifier = Modifier
+                    .menuAnchor(MenuAnchorType.Companion.PrimaryEditable, true)
+                    .fillMaxWidth(fraction = 0.95f)
+            )
+
+            // The actual dropdown menu
+            ExposedDropdownMenu(
+                expanded = isDropdownExpanded,
+                onDismissRequest = { isDropdownExpanded = false },
+                modifier = Modifier.background(colorResource(R.color.teal_100))
+            ) {
+                supportedCurrencies.forEach { currencyCode ->
+                    DropdownMenuItem(
+                        text = { Text(currencyCode, color = colorResource(R.color.teal_900)) },
+                        onClick = {
+                            onCurrencySelected(currencyCode)
+                            isDropdownExpanded = false
+                        })
+                }
+            }
+        }
+        if (isAmountError) {
+            Text(
+                text = "Amount must be at least $minAmountFormatted",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+            )
         }
     }
 }
@@ -272,59 +404,6 @@ fun DonationHeader() {
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 5.dp, bottom = 15.dp),
                 color = MaterialTheme.colorScheme.secondary
-            )
-        }
-    }
-}
-
-@Composable
-fun DonationAmountTextField(
-    donationAmount: String,
-    onValueChange: (String) -> Unit,
-    isDonationAmountError: Boolean,
-    userCurrency: CurrencyUnit,
-    minAmountMajorUnit: Double,
-) {
-
-    val userLocale = Locale.getDefault()
-    val formatter = remember(userCurrency) {
-        MoneyFormatterBuilder().appendCurrencySymbolLocalized().appendAmount()
-            .toFormatter(userLocale)
-    }
-
-    val minAmountFormatted = formatter.print(Money.of(userCurrency, minAmountMajorUnit))
-
-    Column(
-        modifier = Modifier
-            .padding(bottom = 16.dp)
-            .shadow(elevation = 2.dp, shape = RoundedCornerShape(4.dp))
-            .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.surface)
-    ) {
-        TextField(
-            value = donationAmount,
-            onValueChange = onValueChange,
-            label = { Text("Donation Amount ≥$minAmountFormatted") },
-            modifier = Modifier.fillMaxWidth(fraction = 0.7f),
-            isError = isDonationAmountError,
-            singleLine = true,
-            colors = TextFieldDefaults.colors(
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                disabledIndicatorColor = Color.Transparent,
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                disabledContainerColor = Color.Transparent,
-            ),
-            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
-        )
-        if (isDonationAmountError) {
-            Text(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 2.dp),
-                text = "Error: Amount must be at least $minAmountFormatted",
-                color = MaterialTheme.colorScheme.error
             )
         }
     }
@@ -388,15 +467,16 @@ private fun DonationScreenGooglePayPreview() {
     MaterialTheme {
         DonationScreenContent(
             state = DonationScreenState(
-            isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
-        ),
+                isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
+            ),
             signInButtonText = remember { mutableStateOf("Sign Out") },
             onSignInClick = {},
-            onPayClick = { amount, currency -> },
+            onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
             onDismissErrorDialog = {},
-            allowedPaymentMethodsJson = ""
+            allowedPaymentMethodsJson = "",
+            onCurrencySelected = {} // Add this
         )
     }
 }
@@ -407,15 +487,16 @@ private fun DonationScreenCardPaymentPreview() {
     MaterialTheme {
         DonationScreenContent(
             state = DonationScreenState(
-            isLoading = false, error = null, rules = mockRules, isGooglePayReady = false
-        ),
+                isLoading = false, error = null, rules = mockRules, isGooglePayReady = false
+            ),
             signInButtonText = remember { mutableStateOf("Sign In") },
             onSignInClick = {},
-            onPayClick = { amount, currency -> },
+            onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
             onDismissErrorDialog = {},
-            allowedPaymentMethodsJson = ""
+            allowedPaymentMethodsJson = "",
+            onCurrencySelected = {} // Add this
         )
     }
 }
@@ -426,15 +507,16 @@ private fun DonationScreenSignInFailedPreview() {
     MaterialTheme {
         DonationScreenContent(
             state = DonationScreenState(
-            isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
-        ),
+                isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
+            ),
             signInButtonText = remember { mutableStateOf("Sign In") },
             onSignInClick = {},
-            onPayClick = { amount, currency -> },
+            onPayClick = { _, _ -> },
             onBackClick = {},
             authError = "There was a problem signing you in with Google.",
             onDismissErrorDialog = {},
-            allowedPaymentMethodsJson = ""
+            allowedPaymentMethodsJson = "",
+            onCurrencySelected = {} // Add this
         )
     }
 }
@@ -444,14 +526,15 @@ private fun DonationScreenSignInFailedPreview() {
 private fun DonationScreenLoadingPreview() {
     MaterialTheme {
         DonationScreenContent(
-            state = DonationScreenState(isLoading = true), // Loading state
+            state = DonationScreenState(isLoading = true),
             signInButtonText = remember { mutableStateOf("Sign In") },
             onSignInClick = {},
-            onPayClick = { amount, currency -> },
+            onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
             onDismissErrorDialog = {},
-            allowedPaymentMethodsJson = ""
+            allowedPaymentMethodsJson = "",
+            onCurrencySelected = {} // Add this
         )
     }
 }
@@ -462,15 +545,16 @@ private fun DonationScreenErrorPreview() {
     MaterialTheme {
         DonationScreenContent(
             state = DonationScreenState(
-            isLoading = false, error = "Failed to connect"
-        ), // Error state
+                isLoading = false, error = "Failed to connect"
+            ),
             signInButtonText = remember { mutableStateOf("Sign In") },
             onSignInClick = {},
-            onPayClick = { amount, currency -> },
+            onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
             onDismissErrorDialog = {},
-            allowedPaymentMethodsJson = ""
+            allowedPaymentMethodsJson = "",
+            onCurrencySelected = {} // Add this
         )
     }
 }
@@ -481,15 +565,16 @@ private fun DonationScreenNoCurrencyPreview() {
     MaterialTheme {
         DonationScreenContent(
             state = DonationScreenState(
-            isLoading = false, error = null, rules = mapOf(), isGooglePayReady = true
-        ),
+                isLoading = false, error = null, rules = mapOf(), isGooglePayReady = true
+            ),
             signInButtonText = remember { mutableStateOf("Sign In") },
             onSignInClick = {},
-            onPayClick = { amount, currency -> },
+            onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
             onDismissErrorDialog = {},
-            allowedPaymentMethodsJson = ""
+            allowedPaymentMethodsJson = "",
+            onCurrencySelected = {} // Add this
         )
     }
 }

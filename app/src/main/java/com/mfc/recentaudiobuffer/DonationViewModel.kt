@@ -11,9 +11,11 @@ import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import org.joda.money.CurrencyUnit
 import org.json.JSONObject
 import timber.log.Timber
 import java.io.IOException
+import java.util.Locale
 
 // Data class to hold the rules fetched from the backend
 data class CurrencyRule(val multiplier: Int, val min: Int)
@@ -23,7 +25,8 @@ data class DonationScreenState(
     val isLoading: Boolean = true,
     val error: String? = null,
     val rules: Map<String, CurrencyRule> = emptyMap(),
-    val isGooglePayReady: Boolean = false
+    val isGooglePayReady: Boolean = false,
+    val selectedCurrency: CurrencyUnit = CurrencyUnit.of(Locale.getDefault())
 )
 
 class DonationViewModel : ViewModel() {
@@ -32,7 +35,16 @@ class DonationViewModel : ViewModel() {
         private set
 
     init {
+        // Initialize with default currency
+        uiState = uiState.copy(selectedCurrency = CurrencyUnit.of(Locale.getDefault()))
         fetchCurrencyRules()
+    }
+
+    fun updateSelectedCurrency(currencyCode: String) {
+        // Only update if the currency is supported
+        if (uiState.rules.containsKey(currencyCode)) {
+            uiState = uiState.copy(selectedCurrency = CurrencyUnit.of(currencyCode))
+        }
     }
 
     fun setGooglePayReady(isReady: Boolean) {

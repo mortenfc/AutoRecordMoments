@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.content.Context
 import android.os.Bundle
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -60,7 +59,7 @@ class AutoRecordMomentsApp : Application(), Application.ActivityLifecycleCallbac
             description = FileSavingService.RESULT_NOTIFICATION_CHANNEL_DESCRIPTION
         }
 
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(recordingChannel)
         manager.createNotificationChannel(resultChannel)
     }

@@ -13,7 +13,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.google.firebase.auth.FirebaseAuth
 import com.mfc.recentaudiobuffer.ui.theme.RecentAudioBufferTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.joinAll

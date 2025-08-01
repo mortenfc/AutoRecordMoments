@@ -27,7 +27,6 @@ import android.Manifest
 import android.app.ActivityManager
 import android.app.AlertDialog
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service

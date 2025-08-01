@@ -644,7 +644,7 @@ fun PlayerControlViewContainer(
     }
 }
 
-@OptIn(androidx.media3.common.util.UnstableApi::class)
+@OptIn(UnstableApi::class)
 @Preview(showBackground = true)
 @Composable
 fun MainScreenPreview() {

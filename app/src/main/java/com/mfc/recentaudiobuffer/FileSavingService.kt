@@ -3,12 +3,10 @@ package com.mfc.recentaudiobuffer
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.IBinder
 import androidx.annotation.OptIn
-import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.media3.common.util.UnstableApi
@@ -180,7 +178,7 @@ class FileSavingService : Service() {
         savedFileUri: Uri?
     ) {
         val notificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
         val notificationBuilder =
             NotificationCompat.Builder(this, RESULT_NOTIFICATION_CHANNEL_ID)

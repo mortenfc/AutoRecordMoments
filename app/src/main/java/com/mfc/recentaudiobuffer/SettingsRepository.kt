@@ -7,11 +7,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.DocumentSnapshot
@@ -21,9 +21,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
+import kotlinx.parcelize.Parcelize
 import timber.log.Timber
 import javax.inject.Inject
-import kotlinx.parcelize.Parcelize
 
 @Parcelize
 data class BitDepth(val bits: Int, val encodingEnum: Int) : Parcelable {
@@ -69,7 +69,7 @@ const val DEFAULT_BIT_DEPTH_KEY = "16"
 const val DEFAULT_SAMPLE_RATE = 16000
 const val DEFAULT_BUFFER_TIME_LENGTH_S = 300
 
-public val bitDepths = mapOf(
+val bitDepths = mapOf(
     "8" to BitDepth(8, AudioFormat.ENCODING_PCM_8BIT),
     "16" to BitDepth(16, AudioFormat.ENCODING_PCM_16BIT),
 )

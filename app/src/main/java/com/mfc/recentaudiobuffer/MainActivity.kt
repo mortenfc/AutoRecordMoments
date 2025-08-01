@@ -2,10 +2,7 @@ package com.mfc.recentaudiobuffer
 
 import android.Manifest
 import android.app.AlertDialog
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
@@ -33,9 +30,6 @@ import androidx.media3.common.util.UnstableApi
 import com.google.android.gms.ads.MobileAds
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -279,7 +273,7 @@ class MainActivity : AppCompatActivity() {
             bindService(
                 Intent(this, MyBufferService::class.java),
                 foregroundBufferServiceConn,
-                Context.BIND_AUTO_CREATE
+                BIND_AUTO_CREATE
             )
         }
     }
