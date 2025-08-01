@@ -1,0 +1,8 @@
+<component name="CopyrightManager">
+  <settings default="AGPL-3.0">
+    <module2copyright>
+      <element module="Project Source Files" copyright="AGPL-3.0" />
+      <element module="Tests" copyright="AGPL-3.0" />
+    </module2copyright>
+  </settings>
+</component>
