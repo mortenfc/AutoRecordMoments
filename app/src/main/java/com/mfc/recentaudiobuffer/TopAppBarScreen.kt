@@ -155,7 +155,7 @@ fun TopAppBar(
                     }
                 }) {
                     Icon(
-                        painter = painterResource(id = R.drawable.awesome_edit_round_foreground),
+                        painter = painterResource(id = R.drawable.simple_abstract_black_orange_icon),
                         contentDescription = "Cool",
                         tint = Color.Unspecified
                     )
