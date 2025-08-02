@@ -296,8 +296,6 @@ private fun DonationInput(
 
     val minAmountFormatted: String = formatter.print(minAmountMoney)
 
-    val minAmountMajorUnit = rule.min.toDouble() / rule.multiplier
-
     var isDropdownExpanded by remember { mutableStateOf(false) }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(

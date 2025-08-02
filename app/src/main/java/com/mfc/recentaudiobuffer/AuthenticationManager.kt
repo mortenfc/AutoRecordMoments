@@ -33,6 +33,7 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,13 +42,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 
 class AuthenticationManager @Inject constructor(
     @ApplicationContext private val applicationContext: Context,
     private val auth: FirebaseAuth,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val firestore: FirebaseFirestore
 ) {
     val signInButtonText: MutableState<String> = mutableStateOf("Sign In")
 
@@ -64,7 +67,43 @@ class AuthenticationManager @Inject constructor(
         }
     }
 
-    // ✅ The sign-in logic is now in a single suspend function
+    fun deleteAccount(onComplete: (success: Boolean, error: String?) -> Unit) {
+        val user = auth.currentUser
+        if (user == null) {
+            onComplete(false, "No user is signed in.")
+            return
+        }
+
+        managerScope.launch(Dispatchers.IO) {
+            try {
+                // Step 1: Delete Firestore data
+                firestore.collection("users").document(user.uid).delete().await()
+                Timber.d("User data deleted from Firestore.")
+
+                // Step 2: Delete Firebase Auth account
+                user.delete().await()
+                Timber.d("User account deleted from Firebase Auth.")
+
+                // Step 3: Clear local credential state to ensure user can sign in again
+                val credentialManager = CredentialManager.create(applicationContext)
+                credentialManager.clearCredentialState(ClearCredentialStateRequest())
+
+                withContext(Dispatchers.Main) {
+                    onComplete(true, null) // Signal success
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to delete account.")
+                withContext(Dispatchers.Main) {
+                    // Provide a user-friendly error message
+                    onComplete(
+                        false,
+                        "Failed to delete account. Please try signing out and signing back in again."
+                    )
+                }
+            }
+        }
+    }
+
     fun onSignInClick(activity: Activity) {
         managerScope.launch {
             val user = auth.currentUser

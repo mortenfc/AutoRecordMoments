@@ -21,6 +21,7 @@ package com.mfc.recentaudiobuffer
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.LaunchedEffect
@@ -66,6 +67,7 @@ class SettingsActivity : ComponentActivity() {
         val state = remember { mutableStateOf(SettingsScreenState(config)) }
         val isSaving by settingsViewModel.isSaving.collectAsState()
         var hasSaved by remember { mutableStateOf(false) }
+        var showDeleteConfirmationDialog by remember { mutableStateOf(false) }
 
         // Sync config with state of BUFFER_TIME_LENGTH_S
         LaunchedEffect(config) {
@@ -87,6 +89,7 @@ class SettingsActivity : ComponentActivity() {
             state = state,
             signInButtonText = authenticationManager.signInButtonText,
             onSignInClick = { authenticationManager.onSignInClick(this) },
+            onDeleteAccountClick = { showDeleteConfirmationDialog = true },
             authError = authenticationManager.authError.collectAsState().value,
             onDismissSignInErrorDialog = { authenticationManager.clearAuthError() },
             onSampleRateChanged = { value ->
@@ -145,5 +148,25 @@ class SettingsActivity : ComponentActivity() {
             justExit = {
                 this.finish()
             })
+
+        if (showDeleteConfirmationDialog) {
+            DeleteAccountConfirmationDialog(onDismissRequest = {
+                showDeleteConfirmationDialog = false
+            }, onConfirm = {
+                showDeleteConfirmationDialog = false
+                // Call the manager to delete the account
+                authenticationManager.deleteAccount { success, error ->
+                    if (success) {
+                        Toast.makeText(
+                            this, "Account deleted successfully.", Toast.LENGTH_SHORT
+                        ).show()
+                        // The AuthStateListener will automatically update the UI to "Sign In"
+                    } else {
+                        Toast.makeText(this, error ?: "An error occurred.", Toast.LENGTH_LONG)
+                            .show()
+                    }
+                }
+            })
+        }
     }
 }

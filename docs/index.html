@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto Record Moments</title>
+    <title>Recency - Support</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -31,10 +31,27 @@
             font-size: 2.5em;
             margin-bottom: 0.5em;
         }
-        p {
+        h2 {
+            color: #c0392b; /* A subtle red for the deletion section */
+            font-size: 1.8em;
+            margin-top: 2em;
+            margin-bottom: 0.5em;
+            border-top: 1px solid #eee;
+            padding-top: 1em;
+        }
+        p, li {
             font-size: 1.1em;
             color: #555;
-            margin-bottom: 1.5em;
+            text-align: left;
+        }
+        .container > p {
+            text-align: center; /* Center the main description */
+        }
+        ol {
+            display: inline-block;
+            text-align: left;
+            margin-top: 1em;
+            padding-left: 2em;
         }
         .links {
             margin-top: 2em;
@@ -53,18 +70,32 @@
 </head>
 <body>
 <div class="container">
-    <h1>Auto Record Moments</h1>
-    <p>An Android app that continuously records audio to a temporary buffer, ensuring you never miss
-        a moment.</p>
+    <h1>Recency</h1>
+    <p>An Android app that continuously records audio to a temporary buffer, ensuring you never miss a moment.</p>
+
+    <!-- Account Deletion Section -->
+    <div class="account-deletion">
+        <h2>Account Deletion Instructions</h2>
+        <p>To permanently delete your Recency account and all associated data, please follow these steps:</p>
+        <ol>
+            <li>Open the Recency app on your device.</li>
+            <li>Navigate to the <strong>Settings</strong> screen (tap the gear icon in the top bar).</li>
+            <li>If you are signed in, you will see a "Delete Account" section at the bottom of the screen.</li>
+            <li>Tap the <strong>"DELETE MY ACCOUNT"</strong> button.</li>
+            <li>Follow the on-screen confirmation prompts to complete the deletion.</li>
+        </ol>
+        <p style="text-align: center; font-style: italic; margin-top: 1em;">This process will permanently remove your account and all synced settings from our servers. This action cannot be undone.</p>
+    </div>
+
     <div class="links">
-        <p>
+        <p style="text-align: center;">
             For support, please email:
             <a href="mailto:mortenfjordchristensen@gmail.com">mortenfjordchristensen@gmail.com</a>
             <br>
-            Or if emergency, call:
+            Or in an emergency, call:
             <a href="tel:+46724462028">+46724462028</a>
         </p>
-        <p>
+        <p style="text-align: center;">
             <a href="privacy.html">Privacy Policy</a>
         </p>
     </div>

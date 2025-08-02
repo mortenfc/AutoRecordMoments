@@ -28,8 +28,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -186,6 +188,62 @@ fun FileSaveDialog(
             }
         }
     }
+}
+
+@Composable
+fun DeleteAccountConfirmationDialog(
+    onDismissRequest: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    var inputText by remember { mutableStateOf("") }
+    val isConfirmEnabled = inputText == "DELETE"
+
+    CustomAlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = {
+            Text(
+                "Are you sure?",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 22.sp
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    "This action is permanent and cannot be undone. All your synced settings will be lost. To proceed, please type DELETE in the box below.",
+                    color = colorResource(id = R.color.teal_900),
+                    fontSize = 16.sp
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { inputText = it },
+                    label = { Text("Type DELETE to confirm") },
+                    singleLine = true,
+                    keyboardActions = KeyboardActions(onDone = { if (isConfirmEnabled) onConfirm() }),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("CANCEL")
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = isConfirmEnabled,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    disabledContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                )
+            ) {
+                Text("CONFIRM DELETE")
+            }
+        }
+    )
 }
 
 @Composable

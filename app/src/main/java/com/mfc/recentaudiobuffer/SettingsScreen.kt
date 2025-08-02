@@ -102,6 +102,7 @@ fun SettingsScreen(
     state: MutableState<SettingsScreenState>,
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
+    onDeleteAccountClick: () -> Unit,
     authError: String?,
     onDismissSignInErrorDialog: () -> Unit,
     onSampleRateChanged: (Int) -> Unit,
@@ -140,11 +141,7 @@ fun SettingsScreen(
                 signInButtonText = signInButtonText,
                 onSignInClick = onSignInClick,
                 onBackButtonClicked = {
-                    if (isSubmitEnabled.value) {
-                        onSubmit(bufferTimeLengthTemp.intValue)
-                    } else {
-                        justExit()
-                    }
+                    justExit()
                 },
                 authError = authError,
                 onDismissErrorDialog = onDismissSignInErrorDialog
@@ -187,6 +184,7 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp) // 3. Apply padding for the content INSIDE the card
+                    .verticalScroll(rememberScrollState()) // Allow scrolling
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -341,6 +339,36 @@ fun SettingsScreen(
                     textAlign = TextAlign.Center,
                     fontStyle = FontStyle.Italic
                 )
+
+                if (signInButtonText.value == "Sign Out") {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                    )
+                    Text(
+                        text = "Delete Account",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Text(
+                        text = "This will permanently delete your account and all synced settings. This action cannot be undone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                    Button(
+                        onClick = onDeleteAccountClick,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    ) {
+                        Text("DELETE MY ACCOUNT")
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -876,6 +904,7 @@ fun SettingsScreenPreview() {
         SettingsScreen(
             mutableStateOf(SettingsScreenState(SettingsConfig())),
             signInButtonText = mutableStateOf("Sign In"),
+            {},
             {},
             null,
             {},
