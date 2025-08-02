@@ -1,19 +1,19 @@
 /*
- * # Auto Record Moments
- * # Copyright (C) 2025 Morten Fjord Christensen
- * #
- * # This program is free software: you can redistribute it and/or modify
- * # it under the terms of the GNU Affero General Public License as published by
- * # the Free Software Foundation, either version 3 of the License, or
- * # (at your option) any later version.
- * #
- * # This program is distributed in the hope that it will be useful,
- * # but WITHOUT ANY WARRANTY; without even the implied warranty of
- * # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * # GNU Affero General Public License for more details.
- * #
- * # You should have received a copy of the GNU Affero General Public License
- * # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Auto Record Moments
+ * Copyright (C) 2025 Morten Fjord Christensen
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.mfc.recentaudiobuffer
@@ -28,6 +28,7 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.GetCredentialResponse
 import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
@@ -127,10 +128,14 @@ class AuthenticationManager @Inject constructor(
             GetCredentialRequest.Builder().addCredentialOption(googleIdOption).build()
 
         try {
-            // 2. Launch the credential picker
             val result: GetCredentialResponse =
                 credentialManager.getCredential(activity, credentialRequest)
             handleSignInSuccess(result)
+        } catch (e: NoCredentialException) {
+            // This is the expected outcome for a new user or a user with no Google accounts
+            Timber.e(e, "No credential found.")
+            _authError.value =
+                "No Google accounts found on this device. Please add an account in the device settings and try again."
 
         } catch (e: GetCredentialException) {
             Timber.e(e, "GetCredentialException")
