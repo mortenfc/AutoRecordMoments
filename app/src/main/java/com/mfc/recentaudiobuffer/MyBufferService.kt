@@ -467,7 +467,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 // The original audioDataStorage is now correctly ordered. Return it.
                 ByteBuffer.wrap(audioDataStorage).asReadOnlyBuffer()
             } else {
-                // ✅ Create a zero-copy view of the relevant part of the array.
+                // Create a zero-copy view of the relevant part of the array.
                 ByteBuffer.wrap(audioDataStorage, 0, recorderIndex.get()).asReadOnlyBuffer()
             }
         } finally {
@@ -519,7 +519,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                                 val rawEtaSeconds =
                                     TimeUnit.MILLISECONDS.toSeconds(rawRemainingTime)
 
-                                // 2. Add the new estimate to our history
+                                // 2. Add the new estimate to the history
                                 etaHistory.addLast(rawEtaSeconds)
 
                                 // 3. Trim the history if it exceeds the window size

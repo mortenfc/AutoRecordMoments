@@ -68,7 +68,6 @@ fun RecentFilesDialog(
 ) {
     val context = LocalContext.current
     var audioFiles by remember { mutableStateOf<List<AudioFile>>(emptyList()) }
-    // --- NEW: State to track loading ---
     var isLoading by remember { mutableStateOf(true) }
 
     // This effect runs once when the dialog is shown to fetch the files

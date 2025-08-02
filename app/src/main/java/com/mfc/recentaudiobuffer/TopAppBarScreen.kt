@@ -127,7 +127,7 @@ fun TopAppBar(
     // The dialog is a full-screen overlay, so it's invoked here at the top level
     // of the composable. It won't interfere with the TopAppBar's layout.
     when (authError) {
-        // ✅ Case 1: The user has no Google accounts on their device
+        // Case 1: The user has no Google accounts on their device
         is AuthError.NoAccountsFound -> {
             CustomAlertDialog(
                 onDismissRequest = onDismissErrorDialog,
@@ -146,7 +146,7 @@ fun TopAppBar(
                     }
                 })
         }
-        // ✅ Case 2: Any other generic sign-in error
+        // Case 2: Any other generic sign-in error
         is AuthError.Generic -> {
             SignInErrorDialog(
                 errorMessage = authError.message, onDismiss = onDismissErrorDialog
