@@ -47,6 +47,11 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 
+sealed class AuthError {
+    data class Generic(val message: String) : AuthError()
+    object NoAccountsFound : AuthError()
+}
+
 class AuthenticationManager @Inject constructor(
     @ApplicationContext private val applicationContext: Context,
     private val auth: FirebaseAuth,
@@ -55,7 +60,7 @@ class AuthenticationManager @Inject constructor(
 ) {
     val signInButtonText: MutableState<String> = mutableStateOf("Sign In")
 
-    private val _authError = MutableStateFlow<String?>(null)
+    private val _authError = MutableStateFlow<AuthError?>(null)
     val authError = _authError.asStateFlow()
 
     private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -134,15 +139,13 @@ class AuthenticationManager @Inject constructor(
         } catch (e: NoCredentialException) {
             // This is the expected outcome for a new user or a user with no Google accounts
             Timber.e(e, "No credential found.")
-            _authError.value =
-                "No Google accounts found on this device. Please add an account in the device settings and try again."
-
+            _authError.value = AuthError.NoAccountsFound
         } catch (e: GetCredentialException) {
             Timber.e(e, "GetCredentialException")
-            _authError.value = "Sign-in failed. Please try again."
+            _authError.value = AuthError.Generic("Sign-in failed. Please try again.")
         } catch (e: Exception) {
             Timber.e(e, "An unexpected error occurred during sign-in.")
-            _authError.value = "An unexpected error occurred."
+            _authError.value = AuthError.Generic("An unexpected error occurred.")
         }
     }
 
@@ -155,11 +158,11 @@ class AuthenticationManager @Inject constructor(
                 firebaseAuthWithGoogle(googleIdToken)
             } catch (e: Exception) {
                 Timber.e(e, "Could not create Google ID token from credential data.")
-                _authError.value = "An error occurred with your Google Account."
+                _authError.value = AuthError.Generic("An error occurred with your Google Account.")
             }
         } else {
             Timber.e("Unexpected credential type: ${credential::class.java.name}")
-            _authError.value = "Sign-in failed. Unexpected credential type."
+            _authError.value = AuthError.Generic("Sign-in failed. Unexpected credential type.")
         }
     }
 
@@ -179,7 +182,7 @@ class AuthenticationManager @Inject constructor(
                 // Success is handled by the AuthStateListener
             } catch (e: Exception) {
                 Timber.e(e, "signInWithCredential failed")
-                _authError.value = "Authentication failed: ${e.message}"
+                _authError.value = AuthError.Generic("Authentication failed: ${e.message}")
             }
         }
     }

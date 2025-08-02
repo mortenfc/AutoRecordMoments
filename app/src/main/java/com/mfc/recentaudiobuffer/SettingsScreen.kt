@@ -103,7 +103,7 @@ fun SettingsScreen(
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
     onDeleteAccountClick: () -> Unit,
-    authError: String?,
+    authError: AuthError?,
     onDismissSignInErrorDialog: () -> Unit,
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,

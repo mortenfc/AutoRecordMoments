@@ -18,7 +18,11 @@
 
 package com.mfc.recentaudiobuffer
 
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.PaddingValues
@@ -39,6 +43,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ripple
@@ -54,6 +59,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -110,17 +116,46 @@ fun TopAppBar(
     title: String,
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
-    onIconClick: (() -> Unit)? = null,
     onBackButtonClicked: (() -> Unit)? = null,
+    onIconClick: (() -> Unit)? = onBackButtonClicked,
     onSettingsClick: (() -> Unit)? = null,
-    authError: String? = null, // New parameter for auth error message
-    onDismissErrorDialog: () -> Unit = {} // New lambda to handle dismissal
+    authError: AuthError? = null,
+    onDismissErrorDialog: () -> Unit = {},
+    context: Context = LocalContext.current
 ) {
     // When authError is not null, display the dialog.
     // The dialog is a full-screen overlay, so it's invoked here at the top level
     // of the composable. It won't interfere with the TopAppBar's layout.
-    if (authError != null) {
-        SignInErrorDialog(errorMessage = authError, onDismiss = onDismissErrorDialog)
+    when (authError) {
+        // ✅ Case 1: The user has no Google accounts on their device
+        is AuthError.NoAccountsFound -> {
+            CustomAlertDialog(
+                onDismissRequest = onDismissErrorDialog,
+                title = { Text("No Accounts Found") },
+                text = { Text("To sign in, please add a Google account to this device first.") },
+                dismissButton = {
+                    TextButton(onClick = onDismissErrorDialog) { Text("CANCEL") }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        // Launch the system's "Add Account" settings screen
+                        context.startActivity(Intent(Settings.ACTION_ADD_ACCOUNT))
+                        onDismissErrorDialog()
+                    }) {
+                        Text("ADD ACCOUNT")
+                    }
+                })
+        }
+        // ✅ Case 2: Any other generic sign-in error
+        is AuthError.Generic -> {
+            SignInErrorDialog(
+                errorMessage = authError.message, onDismiss = onDismissErrorDialog
+            )
+        }
+        // Case 3: No error
+        null -> {
+            // Do nothing
+        }
     }
 
     val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
@@ -132,8 +167,7 @@ fun TopAppBar(
             Text(
                 text = title, color = colorResource(id = R.color.teal_900)
             )
-        },
-        navigationIcon = {
+        }, navigationIcon = {
             Row(
                 modifier = Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically
             ) {
@@ -155,23 +189,22 @@ fun TopAppBar(
                     }
                 }) {
                     Icon(
-                        painter = painterResource(id = R.drawable.simple_abstract_black_orange_icon),
-                        contentDescription = "Cool",
-                        tint = Color.Unspecified
+                        painter = painterResource(id = R.drawable.very_teal_fancy_simple_smiley_wave),
+                        contentDescription = "Home",
+                        tint = Color.Unspecified,
+                        modifier = Modifier.border(
+                            1.dp, colorResource(R.color.purple_accent), CircleShape
+                        )
                     )
                 }
             }
-        },
-        modifier = Modifier.drawBehind {
+        }, modifier = Modifier.drawBehind {
             drawToolbarBackground(
-                toolbarOutlineColor,
-                toolbarBackgroundColor
+                toolbarOutlineColor, toolbarBackgroundColor
             )
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
+        }, colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent
-        ),
-        actions = {
+        ), actions = {
             GoogleSignInButton(onClick = onSignInClick, signInButtonText = signInButtonText)
             if (onSettingsClick != null) {
                 Row(
@@ -198,15 +231,13 @@ fun TopAppBar(
 }
 
 private fun DrawScope.drawToolbarBackground(
-    toolbarOutlineColor: Color,
-    toolbarBackgroundColor: Color
+    toolbarOutlineColor: Color, toolbarBackgroundColor: Color
 ) {
     val strokeWidthPx = 3.dp.toPx()
 
     // 1. Draw the main background fill for the entire TopAppBar.
     drawRect(
-        color = toolbarBackgroundColor,
-        size = size
+        color = toolbarBackgroundColor, size = size
     )
 
     // 2. Calculate the Y position to center the line just inside the bottom edge.
@@ -252,7 +283,6 @@ fun TopAppBarWithErrorDialogPreview() {
         title = "Error Preview",
         signInButtonText = signInButtonText,
         onSignInClick = {},
-        authError = "Network connection failed. Please try again.",
-        onDismissErrorDialog = {}
-    )
+        authError = AuthError.Generic("Network connection failed. Please try again."),
+        onDismissErrorDialog = {})
 }

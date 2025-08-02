@@ -87,7 +87,7 @@ fun DonationScreen(
     onSignInClick: () -> Unit,
     onPayClick: (Int, CurrencyUnit) -> Unit,
     onBackClick: () -> Unit,
-    authError: String?,
+    authError: AuthError?,
     onDismissErrorDialog: () -> Unit,
     allowedPaymentMethodsJson: String
 ) {
@@ -113,7 +113,7 @@ private fun DonationScreenContent(
     onSignInClick: () -> Unit,
     onPayClick: (Int, CurrencyUnit) -> Unit,
     onBackClick: () -> Unit,
-    authError: String?,
+    authError: AuthError?,
     onDismissErrorDialog: () -> Unit,
     allowedPaymentMethodsJson: String,
     onCurrencySelected: (String) -> Unit,
@@ -530,7 +530,7 @@ private fun DonationScreenSignInFailedPreview() {
             onSignInClick = {},
             onPayClick = { _, _ -> },
             onBackClick = {},
-            authError = "There was a problem signing you in with Google.",
+            authError = AuthError.Generic("There was a problem signing you in with Google."),
             onDismissErrorDialog = {},
             allowedPaymentMethodsJson = "",
             onCurrencySelected = {} // Add this

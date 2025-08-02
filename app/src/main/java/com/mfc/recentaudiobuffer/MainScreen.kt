@@ -90,7 +90,7 @@ import java.util.concurrent.TimeUnit
 fun MainScreen(
     signInButtonText: MutableState<String>,
     onSignInClick: () -> Unit,
-    authError: String?,
+    authError: AuthError?,
     onDismissSignInErrorDialog: () -> Unit,
     isRecordingFromService: Boolean,
     onStartBufferingClick: () -> Unit,
