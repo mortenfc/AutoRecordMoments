@@ -63,7 +63,6 @@ class DonationActivity : AppCompatActivity() {
 
     // User's locale information
     private val userLocale: Locale by lazy { Locale.getDefault() }
-    private val userCurrency: CurrencyUnit by lazy { CurrencyUnit.of(userLocale) }
 
     // JSON configuration for the Google Pay button
     private val allowedPaymentMethodsJson: String by lazy {
@@ -103,9 +102,6 @@ class DonationActivity : AppCompatActivity() {
                         // State and authentication
                         viewModel = donationViewModel,
                         authError = authenticationManager.authError.collectAsState().value,
-                        onDismissErrorDialog = { authenticationManager.clearAuthError() },
-                        signInButtonText = authenticationManager.signInButtonText,
-                        onSignInClick = { authenticationManager.onSignInClick(this) },
                         // Payment actions
                         onPayClick = ::fetchClientSecret,
                         onBackClick = { this.finish() },

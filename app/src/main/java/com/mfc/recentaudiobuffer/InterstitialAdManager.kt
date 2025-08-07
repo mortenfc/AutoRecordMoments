@@ -52,7 +52,9 @@ class InterstitialAdManager @Inject constructor(
     companion object {
         private const val AD_PREFS = "AdPrefs"
         private const val KEY_REWARD_EXPIRY_TIMESTAMP = "rewardExpiryTimestamp"
-        private val REWARD_DURATION_MS = TimeUnit.DAYS.toMillis(3)
+
+        private const val OPEN_COUNT_GOAL = 3
+        private val REWARD_DURATION_MS = TimeUnit.DAYS.toMillis(2)
         private const val REWARDED_INTERSTITIAL_AD_UNIT_ID =
             "ca-app-pub-5330230981165217/4603016372"
     }
@@ -83,7 +85,7 @@ class InterstitialAdManager @Inject constructor(
         val appOpenCount = prefs.getInt("appOpenCount", 0) + 1
         prefs.edit { putInt("appOpenCount", appOpenCount) }
 
-        if (appOpenCount % 2 != 0) {
+        if (appOpenCount % OPEN_COUNT_GOAL == 0) {
             Timber.d("App open count is $appOpenCount. Not an ad trigger.")
             return
         }
@@ -110,7 +112,7 @@ class InterstitialAdManager @Inject constructor(
                     rewardedInterstitialAd = ad
 
                     val options = ServerSideVerificationOptions.Builder()
-                        .setCustomData("3 Ad-Free Days") // A string to identify the reward
+                        .setCustomData("${TimeUnit.MILLISECONDS.toDays(REWARD_DURATION_MS)} Ad-Free Days") // A string to identify the reward
                         .build()
                     rewardedInterstitialAd?.setServerSideVerificationOptions(options)
 

@@ -33,8 +33,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material3.Button
@@ -83,24 +85,18 @@ import java.util.Locale
 @Composable
 fun DonationScreen(
     viewModel: DonationViewModel,
-    signInButtonText: MutableState<String>,
-    onSignInClick: () -> Unit,
     onPayClick: (Int, CurrencyUnit) -> Unit,
     onBackClick: () -> Unit,
     authError: AuthError?,
-    onDismissErrorDialog: () -> Unit,
     allowedPaymentMethodsJson: String
 ) {
     val state = viewModel.uiState
     // This stateless composable is now easily previewable
     DonationScreenContent(
         state = state,
-        signInButtonText = signInButtonText,
-        onSignInClick = onSignInClick,
         onPayClick = onPayClick,
         onBackClick = onBackClick,
         authError = authError,
-        onDismissErrorDialog = onDismissErrorDialog,
         allowedPaymentMethodsJson = allowedPaymentMethodsJson,
         onCurrencySelected = { currency -> viewModel.updateSelectedCurrency(currency) })
 }
@@ -109,12 +105,9 @@ fun DonationScreen(
 @Composable
 private fun DonationScreenContent(
     state: DonationScreenState,
-    signInButtonText: MutableState<String>,
-    onSignInClick: () -> Unit,
     onPayClick: (Int, CurrencyUnit) -> Unit,
     onBackClick: () -> Unit,
     authError: AuthError?,
-    onDismissErrorDialog: () -> Unit,
     allowedPaymentMethodsJson: String,
     onCurrencySelected: (String) -> Unit,
 ) {
@@ -130,11 +123,7 @@ private fun DonationScreenContent(
         topBar = {
             TopAppBar(
                 title = "Donate",
-                signInButtonText = signInButtonText,
-                onSignInClick = onSignInClick,
                 onBackButtonClicked = onBackClick,
-                authError = authError,
-                onDismissErrorDialog = onDismissErrorDialog
             )
         }) { innerPadding ->
         when {
@@ -226,6 +215,7 @@ private fun DonationContent(
         modifier = modifier
             .fillMaxSize()
             .background(colorResource(id = R.color.teal_100))
+            .verticalScroll(rememberScrollState()) // Allow scrolling
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -486,12 +476,9 @@ private fun DonationScreenGooglePayPreview() {
             state = DonationScreenState(
             isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
         ),
-            signInButtonText = remember { mutableStateOf("Sign Out") },
-            onSignInClick = {},
             onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
-            onDismissErrorDialog = {},
             allowedPaymentMethodsJson = "",
             onCurrencySelected = {} // Add this
         )
@@ -506,12 +493,9 @@ private fun DonationScreenCardPaymentPreview() {
             state = DonationScreenState(
             isLoading = false, error = null, rules = mockRules, isGooglePayReady = false
         ),
-            signInButtonText = remember { mutableStateOf("Sign In") },
-            onSignInClick = {},
             onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
-            onDismissErrorDialog = {},
             allowedPaymentMethodsJson = "",
             onCurrencySelected = {} // Add this
         )
@@ -526,12 +510,9 @@ private fun DonationScreenSignInFailedPreview() {
             state = DonationScreenState(
             isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
         ),
-            signInButtonText = remember { mutableStateOf("Sign In") },
-            onSignInClick = {},
             onPayClick = { _, _ -> },
             onBackClick = {},
             authError = AuthError.Generic("There was a problem signing you in with Google."),
-            onDismissErrorDialog = {},
             allowedPaymentMethodsJson = "",
             onCurrencySelected = {} // Add this
         )
@@ -544,12 +525,9 @@ private fun DonationScreenLoadingPreview() {
     MaterialTheme {
         DonationScreenContent(
             state = DonationScreenState(isLoading = true),
-            signInButtonText = remember { mutableStateOf("Sign In") },
-            onSignInClick = {},
             onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
-            onDismissErrorDialog = {},
             allowedPaymentMethodsJson = "",
             onCurrencySelected = {} // Add this
         )
@@ -564,12 +542,9 @@ private fun DonationScreenErrorPreview() {
             state = DonationScreenState(
             isLoading = false, error = "Failed to connect"
         ),
-            signInButtonText = remember { mutableStateOf("Sign In") },
-            onSignInClick = {},
             onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
-            onDismissErrorDialog = {},
             allowedPaymentMethodsJson = "",
             onCurrencySelected = {} // Add this
         )
@@ -584,12 +559,9 @@ private fun DonationScreenNoCurrencyPreview() {
             state = DonationScreenState(
             isLoading = false, error = null, rules = mapOf(), isGooglePayReady = true
         ),
-            signInButtonText = remember { mutableStateOf("Sign In") },
-            onSignInClick = {},
             onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
-            onDismissErrorDialog = {},
             allowedPaymentMethodsJson = "",
             onCurrencySelected = {} // Add this
         )

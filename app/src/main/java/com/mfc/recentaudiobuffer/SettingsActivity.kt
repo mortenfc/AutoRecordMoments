@@ -88,10 +88,7 @@ class SettingsActivity : ComponentActivity() {
         SettingsScreen(
             state = state,
             signInButtonText = authenticationManager.signInButtonText,
-            onSignInClick = { authenticationManager.onSignInClick(this) },
             onDeleteAccountClick = { showDeleteConfirmationDialog = true },
-            authError = authenticationManager.authError.collectAsState().value,
-            onDismissSignInErrorDialog = { authenticationManager.clearAuthError() },
             onSampleRateChanged = { value ->
                 Timber.d("onSampleRateChanged to $value")
                 state.value.updateSampleRateTemp(value)

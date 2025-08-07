@@ -18,6 +18,7 @@
 
 package com.mfc.recentaudiobuffer
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
@@ -49,6 +50,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -67,11 +69,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
-fun GoogleSignInButton(onClick: () -> Unit, signInButtonText: MutableState<String>) {
+fun GoogleSignInButton(onClick: () -> Unit, signInButtonText: String, isEnabled: Boolean) {
     Button(
         onClick = onClick,
+        enabled = isEnabled,
         modifier = Modifier
             .wrapContentWidth() // Fit to content of Button, which is Row
             .height(48.dp)
@@ -98,7 +103,7 @@ fun GoogleSignInButton(onClick: () -> Unit, signInButtonText: MutableState<Strin
                     .padding(0.dp)
             )
             Text(
-                text = if (signInButtonText.value == "Sign In") stringResource(id = R.string.sign_in) else stringResource(
+                text = if (signInButtonText == "Sign In") stringResource(id = R.string.sign_in) else stringResource(
                     id = R.string.sign_out
                 ), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray
             )
@@ -114,19 +119,22 @@ fun GoogleSignInButton(onClick: () -> Unit, signInButtonText: MutableState<Strin
 @Composable
 fun TopAppBar(
     title: String,
-    signInButtonText: MutableState<String>,
-    onSignInClick: () -> Unit,
     onBackButtonClicked: (() -> Unit)? = null,
     onIconClick: (() -> Unit)? = onBackButtonClicked,
     onSettingsClick: (() -> Unit)? = null,
-    authError: AuthError? = null,
-    onDismissErrorDialog: () -> Unit = {},
-    context: Context = LocalContext.current
+    viewModel: IAuthViewModel = hiltViewModel<AuthViewModel>()
 ) {
+    val context = LocalContext.current
+
+    // Collect states from the ViewModel
+    val isSigningIn by viewModel.isSigningIn.collectAsStateWithLifecycle()
+    val authError by viewModel.authError.collectAsStateWithLifecycle()
+    val signInButtonText by viewModel.signInButtonText
+    val onDismissErrorDialog = { viewModel.clearAuthError() }
     // When authError is not null, display the dialog.
     // The dialog is a full-screen overlay, so it's invoked here at the top level
     // of the composable. It won't interfere with the TopAppBar's layout.
-    when (authError) {
+    when (val error = authError) {
         // Case 1: The user has no Google accounts on their device
         is AuthError.NoAccountsFound -> {
             CustomAlertDialog(
@@ -149,7 +157,7 @@ fun TopAppBar(
         // Case 2: Any other generic sign-in error
         is AuthError.Generic -> {
             SignInErrorDialog(
-                errorMessage = authError.message, onDismiss = onDismissErrorDialog
+                errorMessage = error.message, onDismiss = onDismissErrorDialog
             )
         }
         // Case 3: No error
@@ -161,73 +169,76 @@ fun TopAppBar(
     val toolbarOutlineColor = colorResource(id = R.color.purple_accent)
     val toolbarBackgroundColor = colorResource(id = R.color.teal_350)
 
-    // The visual TopAppBar component's implementation remains the same.
     TopAppBar(
         title = {
-            Text(
-                text = title, color = colorResource(id = R.color.teal_900)
-            )
-        }, navigationIcon = {
-            Row(
-                modifier = Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (onBackButtonClicked != null) {
-                    IconButton(onClick = { onBackButtonClicked() }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(id = R.string.back),
-                            tint = Color.White
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                IconButton(onClick = {
-                    if (onIconClick != null) {
-                        onIconClick()
-                    }
-                }) {
+        Text(
+            text = title, color = colorResource(id = R.color.teal_900)
+        )
+    }, navigationIcon = {
+        Row(
+            modifier = Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (onBackButtonClicked != null) {
+                IconButton(onClick = { onBackButtonClicked() }) {
                     Icon(
-                        painter = painterResource(id = R.drawable.very_teal_fancy_simple_smiley_wave),
-                        contentDescription = "Home",
-                        tint = Color.Unspecified,
-                        modifier = Modifier.border(
-                            1.dp, colorResource(R.color.purple_accent), CircleShape
-                        )
-                    )
-                }
-            }
-        }, modifier = Modifier.drawBehind {
-            drawToolbarBackground(
-                toolbarOutlineColor, toolbarBackgroundColor
-            )
-        }, colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = Color.Transparent
-        ), actions = {
-            GoogleSignInButton(onClick = onSignInClick, signInButtonText = signInButtonText)
-            if (onSettingsClick != null) {
-                Row(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = ripple(
-                                bounded = true, radius = 24.dp
-                            ),
-                            onClick = {
-                                onSettingsClick()
-                            })
-                        .padding(12.dp), verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.baseline_settings_24),
-                        contentDescription = stringResource(id = R.string.settings),
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(id = R.string.back),
                         tint = Color.White
                     )
                 }
             }
-        })
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            IconButton(onClick = {
+                if (onIconClick != null) {
+                    onIconClick()
+                }
+            }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.very_teal_fancy_simple_smiley_wave),
+                    contentDescription = "Home",
+                    tint = Color.Unspecified,
+                    modifier = Modifier.border(
+                        1.dp, colorResource(R.color.purple_accent), CircleShape
+                    )
+                )
+            }
+        }
+    }, modifier = Modifier.drawBehind {
+        drawToolbarBackground(
+            toolbarOutlineColor, toolbarBackgroundColor
+        )
+    }, colors = TopAppBarDefaults.topAppBarColors(
+        containerColor = Color.Transparent
+    ), actions = {
+        GoogleSignInButton(
+            onClick = { viewModel.onSignInClick(context as Activity) },
+            signInButtonText = signInButtonText,
+            isEnabled = !isSigningIn
+        )
+        if (onSettingsClick != null) {
+            Row(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(
+                            bounded = true, radius = 24.dp
+                        ),
+                        onClick = {
+                            onSettingsClick()
+                        })
+                    .padding(12.dp), verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.baseline_settings_24),
+                    contentDescription = stringResource(id = R.string.settings),
+                    tint = Color.White
+                )
+            }
+        }
+    })
 }
 
 private fun DrawScope.drawToolbarBackground(
@@ -256,33 +267,61 @@ private fun DrawScope.drawToolbarBackground(
 @Preview(showBackground = true)
 @Composable
 fun TopAppBarNoBackButtonPreview() {
-    val signInButtonText = remember { mutableStateOf("Sign In") }
+    // 1. Define the state for this preview: Signed Out
+    val fakeViewModel = FakeAuthViewModel(
+        initialIsSigningIn = false, initialAuthError = null, initialSignInText = "Sign In"
+    )
+
+    // 2. Pass the fake ViewModel to the composable
     TopAppBar(
-        title = "Main",
-        signInButtonText = signInButtonText,
-        onSignInClick = {},
-        onSettingsClick = {})
+        title = "Main", viewModel = fakeViewModel, onSettingsClick = {})
 }
 
 @Preview(showBackground = true)
 @Composable
 fun TopAppBarNoSettingsButtonPreview() {
-    val signInButtonText = remember { mutableStateOf("Sign Out") }
+    // 1. Define the state for this preview: Signed In
+    val fakeViewModel = FakeAuthViewModel(
+        initialIsSigningIn = false, initialAuthError = null, initialSignInText = "Sign Out"
+    )
+
+    // 2. Pass the fake ViewModel to the composable
     TopAppBar(
-        title = "Settings",
-        signInButtonText = signInButtonText,
-        onSignInClick = {},
-        onBackButtonClicked = {})
+        title = "Settings", viewModel = fakeViewModel, onBackButtonClicked = {})
 }
 
 @Preview(showBackground = true)
 @Composable
 fun TopAppBarWithErrorDialogPreview() {
-    val signInButtonText = remember { mutableStateOf("Sign In") }
+    // 1. Define the state for this preview: Error occurred
+    val fakeViewModel = FakeAuthViewModel(
+        initialIsSigningIn = false,
+        initialAuthError = AuthError.Generic("Network connection failed. Please try again."),
+        initialSignInText = "Sign In"
+    )
+
+    // 2. Pass the fake ViewModel to the composable
     TopAppBar(
-        title = "Error Preview",
-        signInButtonText = signInButtonText,
-        onSignInClick = {},
-        authError = AuthError.Generic("Network connection failed. Please try again."),
-        onDismissErrorDialog = {})
+        title = "Error Preview", viewModel = fakeViewModel, onSettingsClick = {})
+}
+
+@Preview(showBackground = true)
+@Composable
+fun TopAppBarLoadingPreview() {
+    val fakeViewModel = FakeAuthViewModel(
+        initialIsSigningIn = true, // <-- The button will be disabled
+        initialAuthError = null, initialSignInText = "Sign In"
+    )
+    TopAppBar(
+        title = "Loading...", viewModel = fakeViewModel
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun GoogleSignInButtonDisabledPreview() {
+    val signInButtonText = "Sign In"
+    GoogleSignInButton(
+        signInButtonText = signInButtonText, onClick = {}, isEnabled = false
+    )
 }

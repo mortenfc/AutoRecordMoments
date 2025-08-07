@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -101,10 +102,7 @@ import java.util.Locale
 fun SettingsScreen(
     state: MutableState<SettingsScreenState>,
     signInButtonText: MutableState<String>,
-    onSignInClick: () -> Unit,
     onDeleteAccountClick: () -> Unit,
-    authError: AuthError?,
-    onDismissSignInErrorDialog: () -> Unit,
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
     onBufferTimeLengthChanged: (Int) -> Unit,
@@ -138,19 +136,15 @@ fun SettingsScreen(
         topBar = {
             TopAppBar(
                 title = stringResource(id = R.string.settings),
-                signInButtonText = signInButtonText,
-                onSignInClick = onSignInClick,
                 onBackButtonClicked = {
                     justExit()
-                },
-                authError = authError,
-                onDismissErrorDialog = onDismissSignInErrorDialog
+                }
             )
         }) { innerPadding ->
-        // The Box is now the single, styled container. It acts as our "card".
+        // The Box is the single, styled container. It acts as the "card".
         Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(innerPadding) // 1. Apply padding from Scaffold (for the TopAppBar)
                 .padding(16.dp)       // 2. Apply margin around the card
                 .shadow(elevation = 8.dp, shape = RoundedCornerShape(12.dp))
@@ -904,9 +898,6 @@ fun SettingsScreenPreview() {
         SettingsScreen(
             mutableStateOf(SettingsScreenState(SettingsConfig())),
             signInButtonText = mutableStateOf("Sign In"),
-            {},
-            {},
-            null,
             {},
             {},
             {},

@@ -43,8 +43,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
@@ -59,7 +61,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -85,13 +86,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
 import java.util.concurrent.TimeUnit
 
-@UnstableApi
+@OptIn(UnstableApi::class)
 @Composable
 fun MainScreen(
-    signInButtonText: MutableState<String>,
-    onSignInClick: () -> Unit,
-    authError: AuthError?,
-    onDismissSignInErrorDialog: () -> Unit,
     isRecordingFromService: Boolean,
     onStartBufferingClick: () -> Unit,
     onStopBufferingClick: () -> Unit,
@@ -135,36 +132,36 @@ fun MainScreen(
         label = "recordingButtonElementsColor"
     )
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = stringResource(id = R.string.main),
-            signInButtonText = signInButtonText,
-            onSignInClick = onSignInClick,
-            onSettingsClick = onSettingsClick,
-            authError = authError,
-            onDismissErrorDialog = onDismissSignInErrorDialog
-        )
-        if (!isPreview && !hasDonated && !isRewardActive) {
-            AdMobBanner()
-        }
-
-        Scaffold { innerPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .background(colorResource(id = R.color.teal_100))
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = stringResource(id = R.string.main),
+                onSettingsClick = onSettingsClick
+            )
+        }) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(colorResource(id = R.color.teal_100))
+                .verticalScroll(rememberScrollState())
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                if (isRewardActive) {
-                    RewardStatusCard(
-                        expiryTimestamp = rewardExpiryTimestamp
-                    )
+                if (!isPreview && !hasDonated && !isRewardActive) {
+                    AdMobBanner(modifier = Modifier.padding(top = 8.dp))
                 }
+                if (isRewardActive) {
+                    RewardStatusCard(expiryTimestamp = rewardExpiryTimestamp)
+                }
+
+                // This Column holds the main controls
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .align(Alignment.Center)
-                        .padding(bottom = 80.dp),
+                        .padding(vertical = 48.dp), // Added padding for better spacing
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -218,46 +215,36 @@ fun MainScreen(
                         onClick = onResetBufferClick
                     )
                 }
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    if (hasDonated) {
-                        ThankYouButton(
-                            modifier = Modifier.align(Alignment.CenterEnd), onClick = onDonateClick
-                        )
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // The Donate Banner for permanent ad removal
-                            DonateBanner(onClick = onDonateClick)
-                        }
-                    }
-                }
+            }
 
-                if (!isPreview) {
-                    PlayerControlViewContainer(
-                        mediaPlayerManager = mediaPlayerManager,
-                        modifier = Modifier.align(Alignment.BottomCenter)
+            Spacer(Modifier.height(16.dp)) // Minimum distance to bottom banner
+
+            // These elements are outside the main scrollable column
+            // and will be fixed at the bottom of the screen.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp)
+                    .fillMaxWidth()
+            ) {
+                if (hasDonated) {
+                    ThankYouButton(
+                        modifier = Modifier.align(Alignment.CenterEnd), onClick = onDonateClick
+                    )
+                } else {
+                    DonateBanner(
+                        modifier = Modifier.align(Alignment.Center), onClick = onDonateClick
                     )
                 }
-
-                Column {
-                    AnimatedVisibility(
-                        visible = isLoading,
-                        enter = fadeIn(animationSpec = tween(durationMillis = 300)),
-                        exit = fadeOut(animationSpec = tween(durationMillis = 300))
-                    ) {
-                        LoadingIndicator()
-                    }
-                }
+            }
+            if (!isPreview) {
+                PlayerControlViewContainer(
+                    mediaPlayerManager = mediaPlayerManager,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
+            if (isLoading) {
+                LoadingIndicator()
             }
         }
     }
@@ -668,10 +655,6 @@ fun PlayerControlViewContainer(
 fun MainScreenPreview() {
     MaterialTheme {
         MainScreen(
-            signInButtonText = remember { mutableStateOf("Sign Out") },
-            onSignInClick = {},
-            authError = null,
-            onDismissSignInErrorDialog = {},
             isRecordingFromService = true,
             onStartBufferingClick = {},
             onStopBufferingClick = {},

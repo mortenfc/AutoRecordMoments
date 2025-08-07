@@ -216,12 +216,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         setContent {
-            val authError by authenticationManager.authError.collectAsState()
             MainScreen(
-                signInButtonText = authenticationManager.signInButtonText,
-                onSignInClick = { authenticationManager.onSignInClick(this) },
-                authError = authError,
-                onDismissSignInErrorDialog = { authenticationManager.clearAuthError() },
                 isRecordingFromService = isRecording,
                 onStartBufferingClick = { onClickStartRecording() },
                 onStopBufferingClick = { onClickStopRecording() },

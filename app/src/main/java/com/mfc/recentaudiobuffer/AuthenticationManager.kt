@@ -60,6 +60,9 @@ class AuthenticationManager @Inject constructor(
 ) {
     val signInButtonText: MutableState<String> = mutableStateOf("Sign In")
 
+    private val _isSigningIn = MutableStateFlow(false)
+    val isSigningIn = _isSigningIn.asStateFlow()
+
     private val _authError = MutableStateFlow<AuthError?>(null)
     val authError = _authError.asStateFlow()
 
@@ -122,10 +125,12 @@ class AuthenticationManager @Inject constructor(
     }
 
     private suspend fun signIn(activity: Activity) {
+        // Prevent multiple sign-in attempts
+        if (_isSigningIn.value) return
+
         val credentialManager = CredentialManager.create(activity)
         val serverClientId = activity.getString(R.string.default_web_client_id)
 
-        // 1. Build the request for a Google ID token
         val googleIdOption = GetGoogleIdOption.Builder().setFilterByAuthorizedAccounts(false)
             .setServerClientId(serverClientId).setAutoSelectEnabled(true).build()
 
@@ -133,11 +138,11 @@ class AuthenticationManager @Inject constructor(
             GetCredentialRequest.Builder().addCredentialOption(googleIdOption).build()
 
         try {
+            _isSigningIn.value = true
             val result: GetCredentialResponse =
                 credentialManager.getCredential(activity, credentialRequest)
             handleSignInSuccess(result)
         } catch (e: NoCredentialException) {
-            // This is the expected outcome for a new user or a user with no Google accounts
             Timber.e(e, "No credential found.")
             _authError.value = AuthError.NoAccountsFound
         } catch (e: GetCredentialException) {
@@ -146,6 +151,8 @@ class AuthenticationManager @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "An unexpected error occurred during sign-in.")
             _authError.value = AuthError.Generic("An unexpected error occurred.")
+        } finally {
+            _isSigningIn.value = false
         }
     }
 
@@ -166,7 +173,7 @@ class AuthenticationManager @Inject constructor(
         }
     }
 
-    private suspend fun signOut() {
+    suspend fun signOut() {
         // This clears the user's sign-in state to allow account selection next time.
         val credentialManager = CredentialManager.create(applicationContext)
         credentialManager.clearCredentialState(ClearCredentialStateRequest())
