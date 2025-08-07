@@ -27,14 +27,18 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -62,6 +66,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
@@ -80,7 +85,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -89,19 +96,64 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.mfc.recentaudiobuffer.ui.theme.RecentAudioBufferTheme
 import timber.log.Timber
 import java.util.Locale
 
-@SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
+/**
+ * Stateful wrapper for the Settings Screen.
+ * This is the component your app's navigation will call.
+ * Its only job is to get the ViewModel and collect state.
+ */
 @Composable
 fun SettingsScreen(
     state: MutableState<SettingsScreenState>,
-    signInButtonText: MutableState<String>,
+    widthSizeClass: WindowWidthSizeClass,
+    onDeleteAccountClick: () -> Unit,
+    onSampleRateChanged: (Int) -> Unit,
+    onBitDepthChanged: (BitDepth) -> Unit,
+    onBufferTimeLengthChanged: (Int) -> Unit,
+    onAiAutoClipChanged: (Boolean) -> Unit,
+    onSubmit: (Int) -> Unit,
+    justExit: () -> Unit,
+    viewModel: AuthViewModel = hiltViewModel() // Get the ViewModel
+) {
+    // Collect state from the ViewModel. This is the only place Hilt is touched.
+    val signInButtonText by viewModel.signInButtonText
+    val isUserSignedIn = signInButtonText == "Sign Out"
+
+    // Call the stateless composable with the collected state
+    SettingsScreenContent(
+        state = state,
+        widthSizeClass = widthSizeClass,
+        isUserSignedIn = isUserSignedIn,
+        onDeleteAccountClick = onDeleteAccountClick,
+        onSampleRateChanged = onSampleRateChanged,
+        onBitDepthChanged = onBitDepthChanged,
+        onBufferTimeLengthChanged = onBufferTimeLengthChanged,
+        onAiAutoClipChanged = onAiAutoClipChanged,
+        onSubmit = onSubmit,
+        justExit = justExit
+    )
+}
+
+/**
+ * Stateless implementation of the Settings Screen.
+ * Contains all the UI and is fully previewable because it has no reference to Hilt.
+ */// Stateless UI (All visual changes are here)
+@SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
+@Composable
+private fun SettingsScreenContent(
+    state: MutableState<SettingsScreenState>,
+    widthSizeClass: WindowWidthSizeClass,
+    isUserSignedIn: Boolean,
     onDeleteAccountClick: () -> Unit,
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
@@ -110,43 +162,30 @@ fun SettingsScreen(
     onSubmit: (Int) -> Unit,
     justExit: () -> Unit
 ) {
-    var showSampleRateMenu by remember { mutableStateOf(false) }
-    var showBitDepthMenu by remember { mutableStateOf(false) }
     var showHelpDialog by remember { mutableStateOf(false) }
-
     val focusManager = LocalFocusManager.current
-
-    val sampleRate = state.value.sampleRateTemp
-    val bitDepth = state.value.bitDepthTemp
-    val bufferTimeLengthTemp = state.value.bufferTimeLengthTemp
-    val isMaxExceeded = state.value.isMaxExceeded
-    val isBufferTimeLengthNull = state.value.isBufferTimeLengthNull
-    val errorMessage = state.value.errorMessage
-    val isSubmitEnabled = state.value.isSubmitEnabled
-
-    Timber.d("Recompose")
 
     Scaffold(
         containerColor = colorResource(id = R.color.teal_100),
-        modifier = Modifier.pointerInput(Unit) {
-            detectTapGestures {
-                focusManager.clearFocus()
-            }
-        },
+        modifier = Modifier.pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } },
         topBar = {
-            TopAppBar(
+            TopAppBarContent(
                 title = stringResource(id = R.string.settings),
-                onBackButtonClicked = {
-                    justExit()
-                }
+                onBackButtonClicked = { justExit() },
+                // Dummy values for preview-ability, the real TopAppBar will supply real ones
+                signInButtonText = if (isUserSignedIn) "Sign Out" else "Sign In",
+                isSigningIn = false,
+                authError = null,
+                onSignInClick = {},
+                onDismissErrorDialog = {},
+                onIconClick = { justExit() },
+                onSettingsClick = null
             )
         }) { innerPadding ->
-        // The Box is the single, styled container. It acts as the "card".
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding) // 1. Apply padding from Scaffold (for the TopAppBar)
-                .padding(16.dp)       // 2. Apply margin around the card
+                .padding(innerPadding)
+                .padding(horizontal = 8.dp, vertical = 8.dp)
                 .shadow(elevation = 8.dp, shape = RoundedCornerShape(12.dp))
                 .border(
                     width = 3.dp,
@@ -160,215 +199,98 @@ fun SettingsScreen(
             IconButton(
                 onClick = { showHelpDialog = true },
                 modifier = Modifier
-                    .align(Alignment.TopEnd) // Positions it at the top-right
-                    .padding(top = 4.dp) // Adds padding so it's not on the edge
-                    .zIndex(1f)
+                    .align(Alignment.TopEnd)
+                    .padding(0.dp) // Simple, robust padding
             ) {
                 Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = "Show settings help",
+                    Icons.Default.Info,
+                    "Show settings help",
                     tint = colorResource(id = R.color.purple_accent)
                 )
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // The Column ONLY organizes the content inside the Box. It has no style of its own.
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp) // 3. Apply padding for the content INSIDE the card
-                    .verticalScroll(rememberScrollState()) // Allow scrolling
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { focusManager.clearFocus() }),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Sample Rate
-                SettingsButton(
-                    text = "Sample Rate: ${sampleRate.intValue} Hz",
-                    icon = Icons.Filled.ArrowDropDown,
-                    onClick = { showSampleRateMenu = true })
-                DropdownMenu(
-                    expanded = showSampleRateMenu,
-                    onDismissRequest = { showSampleRateMenu = false },
-                    modifier = Modifier
-                        .background(colorResource(id = R.color.teal_100))
-                        .border(
-                            width = 2.dp,
-                            color = colorResource(id = R.color.purple_accent),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                ) {
-                    sampleRates.forEach { (label, value) ->
-                        StyledDropdownMenuItem(text = "$label Hz", onClick = {
-                            Timber.i(
-                                "Clicked SampleRate $label with value: $value"
-                            )
-                            onSampleRateChanged(value)
-                            showSampleRateMenu = false
-                        })
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Bit Depth
-                SettingsButton(
-                    text = "Bit Depth: ${bitDepth.value.bits} bit",
-                    icon = Icons.Filled.ArrowDropDown,
-                    onClick = { showBitDepthMenu = true })
-                DropdownMenu(
-                    expanded = showBitDepthMenu,
-                    onDismissRequest = { showBitDepthMenu = false },
-                    modifier = Modifier
-                        .background(colorResource(id = R.color.teal_100))
-                        .border(
-                            width = 2.dp,
-                            color = colorResource(id = R.color.purple_accent),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                ) {
-                    bitDepths.forEach { (label, value) ->
-                        StyledDropdownMenuItem(text = "$label bit", onClick = {
-                            Timber.i(
-                                "Clicked BitDepth $label with value: $value"
-                            )
-                            onBitDepthChanged(value)
-                            showBitDepthMenu = false
-                        })
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-
-                MyOutlinedBufferInputField(
-                    bufferTimeLength = bufferTimeLengthTemp,
-                    onValueChange = onBufferTimeLengthChanged,
-                    isMaxExceeded = isMaxExceeded,
-                    isNull = isBufferTimeLengthNull
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 10.dp),
-                    color = colorResource(id = R.color.purple_accent).copy(alpha = 0.5f)
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(fraction = 0.9f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "AI Auto-Trimming",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colorResource(id = R.color.teal_900)
-                    )
-                    Switch(
-                        checked = state.value.isAiAutoClipEnabled.value, // Get value from state
-                        onCheckedChange = { isEnabled ->
-                            onAiAutoClipChanged(isEnabled) // New callback
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = colorResource(id = R.color.purple_accent),
-                            checkedBorderColor = colorResource(id = R.color.teal_350),
-                            checkedTrackColor = colorResource(id = R.color.teal_350),
-                            uncheckedThumbColor = colorResource(id = R.color.purple_accent),
-                            uncheckedTrackColor = colorResource(id = R.color.teal_100),
-                            uncheckedBorderColor = colorResource(id = R.color.teal_350),
-                        ),
-                    )
-                }
-                Text(
-                    text = "When enabled, saving the buffer will automatically trim away all non-speech (including music!). It uses a local model stored on your device, no internet is used. \n" + "!ATTENTION! This resamples down to 16 kHz and can take some time to run for long buffers.",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        textAlign = TextAlign.Justify,
-                        hyphens = Hyphens.Auto,
-                        lineBreak = LineBreak.Paragraph,
-                        fontStyle = FontStyle.Italic
-                    ),
-                    color = colorResource(id = R.color.teal_700),
-                    modifier = Modifier
-                        .padding(top = 4.dp)
-                        .fillMaxWidth(fraction = 0.9f),
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 10.dp),
-                    color = colorResource(id = R.color.purple_accent).copy(alpha = 0.5f)
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Error Message
-                if (errorMessage.value != null) {
-                    Text(text = errorMessage.value!!, color = Color.Red)
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                MainButton(
-                    text = stringResource(id = R.string.submit),
-                    icon = R.drawable.outline_restore_page_24,
-                    onClick = {
-                        if (isSubmitEnabled.value) {
-                            onSubmit(bufferTimeLengthTemp.intValue)
-                        }
-                    },
-                    iconTint = colorResource(id = R.color.purple_accent),
-                    enabled = isSubmitEnabled.value,
-                    modifier = Modifier.fillMaxWidth(fraction = 0.7f),
-                    maxLines = 2,
-                    iconSize = 40.dp
-                )
-
-                Text(
-                    text = "Sign In to sync settings with cloud",
-                    color = colorResource(id = R.color.purple_accent),
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center,
-                    fontStyle = FontStyle.Italic
-                )
-
-                if (signInButtonText.value == "Sign Out") {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 10.dp),
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
-                    )
-                    Text(
-                        text = "Delete Account",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Text(
-                        text = "This will permanently delete your account and all synced settings. This action cannot be undone.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                    Button(
-                        onClick = onDeleteAccountClick,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        )
+            when (widthSizeClass) {
+                WindowWidthSizeClass.Compact -> {
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp, vertical = 12.dp)
+                            .padding(start = 12.dp, end = 12.dp)
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        Text("DELETE MY ACCOUNT")
+                        AudioSettingsGroup(
+                            state, onSampleRateChanged, onBitDepthChanged, onBufferTimeLengthChanged
+                        )
+                        AISettingsGroup(state, onAiAutoClipChanged)
+                        ActionsGroup(state, onSubmit, isUserSignedIn)
+                        if (isUserSignedIn) {
+                            DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick)
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                else -> { // Expanded Layout
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(32.dp),
+                        verticalAlignment = Alignment.CenterVertically // Center both panes vertically
+                    ) {
+                        // --- Left Pane ---
+                        // GOAL: Vertically center the entire group of audio settings.
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center // This does the magic
+                        ) {
+                            AudioSettingsGroup(
+                                state,
+                                onSampleRateChanged,
+                                onBitDepthChanged,
+                                onBufferTimeLengthChanged,
+                                spacerModifier = Modifier.height(70.dp),
+                                verticalArrangement = Arrangement.SpaceEvenly
+                            )
+                        }
+
+                        // --- Right Pane ---
+                        // GOAL: Vertically center this block as well, for symmetry.
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .verticalScroll(rememberScrollState()),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.SpaceEvenly // This does the magic
+                        ) {
+                            Spacer(Modifier.weight(.2f))
+
+                            AISettingsGroup(state, onAiAutoClipChanged)
+
+                            Spacer(Modifier.weight(.2f))
+                            ActionsGroup(state, onSubmit, isUserSignedIn)
+                            Spacer(Modifier.weight(.1f))
+
+                            if (isUserSignedIn) {
+                                Spacer(Modifier.height(32.dp))
+                                DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick)
+                            }
+
+                            Spacer(Modifier.weight(.2f))
+                        }
+                    }
+                }
             }
         }
     }
 
+    val sampleRate = state.value.sampleRateTemp
+    val bitDepth = state.value.bitDepthTemp
+    val bufferTimeLengthTemp = state.value.bufferTimeLengthTemp
     if (showHelpDialog) {
         ComprehensiveHelpDialog(
             sampleRate = sampleRate.intValue,
@@ -376,6 +298,182 @@ fun SettingsScreen(
             bufferTimeLength = bufferTimeLengthTemp.intValue,
             isAiAutoClipEnabled = state.value.isAiAutoClipEnabled.value,
             onDismissRequest = { showHelpDialog = false })
+    }
+}
+
+// --- Reusable Group Components ---
+
+@Composable
+private fun AudioSettingsGroup(
+    state: MutableState<SettingsScreenState>,
+    onSampleRateChanged: (Int) -> Unit,
+    onBitDepthChanged: (BitDepth) -> Unit,
+    onBufferTimeLengthChanged: (Int) -> Unit,
+    @SuppressLint("ModifierParameter") spacerModifier: Modifier = Modifier,
+    verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(6.dp),
+) {
+    var showSampleRateMenu by remember { mutableStateOf(false) }
+    var showBitDepthMenu by remember { mutableStateOf(false) }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = verticalArrangement
+    ) {
+        Spacer(spacerModifier)
+        SettingsButton(
+            text = "Sample Rate: ${state.value.sampleRateTemp.intValue} Hz",
+            icon = Icons.Filled.ArrowDropDown,
+            onClick = { showSampleRateMenu = true })
+        DropdownMenu(
+            expanded = showSampleRateMenu, onDismissRequest = { showSampleRateMenu = false }) {
+            sampleRates.forEach { (label, value) ->
+                StyledDropdownMenuItem(text = "$label Hz", onClick = {
+                    onSampleRateChanged(value)
+                    showSampleRateMenu = false
+                })
+            }
+        }
+        Spacer(spacerModifier)
+        SettingsButton(
+            text = "Bit Depth: ${state.value.bitDepthTemp.value.bits} bit",
+            icon = Icons.Filled.ArrowDropDown,
+            onClick = { showBitDepthMenu = true })
+        DropdownMenu(expanded = showBitDepthMenu, onDismissRequest = { showBitDepthMenu = false }) {
+            bitDepths.forEach { (label, value) ->
+                StyledDropdownMenuItem(text = "$label bit", onClick = {
+                    onBitDepthChanged(value)
+                    showBitDepthMenu = false
+                })
+            }
+        }
+        Spacer(spacerModifier.height(1.dp))
+        MyOutlinedBufferInputField(
+            bufferTimeLength = state.value.bufferTimeLengthTemp,
+            onValueChange = onBufferTimeLengthChanged,
+            isMaxExceeded = state.value.isMaxExceeded,
+            isNull = state.value.isBufferTimeLengthNull
+        )
+        Spacer(spacerModifier)
+    }
+}
+
+@Composable
+private fun AISettingsGroup(
+    state: MutableState<SettingsScreenState>, onAiAutoClipChanged: (Boolean) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        HorizontalDivider(
+            color = colorResource(id = R.color.purple_accent).copy(
+                alpha = 0.5f
+            )
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "AI Auto-Trimming",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = colorResource(id = R.color.teal_900)
+            )
+            Switch(
+                checked = state.value.isAiAutoClipEnabled.value,
+                onCheckedChange = onAiAutoClipChanged,
+                colors = SwitchDefaults.colors(/*...*/),
+            )
+        }
+        Text(
+            text = buildAnnotatedString {
+                append("When enabled, saving the buffer will automatically trim away all non-speech (including music!). It uses a local model stored on your device, no internet is used. \n")
+                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                    append("ATTENTION:")
+                }
+                append(" This resamples down to 16 kHz and can take some time to run for long buffers.")
+            }, style = MaterialTheme.typography.bodySmall.copy(
+                textAlign = TextAlign.Justify,
+                hyphens = Hyphens.Auto,
+                lineBreak = LineBreak.Paragraph,
+            ), color = colorResource(id = R.color.teal_700),
+
+            modifier = Modifier.padding(0.dp)
+        )
+        Spacer(Modifier.height(4.dp))
+        HorizontalDivider(
+            color = colorResource(id = R.color.purple_accent).copy(
+                alpha = 0.5f
+            )
+        )
+    }
+}
+
+@Composable
+private fun ActionsGroup(
+    state: MutableState<SettingsScreenState>, onSubmit: (Int) -> Unit, isUserSignedIn: Boolean
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Spacer(modifier = Modifier.height(6.dp))
+        if (state.value.errorMessage.value != null) {
+            Text(text = state.value.errorMessage.value!!, color = Color.Red)
+            Spacer(modifier = Modifier.height(4.dp))
+        }
+        MainButton(
+            text = "Apply Settings", // Shorter text
+            icon = R.drawable.outline_restore_page_24,
+            onClick = {
+                if (state.value.isSubmitEnabled.value) {
+                    onSubmit(state.value.bufferTimeLengthTemp.intValue)
+                }
+            },
+            bottomPadding = 6.dp,
+            iconTint = colorResource(id = R.color.purple_accent),
+            enabled = state.value.isSubmitEnabled.value,
+            modifier = Modifier.fillMaxWidth(fraction = 0.55f),
+            contentPadding = 3.dp
+        )
+        if (!isUserSignedIn) {
+            Text(
+                text = "Sign In to sync settings with cloud",
+                color = colorResource(id = R.color.purple_accent),
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                fontStyle = FontStyle.Italic
+            )
+        }
+    }
+}
+
+@Composable
+private fun DangerZoneGroup(onDeleteAccountClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        Spacer(Modifier.weight(1f))
+        HorizontalDivider(color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+        Text(
+            "Delete Account Permanently",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.error
+        )
+        Button(
+            onClick = onDeleteAccountClick, colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer
+            ), modifier = Modifier.padding(0.dp)
+        ) {
+            Text("DELETE ACCOUNT")
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
     }
 }
 
@@ -395,7 +493,7 @@ fun SettingsButton(text: String, icon: ImageVector, onClick: () -> Unit) {
         Text(
             text = text,
             color = colorResource(id = R.color.teal_900),
-            style = MaterialTheme.typography.bodyLarge
+            style = MaterialTheme.typography.bodyMedium
         )
         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
         Icon(
@@ -891,19 +989,70 @@ fun ComprehensiveHelpDialog(
 }
 
 @SuppressLint("UnrememberedMutableState")
-@Preview(showBackground = true)
+@Preview(
+    showBackground = true,
+    name = "Compact - Signed In",
+    device = "spec:width=360dp,height=640dp,dpi=480"
+)
 @Composable
-fun SettingsScreenPreview() {
+fun SettingsScreenCompactSignedInPreview() {
     RecentAudioBufferTheme {
-        SettingsScreen(
-            mutableStateOf(SettingsScreenState(SettingsConfig())),
-            signInButtonText = mutableStateOf("Sign In"),
-            {},
-            {},
-            {},
-            {},
-            {},
-            {},
-            {})
+        SettingsScreenContent(
+            state = mutableStateOf(SettingsScreenState(SettingsConfig())),
+            widthSizeClass = WindowWidthSizeClass.Compact,
+            isUserSignedIn = true,
+            onDeleteAccountClick = {},
+            onSampleRateChanged = {},
+            onBitDepthChanged = {},
+            onBufferTimeLengthChanged = {},
+            onAiAutoClipChanged = {},
+            onSubmit = {},
+            justExit = {})
+    }
+}
+
+@SuppressLint("UnrememberedMutableState")
+@Preview(
+    showBackground = true,
+    name = "Compact - Signed Out",
+    device = "spec:width=360dp,height=640dp,dpi=480"
+)
+@Composable
+fun SettingsScreenCompactSignedOutPreview() {
+    RecentAudioBufferTheme {
+        SettingsScreenContent(
+            state = mutableStateOf(SettingsScreenState(SettingsConfig())),
+            widthSizeClass = WindowWidthSizeClass.Compact,
+            isUserSignedIn = false,
+            onDeleteAccountClick = {},
+            onSampleRateChanged = {},
+            onBitDepthChanged = {},
+            onBufferTimeLengthChanged = {},
+            onAiAutoClipChanged = {},
+            onSubmit = {},
+            justExit = {})
+    }
+}
+
+@SuppressLint("UnrememberedMutableState")
+@Preview(
+    showBackground = true,
+    name = "Expanded (Tablet)",
+    device = "spec:width=1280dp,height=800dp,dpi=480"
+)
+@Composable
+fun SettingsScreenExpandedPreview() {
+    RecentAudioBufferTheme {
+        SettingsScreenContent(
+            state = mutableStateOf(SettingsScreenState(SettingsConfig())),
+            widthSizeClass = WindowWidthSizeClass.Expanded,
+            isUserSignedIn = true,
+            onDeleteAccountClick = {},
+            onSampleRateChanged = {},
+            onBitDepthChanged = {},
+            onBufferTimeLengthChanged = {},
+            onAiAutoClipChanged = {},
+            onSubmit = {},
+            justExit = {})
     }
 }

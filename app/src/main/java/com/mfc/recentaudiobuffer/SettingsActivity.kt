@@ -24,6 +24,8 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -59,6 +61,7 @@ class SettingsActivity : ComponentActivity() {
         super.onStart()
     }
 
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     @SuppressLint("UnrememberedMutableState")
     @androidx.compose.runtime.Composable
     fun SettingsScreenInitializer(settingsViewModel: SettingsViewModel = hiltViewModel()) {
@@ -87,7 +90,6 @@ class SettingsActivity : ComponentActivity() {
 
         SettingsScreen(
             state = state,
-            signInButtonText = authenticationManager.signInButtonText,
             onDeleteAccountClick = { showDeleteConfirmationDialog = true },
             onSampleRateChanged = { value ->
                 Timber.d("onSampleRateChanged to $value")
@@ -144,7 +146,8 @@ class SettingsActivity : ComponentActivity() {
             },
             justExit = {
                 this.finish()
-            })
+            },
+            widthSizeClass = calculateWindowSizeClass(this).widthSizeClass)
 
         if (showDeleteConfirmationDialog) {
             DeleteAccountConfirmationDialog(onDismissRequest = {

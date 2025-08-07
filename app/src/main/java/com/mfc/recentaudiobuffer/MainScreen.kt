@@ -214,10 +214,10 @@ fun MainScreen(
                         icon = R.drawable.baseline_delete_outline_24,
                         onClick = onResetBufferClick
                     )
+
+                    Spacer(Modifier.height(32.dp)) // Minimum distance to bottom banner
                 }
             }
-
-            Spacer(Modifier.height(16.dp)) // Minimum distance to bottom banner
 
             // These elements are outside the main scrollable column
             // and will be fixed at the bottom of the screen.
@@ -420,6 +420,7 @@ fun MainButton(
     modifier: Modifier = Modifier.fillMaxWidth(fraction = 0.7f),
     enabled: Boolean = true,
     contentPadding: Dp = 16.dp,
+    bottomPadding: Dp = 30.dp,
     iconSize: Dp = 22.dp,
     maxLines: Int = 1
 ) {
@@ -431,7 +432,7 @@ fun MainButton(
     Button(
         onClick = onClick,
         modifier = modifier
-            .padding(bottom = 30.dp)
+            .padding(bottom = bottomPadding)
             .roundedRectShadow(
                 shadowRadius = 5.dp,
                 offsetY = 5.dp,
