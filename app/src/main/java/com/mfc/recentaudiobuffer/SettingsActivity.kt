@@ -88,6 +88,8 @@ class SettingsActivity : ComponentActivity() {
             }
         }
 
+        val windowSizeClass = calculateWindowSizeClass(this)
+
         SettingsScreen(
             state = state,
             onDeleteAccountClick = { showDeleteConfirmationDialog = true },
@@ -147,7 +149,9 @@ class SettingsActivity : ComponentActivity() {
             justExit = {
                 this.finish()
             },
-            widthSizeClass = calculateWindowSizeClass(this).widthSizeClass)
+            widthSizeClass = windowSizeClass.widthSizeClass,
+            heightSizeClass = windowSizeClass.heightSizeClass,
+        )
 
         if (showDeleteConfirmationDialog) {
             DeleteAccountConfirmationDialog(onDismissRequest = {

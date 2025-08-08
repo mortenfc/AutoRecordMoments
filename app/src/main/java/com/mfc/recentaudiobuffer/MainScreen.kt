@@ -18,6 +18,7 @@
 
 package com.mfc.recentaudiobuffer
 
+import android.app.Activity
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
@@ -36,6 +37,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -59,6 +61,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -87,9 +93,76 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
 import java.util.concurrent.TimeUnit
 
+/**
+ * STATEFUL WRAPPER: The live app calls this composable.
+ * It is responsible for connecting to ViewModels.
+ */
 @OptIn(UnstableApi::class)
 @Composable
 fun MainScreen(
+    widthSizeClass: WindowWidthSizeClass,
+    heightSizeClass: WindowHeightSizeClass,
+    isRecordingFromService: Boolean,
+    onStartBufferingClick: () -> Unit,
+    onStopBufferingClick: () -> Unit,
+    onResetBufferClick: () -> Unit,
+    onSaveBufferClick: () -> Unit,
+    onPickAndPlayFileClick: () -> Unit,
+    showRecentFilesDialog: Boolean,
+    onFileSelected: (Uri) -> Unit,
+    onDonateClick: () -> Unit,
+    hasDonated: Boolean,
+    isRewardActive: Boolean,
+    rewardExpiryTimestamp: Long,
+    onSettingsClick: () -> Unit,
+    showDirectoryPermissionDialog: Boolean,
+    onDirectoryAlertDismiss: () -> Unit,
+    onTrimFileClick: () -> Unit,
+    showTrimFileDialog: Boolean,
+    onTrimFileSelected: (Uri) -> Unit,
+    mediaPlayerManager: MediaPlayerManager,
+    isLoading: Boolean,
+    showSaveDialog: Boolean,
+    suggestedFileName: String,
+    onConfirmSave: (fileName: String) -> Unit,
+    onDismissSaveDialog: () -> Unit
+) {
+    MainScreenContent(
+        widthSizeClass = widthSizeClass,
+        heightSizeClass = heightSizeClass,
+        isRecordingFromService = isRecordingFromService,
+        onStartBufferingClick = onStartBufferingClick,
+        onStopBufferingClick = onStopBufferingClick,
+        onResetBufferClick = onResetBufferClick,
+        onSaveBufferClick = onSaveBufferClick,
+        onPickAndPlayFileClick = onPickAndPlayFileClick,
+        showRecentFilesDialog = showRecentFilesDialog,
+        onFileSelected = onFileSelected,
+        onDonateClick = onDonateClick,
+        hasDonated = hasDonated,
+        isRewardActive = isRewardActive,
+        rewardExpiryTimestamp = rewardExpiryTimestamp,
+        onSettingsClick = onSettingsClick,
+        showDirectoryPermissionDialog = showDirectoryPermissionDialog,
+        onDirectoryAlertDismiss = onDirectoryAlertDismiss,
+        onTrimFileClick = onTrimFileClick,
+        showTrimFileDialog = showTrimFileDialog,
+        onTrimFileSelected = onTrimFileSelected,
+        mediaPlayerManager = mediaPlayerManager,
+        isLoading = isLoading,
+        showSaveDialog = showSaveDialog,
+        suggestedFileName = suggestedFileName,
+        onConfirmSave = onConfirmSave,
+        onDismissSaveDialog = onDismissSaveDialog,
+        useLiveViewModel = true // Tell the content to use the live TopAppBar
+    )
+}
+
+@OptIn(UnstableApi::class)
+@Composable
+private fun MainScreenContent(
+    widthSizeClass: WindowWidthSizeClass,
+    heightSizeClass: WindowHeightSizeClass,
     isRecordingFromService: Boolean,
     onStartBufferingClick: () -> Unit,
     onStopBufferingClick: () -> Unit,
@@ -114,7 +187,7 @@ fun MainScreen(
     suggestedFileName: String,
     onConfirmSave: (fileName: String) -> Unit,
     onDismissSaveDialog: () -> Unit,
-    isPreview: Boolean = false
+    useLiveViewModel: Boolean
 ) {
     var showPrivacyInfoDialog by remember { mutableStateOf(false) }
 
@@ -135,121 +208,75 @@ fun MainScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = stringResource(id = R.string.main), onSettingsClick = onSettingsClick
-            )
-        }) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(colorResource(id = R.color.teal_100))
-                .verticalScroll(rememberScrollState())
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                if (!isPreview && !hasDonated && !isRewardActive) {
-                    AdMobBanner(modifier = Modifier.padding(top = 8.dp))
-                }
-                if (isRewardActive) {
-                    RewardStatusCard(expiryTimestamp = rewardExpiryTimestamp)
-                }
-
-                // This Column holds the main controls
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 48.dp), // Added padding for better spacing
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center
-                    ) {
-                        RecordingToggleButton(
-                            isRecording = isRecordingFromService,
-                            backgroundColor = recordingButtonBackgroundColor,
-                            elementsColor = recordingButtonElementsColor,
-                            onClick = {
-                                if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick()
-                            })
-                        IconButton(
-                            onClick = { showPrivacyInfoDialog = true },
-                            modifier = Modifier.offset(x = 100.dp, y = -100.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = "Show privacy info",
-                                tint = colorResource(id = R.color.purple_accent),
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(48.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(24.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SecondaryActionButton(
-                            text = stringResource(R.string.save_the_buffer_as_a_recording),
-                            icon = R.drawable.baseline_save_alt_24,
-                            onClick = onSaveBufferClick
-                        )
-                        SecondaryActionButton(
-                            text = "Remove All Non-\nSpeech From File",
-                            icon = R.drawable.outline_content_cut_24,
-                            onClick = onTrimFileClick
-                        )
-                        SecondaryActionButton(
-                            text = stringResource(R.string.play_a_recording),
-                            icon = R.drawable.baseline_play_circle_outline_24,
-                            onClick = onPickAndPlayFileClick
-                        )
-                    }
-                    Spacer(Modifier.height(24.dp))
-                    SecondaryActionButton(
-                        text = stringResource(R.string.clear_the_buffer),
-                        icon = R.drawable.baseline_delete_outline_24,
-                        onClick = onResetBufferClick
-                    )
-
-                    Spacer(Modifier.height(32.dp)) // Minimum distance to bottom banner
-                }
-            }
-
-            // These elements are outside the main scrollable column
-            // and will be fixed at the bottom of the screen.
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(16.dp)
-                    .fillMaxWidth()
-            ) {
-                if (hasDonated) {
-                    ThankYouButton(
-                        modifier = Modifier.align(Alignment.CenterEnd), onClick = onDonateClick
-                    )
-                } else {
-                    DonateBanner(
-                        modifier = Modifier.align(Alignment.Center), onClick = onDonateClick
-                    )
-                }
-            }
-            if (!isPreview) {
-                PlayerControlViewContainer(
-                    mediaPlayerManager = mediaPlayerManager,
-                    modifier = Modifier.align(Alignment.BottomCenter)
+            if (useLiveViewModel) {
+                TopAppBar(
+                    title = stringResource(id = R.string.main), onSettingsClick = onSettingsClick
+                )
+            } else {
+                TopAppBarContent(
+                    title = stringResource(id = R.string.main),
+                    signInButtonText = "Sign In",
+                    isSigningIn = false,
+                    authError = null,
+                    onSignInClick = {},
+                    onDismissErrorDialog = {},
+                    onBackButtonClicked = null,
+                    onIconClick = {},
+                    onSettingsClick = onSettingsClick
                 )
             }
-            if (isLoading) {
-                LoadingIndicator()
+        }) { innerPadding ->
+
+        val isPhoneLandscape =
+            widthSizeClass != WindowWidthSizeClass.Compact && heightSizeClass == WindowHeightSizeClass.Compact
+
+        Box(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+                .background(colorResource(id = R.color.teal_100))
+        ) {
+            if (isPhoneLandscape) {
+                // --- DEDICATED PHONE LANDSCAPE LAYOUT ---
+                PhoneLandscapeLayout(
+                    isRecordingFromService,
+                    recordingButtonBackgroundColor,
+                    recordingButtonElementsColor,
+                    { if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick() },
+                    { showPrivacyInfoDialog = true },
+                    onSaveBufferClick,
+                    onTrimFileClick,
+                    onPickAndPlayFileClick,
+                    onResetBufferClick
+                )
+            } else {
+                // --- STANDARD PORTRAIT / TABLET LAYOUT ---
+                StandardLayout(
+                    useLiveViewModel,
+                    hasDonated,
+                    isRewardActive,
+                    rewardExpiryTimestamp,
+                    isRecordingFromService,
+                    recordingButtonBackgroundColor,
+                    recordingButtonElementsColor,
+                    { if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick() },
+                    { showPrivacyInfoDialog = true },
+                    onSaveBufferClick,
+                    onTrimFileClick,
+                    onPickAndPlayFileClick,
+                    onResetBufferClick,
+                    onDonateClick,
+                    mediaPlayerManager
+                )
             }
         }
     }
 
-    // --- Dialogs ---
+    // --- DIALOGS & OVERLAYS ---
+    if (isLoading) {
+        LoadingIndicator()
+    }
+
     if (showRecentFilesDialog) {
         RecentFilesDialog(
             onDismiss = { onFileSelected(Uri.EMPTY) }, onFileSelected = onFileSelected
@@ -279,18 +306,250 @@ fun MainScreen(
     }
 }
 
+@OptIn(UnstableApi::class)
+@Composable
+private fun StandardLayout(
+    useLiveViewModel: Boolean,
+    hasDonated: Boolean,
+    isRewardActive: Boolean,
+    rewardExpiryTimestamp: Long,
+    isRecordingFromService: Boolean,
+    recordingButtonBackgroundColor: Color,
+    recordingButtonElementsColor: Color,
+    onToggleRecordingClick: () -> Unit,
+    onPrivacyInfoClick: () -> Unit,
+    onSaveBufferClick: () -> Unit,
+    onTrimFileClick: () -> Unit,
+    onPickAndPlayFileClick: () -> Unit,
+    onResetBufferClick: () -> Unit,
+    onDonateClick: () -> Unit,
+    mediaPlayerManager: MediaPlayerManager
+) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // --- HEADER SECTION ---
+        if (!useLiveViewModel && !hasDonated && !isRewardActive) {
+            AdMobBanner(modifier = Modifier.padding(top = 8.dp))
+        }
+        if (isRewardActive) {
+            Spacer(Modifier.height(10.dp))
+            RewardStatusCard(modifier = Modifier, expiryTimestamp = rewardExpiryTimestamp)
+        }
+
+        // --- CONTENT SECTION ---
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(Modifier.weight(1f))
+
+            RecordingButtonWithInfo(
+                isRecording = isRecordingFromService,
+                backgroundColor = recordingButtonBackgroundColor,
+                elementsColor = recordingButtonElementsColor,
+                onToggleRecordingClick = onToggleRecordingClick,
+                onPrivacyInfoClick = onPrivacyInfoClick
+            )
+            Spacer(Modifier.weight(1f))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                SecondaryActionButton(
+                    text = stringResource(R.string.save_the_buffer_as_a_recording),
+                    icon = R.drawable.baseline_save_alt_24,
+                    onClick = onSaveBufferClick
+                )
+                SecondaryActionButton(
+                    text = "Remove All Non-\nSpeech From File",
+                    icon = R.drawable.outline_content_cut_24,
+                    onClick = onTrimFileClick
+                )
+                SecondaryActionButton(
+                    text = stringResource(R.string.play_a_recording),
+                    icon = R.drawable.baseline_play_circle_outline_24,
+                    onClick = onPickAndPlayFileClick
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            SecondaryActionButton(
+                text = stringResource(R.string.clear_the_buffer),
+                icon = R.drawable.baseline_delete_outline_24,
+                onClick = onResetBufferClick
+            )
+            Spacer(Modifier.weight(1f))
+        }
+
+        // --- FOOTER SECTION ---
+        Box(
+            modifier = Modifier
+                .padding(bottom = 12.dp)
+                .fillMaxWidth()
+        ) {
+            if (hasDonated) {
+                ThankYouButton(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 16.dp),
+                    onClick = onDonateClick
+                )
+            } else {
+                DonateBanner(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(horizontal = 16.dp),
+                    onClick = onDonateClick
+                )
+            }
+        }
+        if (!useLiveViewModel) {
+            PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
+        }
+    }
+}
+
+@Composable
+private fun PhoneLandscapeLayout(
+    isRecordingFromService: Boolean,
+    recordingButtonBackgroundColor: Color,
+    recordingButtonElementsColor: Color,
+    onToggleRecordingClick: () -> Unit,
+    onPrivacyInfoClick: () -> Unit,
+    onSaveBufferClick: () -> Unit,
+    onTrimFileClick: () -> Unit,
+    onPickAndPlayFileClick: () -> Unit,
+    onResetBufferClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // --- Left Pane: Main Recording Button ---
+        Column( // Use a column to allow centering the entire component
+            modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            RecordingButtonWithInfo(
+                isRecording = isRecordingFromService,
+                backgroundColor = recordingButtonBackgroundColor,
+                elementsColor = recordingButtonElementsColor,
+                onToggleRecordingClick = onToggleRecordingClick,
+                onPrivacyInfoClick = onPrivacyInfoClick,
+                buttonSize = 165.dp, // Pass the smaller size
+                iconSize = 28.dp
+            )
+        }
+
+        // --- Right Pane: Scrollable Secondary Actions ---
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                SecondaryActionButton(
+                    text = stringResource(R.string.save_the_buffer_as_a_recording),
+                    icon = R.drawable.baseline_save_alt_24,
+                    onClick = onSaveBufferClick
+                )
+                SecondaryActionButton(
+                    text = stringResource(R.string.play_a_recording),
+                    icon = R.drawable.baseline_play_circle_outline_24,
+                    onClick = onPickAndPlayFileClick
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                SecondaryActionButton(
+                    text = "Remove All Non-\nSpeech From File",
+                    icon = R.drawable.outline_content_cut_24,
+                    onClick = onTrimFileClick
+                )
+                SecondaryActionButton(
+                    text = stringResource(R.string.clear_the_buffer),
+                    icon = R.drawable.baseline_delete_outline_24,
+                    onClick = onResetBufferClick
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecordingButtonWithInfo(
+    isRecording: Boolean,
+    backgroundColor: Color,
+    elementsColor: Color,
+    onToggleRecordingClick: () -> Unit,
+    onPrivacyInfoClick: () -> Unit,
+    buttonSize: Dp = 180.dp,
+    iconSize: Dp = 32.dp
+) {
+    // ConstraintLayout is the perfect tool for positioning one item relative to another.
+    ConstraintLayout {
+        // Create references for the button and the icon
+        val (buttonRef, iconRef) = createRefs()
+
+        RecordingToggleButton(
+            isRecording = isRecording,
+            backgroundColor = backgroundColor,
+            elementsColor = elementsColor,
+            onClick = onToggleRecordingClick,
+            modifier = Modifier
+                .size(buttonSize)
+                .constrainAs(buttonRef) {
+                    // Place the button in the center of the layout.
+                    // This ConstraintLayout will wrap to fit the button and icon.
+                    top.linkTo(parent.top)
+                    bottom.linkTo(parent.bottom)
+                    start.linkTo(parent.start)
+                    end.linkTo(parent.end)
+                })
+
+        IconButton(
+            onClick = onPrivacyInfoClick, modifier = Modifier.constrainAs(iconRef) {
+                // 1. Center the icon vertically on the button's top edge.
+                top.linkTo(buttonRef.top)
+                bottom.linkTo(buttonRef.top)
+
+                // 2. Center the icon horizontally on the button's end (right) edge.
+                start.linkTo(buttonRef.end)
+                end.linkTo(buttonRef.end)
+            }) {
+            Icon(
+                Icons.Default.Info,
+                "Show privacy info",
+                tint = colorResource(id = R.color.purple_accent),
+                modifier = Modifier.size(iconSize)
+            )
+        }
+    }
+}
+
 @Composable
 fun RecordingToggleButton(
-    isRecording: Boolean, backgroundColor: Color, elementsColor: Color, onClick: () -> Unit
+    modifier: Modifier = Modifier.size(180.dp),
+    isRecording: Boolean,
+    backgroundColor: Color,
+    elementsColor: Color,
+    onClick: () -> Unit
 ) {
     val buttonText = if (isRecording) "Pause\nRecording" else "Start\nRecording"
     val iconRes = if (isRecording) R.drawable.baseline_mic_off_24 else R.drawable.baseline_mic_24
 
     Button(
         onClick = onClick,
-        modifier = Modifier
-            .size(180.dp)
-            .circularShadow(radius = 5.dp, offsetY = 5.dp),
+        modifier = modifier.circularShadow(radius = 5.dp, offsetY = 5.dp),
         shape = CircleShape,
         colors = ButtonDefaults.buttonColors(containerColor = backgroundColor),
         border = BorderStroke(2.dp, colorResource(id = R.color.purple_accent)),
@@ -320,13 +579,19 @@ fun RecordingToggleButton(
 }
 
 @Composable
-fun SecondaryActionButton(text: String, icon: Int, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+fun SecondaryActionButton(
+    modifier: Modifier = Modifier.size(72.dp),
+    iconSize: Dp = 32.dp,
+    text: String,
+    icon: Int,
+    onClick: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(95.dp)) {
         Button(
             onClick = onClick,
-            modifier = Modifier
-                .size(72.dp)
-                .roundedRectShadow(shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = 24.dp),
+            modifier = modifier.roundedRectShadow(
+                shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = 24.dp
+            ),
             shape = RoundedCornerShape(24.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = colorResource(id = R.color.teal_350),
@@ -338,17 +603,19 @@ fun SecondaryActionButton(text: String, icon: Int, onClick: () -> Unit) {
             Icon(
                 painter = painterResource(id = icon),
                 contentDescription = null,
-                modifier = Modifier.size(32.dp),
-                tint = colorResource(id = R.color.teal_900)
+                tint = colorResource(id = R.color.teal_900),
+                modifier = Modifier.size(iconSize)
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = text,
-            fontWeight = FontWeight.Medium,
-            fontSize = 12.sp,
-            color = colorResource(id = R.color.teal_900),
-            textAlign = TextAlign.Center
+            text = text, style = TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                color = colorResource(id = R.color.teal_900),
+                textAlign = TextAlign.Center,
+                lineHeight = 16.sp,
+            )
         )
     }
 }
@@ -358,7 +625,7 @@ fun SecondaryActionButton(text: String, icon: Int, onClick: () -> Unit) {
  */
 @Composable
 fun RewardStatusCard(
-    expiryTimestamp: Long
+    expiryTimestamp: Long, modifier: Modifier
 ) {
     val remainingMillis = expiryTimestamp - System.currentTimeMillis()
     val days = TimeUnit.MILLISECONDS.toDays(remainingMillis)
@@ -373,8 +640,8 @@ fun RewardStatusCard(
 
     Row(
         // Increased padding to give the text more room
-        modifier = Modifier
-            .padding(vertical = 12.dp)
+        modifier = modifier
+            .padding(vertical = 0.dp)
             .fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
@@ -480,9 +747,9 @@ fun MainButton(
 }
 
 @Composable
-fun LoadingIndicator() {
+fun LoadingIndicator(modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.5f))
             .clickable(
@@ -654,7 +921,9 @@ fun PlayerControlViewContainer(
 @Composable
 fun MainScreenPreview() {
     MaterialTheme {
-        MainScreen(
+        MainScreenContent(
+            widthSizeClass = WindowWidthSizeClass.Compact,
+            heightSizeClass = WindowHeightSizeClass.Medium,
             isRecordingFromService = true,
             onStartBufferingClick = {},
             onStopBufferingClick = {},
@@ -664,7 +933,7 @@ fun MainScreenPreview() {
             showRecentFilesDialog = false,
             onFileSelected = {},
             onDonateClick = {},
-            hasDonated = false,
+            hasDonated = true,
             isRewardActive = true,
             rewardExpiryTimestamp = System.currentTimeMillis() + TimeUnit.DAYS.toMillis(2),
             onSettingsClick = {},
@@ -675,11 +944,12 @@ fun MainScreenPreview() {
             onTrimFileSelected = {},
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
             isLoading = false,
-            isPreview = true,
             showSaveDialog = false,
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
-            onDismissSaveDialog = {})
+            onDismissSaveDialog = {},
+            useLiveViewModel = false
+        )
     }
 }
 
@@ -714,6 +984,8 @@ fun ToggleButtonPreview() {
 @Composable
 fun SecondaryButtonPreview() {
     SecondaryActionButton(
+        modifier = Modifier.size(72.dp),
+        iconSize = 22.dp,
         text = stringResource(R.string.play_a_recording),
         icon = R.drawable.baseline_play_circle_outline_24,
         onClick = {})
@@ -724,4 +996,127 @@ fun SecondaryButtonPreview() {
 fun DonateBannerPreview() {
     DonateBanner(
         modifier = Modifier.padding(16.dp), onClick = {})
+}
+
+@OptIn(UnstableApi::class)
+@Preview(
+    showBackground = true,
+    name = "Phone Portrait (9:16)",
+    device = "spec:width=360dp,height=640dp,dpi=480"
+)
+@Composable
+fun MainScreenPhone9x16Preview() {
+    MaterialTheme {
+        MainScreenContent(
+            widthSizeClass = WindowWidthSizeClass.Compact,
+            heightSizeClass = WindowHeightSizeClass.Medium,
+            isRecordingFromService = false,
+            onStartBufferingClick = {},
+            onStopBufferingClick = {},
+            onResetBufferClick = {},
+            onSaveBufferClick = {},
+            onPickAndPlayFileClick = {},
+            showRecentFilesDialog = false,
+            onFileSelected = {},
+            onDonateClick = {},
+            hasDonated = false,
+            isRewardActive = true,
+            rewardExpiryTimestamp = 0,
+            onSettingsClick = {},
+            showDirectoryPermissionDialog = false,
+            onDirectoryAlertDismiss = {},
+            onTrimFileClick = {},
+            showTrimFileDialog = false,
+            onTrimFileSelected = {},
+            mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
+            isLoading = false,
+            showSaveDialog = false,
+            suggestedFileName = "preview_file.wav",
+            onConfirmSave = {},
+            onDismissSaveDialog = {},
+            useLiveViewModel = false
+        )
+    }
+}
+
+@OptIn(UnstableApi::class)
+@Preview(
+    showBackground = true,
+    name = "Phone Landscape (16:9)",
+    device = "spec:width=640dp,height=360dp,dpi=480" // 16:9 aspect ratio for a phone
+)
+@Composable
+fun MainScreenPhone16x9Preview() {
+    MaterialTheme {
+        MainScreenContent(
+            widthSizeClass = WindowWidthSizeClass.Medium,
+            heightSizeClass = WindowHeightSizeClass.Compact,
+            isRecordingFromService = false,
+            onStartBufferingClick = {},
+            onStopBufferingClick = {},
+            onResetBufferClick = {},
+            onSaveBufferClick = {},
+            onPickAndPlayFileClick = {},
+            showRecentFilesDialog = false,
+            onFileSelected = {},
+            onDonateClick = {},
+            hasDonated = false,
+            isRewardActive = false,
+            rewardExpiryTimestamp = 0,
+            onSettingsClick = {},
+            showDirectoryPermissionDialog = false,
+            onDirectoryAlertDismiss = {},
+            onTrimFileClick = {},
+            showTrimFileDialog = false,
+            onTrimFileSelected = {},
+            mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
+            isLoading = false,
+            showSaveDialog = false,
+            suggestedFileName = "preview_file.wav",
+            onConfirmSave = {},
+            onDismissSaveDialog = {},
+            useLiveViewModel = false
+        )
+    }
+}
+
+@OptIn(UnstableApi::class)
+@Preview(
+    showBackground = true,
+    name = "Tablet Landscape (16:9)",
+    device = "spec:width=1920dp,height=1080dp,dpi=480" // 16:9 aspect ratio for a tablet
+)
+@Composable
+fun MainScreenTablet16x9Preview() {
+    MaterialTheme {
+        MainScreenContent(
+            widthSizeClass = WindowWidthSizeClass.Expanded,
+            heightSizeClass = WindowHeightSizeClass.Medium,
+            isRecordingFromService = true,
+            onStartBufferingClick = {},
+            onStopBufferingClick = {},
+            onResetBufferClick = {},
+            onSaveBufferClick = {},
+            onPickAndPlayFileClick = {},
+            showRecentFilesDialog = false,
+            onFileSelected = {},
+            onDonateClick = {},
+            hasDonated = true,
+            isRewardActive = false,
+            rewardExpiryTimestamp = 0,
+            onSettingsClick = {},
+            showDirectoryPermissionDialog = false,
+            onDirectoryAlertDismiss = {},
+            onTrimFileClick = {},
+            showTrimFileDialog = false,
+            onTrimFileSelected = {},
+            mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
+            isLoading = false,
+            showSaveDialog = false,
+            suggestedFileName = "preview_file.wav",
+            onConfirmSave = {},
+            onDismissSaveDialog = {},
+            useLiveViewModel = false
+        )
+    }
 }

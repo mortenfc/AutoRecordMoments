@@ -69,6 +69,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Typography
+import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
@@ -120,6 +121,7 @@ import java.util.Locale
 fun SettingsScreen(
     state: MutableState<SettingsScreenState>,
     widthSizeClass: WindowWidthSizeClass,
+    heightSizeClass: WindowHeightSizeClass,
     onDeleteAccountClick: () -> Unit,
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
@@ -137,6 +139,7 @@ fun SettingsScreen(
     SettingsScreenContent(
         state = state,
         widthSizeClass = widthSizeClass,
+        heightSizeClass = heightSizeClass,
         isUserSignedIn = isUserSignedIn,
         onDeleteAccountClick = onDeleteAccountClick,
         onSampleRateChanged = onSampleRateChanged,
@@ -157,6 +160,7 @@ fun SettingsScreen(
 private fun SettingsScreenContent(
     state: MutableState<SettingsScreenState>,
     widthSizeClass: WindowWidthSizeClass,
+    heightSizeClass: WindowHeightSizeClass,
     isUserSignedIn: Boolean,
     onDeleteAccountClick: () -> Unit,
     onSampleRateChanged: (Int) -> Unit,
@@ -164,7 +168,8 @@ private fun SettingsScreenContent(
     onBufferTimeLengthChanged: (Int) -> Unit,
     onAiAutoClipChanged: (Boolean) -> Unit,
     onSubmit: (Int) -> Unit,
-    justExit: () -> Unit
+    justExit: () -> Unit,
+    isPreview: Boolean = false
 ) {
     var showHelpDialog by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
@@ -173,10 +178,25 @@ private fun SettingsScreenContent(
         containerColor = colorResource(id = R.color.teal_100),
         modifier = Modifier.pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } },
         topBar = {
-            TopAppBar(
-                title = stringResource(id = R.string.settings),
-                onBackButtonClicked = { justExit() }
-            )
+            if (isPreview) {
+                TopAppBarContent(
+                    title = stringResource(id = R.string.settings),
+                    onBackButtonClicked = { justExit() },
+                    // Dummy values for preview-ability, the real TopAppBar will supply real ones
+                    signInButtonText = if (isUserSignedIn) "Sign Out" else "Sign In",
+                    isSigningIn = false,
+                    authError = null,
+                    onSignInClick = {},
+                    onDismissErrorDialog = {},
+                    onIconClick = { justExit() },
+                    onSettingsClick = null
+                )
+            } else {
+                TopAppBar(
+                    title = stringResource(id = R.string.settings),
+                    onBackButtonClicked = { justExit() }
+                )
+            }
         }) { innerPadding ->
         Box(
             modifier = Modifier
@@ -192,7 +212,7 @@ private fun SettingsScreenContent(
                     color = colorResource(id = R.color.teal_150), shape = RoundedCornerShape(12.dp)
                 )
         ) {
-            val isExpanded = widthSizeClass == WindowWidthSizeClass.Expanded
+            val isExpanded = widthSizeClass == WindowWidthSizeClass.Expanded && heightSizeClass == WindowHeightSizeClass.Medium
             IconButton(
                 onClick = { showHelpDialog = true },
                 modifier = Modifier
@@ -251,7 +271,7 @@ private fun SettingsScreenContent(
                                 onBitDepthChanged,
                                 onBufferTimeLengthChanged,
                                 spacerModifier = Modifier.height(60.dp),
-                                isExpanded = true
+                                isExpanded = isExpanded
                             )
                         }
 
@@ -267,17 +287,17 @@ private fun SettingsScreenContent(
                         ) {
                             Spacer(Modifier.weight(.2f))
 
-                            AISettingsGroup(state, onAiAutoClipChanged, isExpanded = true)
+                            AISettingsGroup(state, onAiAutoClipChanged, isExpanded = isExpanded)
 
                             Spacer(Modifier.weight(.2f))
-                            ActionsGroup(state, onSubmit, isUserSignedIn, isExpanded = true)
+                            ActionsGroup(state, onSubmit, isUserSignedIn, isExpanded = isExpanded)
                             Spacer(Modifier.weight(.1f))
 
                             if (isUserSignedIn) {
                                 Spacer(Modifier.height(32.dp))
                                 DangerZoneGroup(
                                     onDeleteAccountClick = onDeleteAccountClick,
-                                    isExpanded = true
+                                    isExpanded = isExpanded
                                 )
                             }
 
@@ -470,7 +490,7 @@ private fun ActionsGroup(
             text = "Apply Settings", // Shorter text
             textStyle = textStyle,
             icon = R.drawable.outline_restore_page_24,
-            iconSize = if(isExpanded) 40.dp else 22.dp,
+            iconSize = if (isExpanded) 40.dp else 22.dp,
             onClick = {
                 if (state.value.isSubmitEnabled.value) {
                     onSubmit(state.value.bufferTimeLengthTemp.intValue)
@@ -1065,7 +1085,9 @@ fun SettingsScreenCompactSignedInPreview() {
         SettingsScreenContent(
             state = mutableStateOf(SettingsScreenState(SettingsConfig())),
             widthSizeClass = WindowWidthSizeClass.Compact,
+            heightSizeClass = WindowHeightSizeClass.Medium,
             isUserSignedIn = true,
+            isPreview = true,
             onDeleteAccountClick = {},
             onSampleRateChanged = {},
             onBitDepthChanged = {},
@@ -1088,7 +1110,9 @@ fun SettingsScreenCompactSignedOutPreview() {
         SettingsScreenContent(
             state = mutableStateOf(SettingsScreenState(SettingsConfig())),
             widthSizeClass = WindowWidthSizeClass.Compact,
+            heightSizeClass = WindowHeightSizeClass.Medium,
             isUserSignedIn = false,
+            isPreview = true,
             onDeleteAccountClick = {},
             onSampleRateChanged = {},
             onBitDepthChanged = {},
@@ -1111,9 +1135,36 @@ fun SettingsScreenExpandedPreview() {
         SettingsScreenContent(
             state = mutableStateOf(SettingsScreenState(SettingsConfig())),
             widthSizeClass = WindowWidthSizeClass.Expanded,
+            heightSizeClass = WindowHeightSizeClass.Medium,
             isUserSignedIn = true,
             onDeleteAccountClick = {},
             onSampleRateChanged = {},
+            isPreview = true,
+            onBitDepthChanged = {},
+            onBufferTimeLengthChanged = {},
+            onAiAutoClipChanged = {},
+            onSubmit = {},
+            justExit = {})
+    }
+}
+
+@SuppressLint("UnrememberedMutableState")
+@Preview(
+    showBackground = true,
+    name = "Expanded (Phone)",
+    device = "spec:width=1280dp,height=800dp,dpi=480"
+)
+@Composable
+fun SettingsScreenPhoneLandscapePreview() {
+    RecentAudioBufferTheme {
+        SettingsScreenContent(
+            state = mutableStateOf(SettingsScreenState(SettingsConfig())),
+            widthSizeClass = WindowWidthSizeClass.Medium,
+            heightSizeClass = WindowHeightSizeClass.Compact,
+            isUserSignedIn = true,
+            onDeleteAccountClick = {},
+            onSampleRateChanged = {},
+            isPreview = true,
             onBitDepthChanged = {},
             onBufferTimeLengthChanged = {},
             onAiAutoClipChanged = {},

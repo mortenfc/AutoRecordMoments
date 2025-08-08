@@ -36,6 +36,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -199,6 +201,7 @@ class MainActivity : AppCompatActivity() {
         isRewardActive = System.currentTimeMillis() < rewardExpiryTimestamp
     }
 
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
@@ -216,7 +219,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         setContent {
+            val windowSizeClass = calculateWindowSizeClass(this)
             MainScreen(
+                widthSizeClass = windowSizeClass.widthSizeClass,
+                heightSizeClass = windowSizeClass.heightSizeClass,
                 isRecordingFromService = isRecording,
                 onStartBufferingClick = { onClickStartRecording() },
                 onStopBufferingClick = { onClickStopRecording() },
