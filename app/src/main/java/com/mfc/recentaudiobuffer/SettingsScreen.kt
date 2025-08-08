@@ -173,17 +173,9 @@ private fun SettingsScreenContent(
         containerColor = colorResource(id = R.color.teal_100),
         modifier = Modifier.pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } },
         topBar = {
-            TopAppBarContent(
+            TopAppBar(
                 title = stringResource(id = R.string.settings),
-                onBackButtonClicked = { justExit() },
-                // Dummy values for preview-ability, the real TopAppBar will supply real ones
-                signInButtonText = if (isUserSignedIn) "Sign Out" else "Sign In",
-                isSigningIn = false,
-                authError = null,
-                onSignInClick = {},
-                onDismissErrorDialog = {},
-                onIconClick = { justExit() },
-                onSettingsClick = null
+                onBackButtonClicked = { justExit() }
             )
         }) { innerPadding ->
         Box(
@@ -258,7 +250,7 @@ private fun SettingsScreenContent(
                                 onSampleRateChanged,
                                 onBitDepthChanged,
                                 onBufferTimeLengthChanged,
-                                spacerModifier = Modifier.height(70.dp),
+                                spacerModifier = Modifier.height(60.dp),
                                 isExpanded = true
                             )
                         }
@@ -331,7 +323,7 @@ private fun AudioSettingsGroup(
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(if (isExpanded) 10.dp else 6.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Spacer(spacerModifier)
         SettingsButton(
@@ -398,8 +390,9 @@ private fun AISettingsGroup(
     ) {
         HorizontalDivider(
             color = colorResource(id = R.color.purple_accent).copy(
-                alpha = 0.5f
-            )
+                alpha = 0.5f,
+            ),
+            thickness = 2.dp
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -445,7 +438,8 @@ private fun AISettingsGroup(
         HorizontalDivider(
             color = colorResource(id = R.color.purple_accent).copy(
                 alpha = 0.5f
-            )
+            ),
+            thickness = 2.dp
         )
     }
 }
@@ -476,6 +470,7 @@ private fun ActionsGroup(
             text = "Apply Settings", // Shorter text
             textStyle = textStyle,
             icon = R.drawable.outline_restore_page_24,
+            iconSize = if(isExpanded) 40.dp else 22.dp,
             onClick = {
                 if (state.value.isSubmitEnabled.value) {
                     onSubmit(state.value.bufferTimeLengthTemp.intValue)
@@ -485,7 +480,7 @@ private fun ActionsGroup(
             iconTint = colorResource(id = R.color.purple_accent),
             enabled = state.value.isSubmitEnabled.value,
             modifier = buttonModifier,
-            contentPadding = if (isExpanded) 30.dp else 3.dp
+            contentPadding = if (isExpanded) 20.dp else 3.dp
         )
         if (!isUserSignedIn) {
             Text(
