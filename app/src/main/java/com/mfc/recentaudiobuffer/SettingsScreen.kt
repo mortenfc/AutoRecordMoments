@@ -19,6 +19,7 @@
 package com.mfc.recentaudiobuffer
 
 import android.annotation.SuppressLint
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,6 +68,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.Typography
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
@@ -76,6 +79,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -196,16 +200,18 @@ private fun SettingsScreenContent(
                     color = colorResource(id = R.color.teal_150), shape = RoundedCornerShape(12.dp)
                 )
         ) {
+            val isExpanded = widthSizeClass == WindowWidthSizeClass.Expanded
             IconButton(
                 onClick = { showHelpDialog = true },
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(0.dp) // Simple, robust padding
+                    .align(if (isExpanded) Alignment.TopStart else Alignment.TopEnd)
+                    .padding(if (isExpanded) 16.dp else 0.dp)
             ) {
                 Icon(
                     Icons.Default.Info,
                     "Show settings help",
-                    tint = colorResource(id = R.color.purple_accent)
+                    tint = colorResource(id = R.color.purple_accent),
+                    modifier = Modifier.size(if (isExpanded) 70.dp else 25.dp)
                 )
             }
             when (widthSizeClass) {
@@ -234,7 +240,7 @@ private fun SettingsScreenContent(
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                            .padding(horizontal = 50.dp, vertical = 25.dp),
                         horizontalArrangement = Arrangement.spacedBy(32.dp),
                         verticalAlignment = Alignment.CenterVertically // Center both panes vertically
                     ) {
@@ -253,7 +259,7 @@ private fun SettingsScreenContent(
                                 onBitDepthChanged,
                                 onBufferTimeLengthChanged,
                                 spacerModifier = Modifier.height(70.dp),
-                                verticalArrangement = Arrangement.SpaceEvenly
+                                isExpanded = true
                             )
                         }
 
@@ -269,15 +275,18 @@ private fun SettingsScreenContent(
                         ) {
                             Spacer(Modifier.weight(.2f))
 
-                            AISettingsGroup(state, onAiAutoClipChanged)
+                            AISettingsGroup(state, onAiAutoClipChanged, isExpanded = true)
 
                             Spacer(Modifier.weight(.2f))
-                            ActionsGroup(state, onSubmit, isUserSignedIn)
+                            ActionsGroup(state, onSubmit, isUserSignedIn, isExpanded = true)
                             Spacer(Modifier.weight(.1f))
 
                             if (isUserSignedIn) {
                                 Spacer(Modifier.height(32.dp))
-                                DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick)
+                                DangerZoneGroup(
+                                    onDeleteAccountClick = onDeleteAccountClick,
+                                    isExpanded = true
+                                )
                             }
 
                             Spacer(Modifier.weight(.2f))
@@ -310,20 +319,28 @@ private fun AudioSettingsGroup(
     onBitDepthChanged: (BitDepth) -> Unit,
     onBufferTimeLengthChanged: (Int) -> Unit,
     @SuppressLint("ModifierParameter") spacerModifier: Modifier = Modifier,
-    verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(6.dp),
+    isExpanded: Boolean = false
 ) {
+
+    val typography =
+        if (isExpanded) TextStyle(fontSize = 30.sp) else MaterialTheme.typography.bodyMedium
+    val settingsButtonModifier = if (isExpanded) Modifier.height(100.dp) else Modifier
+
     var showSampleRateMenu by remember { mutableStateOf(false) }
     var showBitDepthMenu by remember { mutableStateOf(false) }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = verticalArrangement
+        verticalArrangement = Arrangement.spacedBy(if (isExpanded) 10.dp else 6.dp)
     ) {
         Spacer(spacerModifier)
         SettingsButton(
             text = "Sample Rate: ${state.value.sampleRateTemp.intValue} Hz",
             icon = Icons.Filled.ArrowDropDown,
-            onClick = { showSampleRateMenu = true })
+            onClick = { showSampleRateMenu = true },
+            modifier = settingsButtonModifier,
+            textStyle = typography
+        )
         DropdownMenu(
             expanded = showSampleRateMenu, onDismissRequest = { showSampleRateMenu = false }) {
             sampleRates.forEach { (label, value) ->
@@ -337,7 +354,10 @@ private fun AudioSettingsGroup(
         SettingsButton(
             text = "Bit Depth: ${state.value.bitDepthTemp.value.bits} bit",
             icon = Icons.Filled.ArrowDropDown,
-            onClick = { showBitDepthMenu = true })
+            onClick = { showBitDepthMenu = true },
+            modifier = settingsButtonModifier,
+            textStyle = typography
+        )
         DropdownMenu(expanded = showBitDepthMenu, onDismissRequest = { showBitDepthMenu = false }) {
             bitDepths.forEach { (label, value) ->
                 StyledDropdownMenuItem(text = "$label bit", onClick = {
@@ -351,7 +371,9 @@ private fun AudioSettingsGroup(
             bufferTimeLength = state.value.bufferTimeLengthTemp,
             onValueChange = onBufferTimeLengthChanged,
             isMaxExceeded = state.value.isMaxExceeded,
-            isNull = state.value.isBufferTimeLengthNull
+            isNull = state.value.isBufferTimeLengthNull,
+            modifier = settingsButtonModifier,
+            textStyle = typography
         )
         Spacer(spacerModifier)
     }
@@ -359,12 +381,20 @@ private fun AudioSettingsGroup(
 
 @Composable
 private fun AISettingsGroup(
-    state: MutableState<SettingsScreenState>, onAiAutoClipChanged: (Boolean) -> Unit
+    state: MutableState<SettingsScreenState>,
+    onAiAutoClipChanged: (Boolean) -> Unit,
+    isExpanded: Boolean = false
 ) {
+
+    val titleTypography =
+        if (isExpanded) TextStyle(fontSize = 30.sp) else TextStyle(fontSize = 16.sp)
+    val bodyTypography =
+        if (isExpanded) TextStyle(fontSize = 22.sp) else TextStyle(fontSize = 12.sp)
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp)
+        verticalArrangement = Arrangement.spacedBy(if (isExpanded) 12.dp else 2.dp)
     ) {
         HorizontalDivider(
             color = colorResource(id = R.color.purple_accent).copy(
@@ -378,14 +408,22 @@ private fun AISettingsGroup(
         ) {
             Text(
                 "AI Auto-Trimming",
-                style = MaterialTheme.typography.bodyLarge,
+                style = titleTypography,
                 fontWeight = FontWeight.SemiBold,
                 color = colorResource(id = R.color.teal_900)
             )
             Switch(
                 checked = state.value.isAiAutoClipEnabled.value,
                 onCheckedChange = onAiAutoClipChanged,
-                colors = SwitchDefaults.colors(/*...*/),
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = colorResource(id = R.color.purple_accent),
+                    checkedBorderColor = colorResource(id = R.color.teal_350),
+                    checkedTrackColor = colorResource(id = R.color.teal_350),
+                    uncheckedThumbColor = colorResource(id = R.color.purple_accent),
+                    uncheckedTrackColor = colorResource(id = R.color.teal_100),
+                    uncheckedBorderColor = colorResource(id = R.color.teal_350),
+                ),
+                modifier = if (isExpanded) Modifier.scale(1.3f) else Modifier
             )
         }
         Text(
@@ -395,7 +433,7 @@ private fun AISettingsGroup(
                     append("ATTENTION:")
                 }
                 append(" This resamples down to 16 kHz and can take some time to run for long buffers.")
-            }, style = MaterialTheme.typography.bodySmall.copy(
+            }, style = bodyTypography.copy(
                 textAlign = TextAlign.Justify,
                 hyphens = Hyphens.Auto,
                 lineBreak = LineBreak.Paragraph,
@@ -414,8 +452,17 @@ private fun AISettingsGroup(
 
 @Composable
 private fun ActionsGroup(
-    state: MutableState<SettingsScreenState>, onSubmit: (Int) -> Unit, isUserSignedIn: Boolean
+    state: MutableState<SettingsScreenState>, onSubmit: (Int) -> Unit, isUserSignedIn: Boolean,
+    isExpanded: Boolean = false
 ) {
+    val buttonModifier =
+        if (isExpanded) Modifier.fillMaxWidth(0.55f) else Modifier.fillMaxWidth(fraction = 0.55f)
+    val textStyle =
+        if (isExpanded) TextStyle(
+            fontSize = 26.sp,
+            fontWeight = FontWeight.SemiBold
+        ) else MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -427,6 +474,7 @@ private fun ActionsGroup(
         }
         MainButton(
             text = "Apply Settings", // Shorter text
+            textStyle = textStyle,
             icon = R.drawable.outline_restore_page_24,
             onClick = {
                 if (state.value.isSubmitEnabled.value) {
@@ -436,14 +484,14 @@ private fun ActionsGroup(
             bottomPadding = 6.dp,
             iconTint = colorResource(id = R.color.purple_accent),
             enabled = state.value.isSubmitEnabled.value,
-            modifier = Modifier.fillMaxWidth(fraction = 0.55f),
-            contentPadding = 3.dp
+            modifier = buttonModifier,
+            contentPadding = if (isExpanded) 30.dp else 3.dp
         )
         if (!isUserSignedIn) {
             Text(
                 text = "Sign In to sync settings with cloud",
                 color = colorResource(id = R.color.purple_accent),
-                style = MaterialTheme.typography.bodySmall,
+                style = textStyle,
                 textAlign = TextAlign.Center,
                 fontStyle = FontStyle.Italic
             )
@@ -452,37 +500,54 @@ private fun ActionsGroup(
 }
 
 @Composable
-private fun DangerZoneGroup(onDeleteAccountClick: () -> Unit) {
+private fun DangerZoneGroup(onDeleteAccountClick: () -> Unit, isExpanded: Boolean = false) {
+    val textStyle =
+        if (isExpanded) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium
+    val spacerModifier = if (isExpanded) Modifier.height(20.dp) else Modifier.height(0.dp)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(9.dp)
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Spacer(Modifier.weight(1f))
-        HorizontalDivider(color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
-        Text(
-            "Delete Account Permanently",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.error
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+            thickness = 4.dp
         )
+        Spacer(spacerModifier)
         Button(
             onClick = onDeleteAccountClick, colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer
-            ), modifier = Modifier.padding(0.dp)
+                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
+                contentColor = MaterialTheme.colorScheme.error,
+                disabledContainerColor = colorResource(id = R.color.teal_100).copy(alpha = 0.3f),
+                disabledContentColor = MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
+            ), modifier = Modifier.padding(0.dp),
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.error)
         ) {
-            Text("DELETE ACCOUNT")
+            Text(
+                "Delete Account Permanently",
+                style = textStyle,
+                color = MaterialTheme.colorScheme.error
+            )
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+        Spacer(spacerModifier)
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+            thickness = 4.dp
+        )
     }
 }
 
 @Composable
-fun SettingsButton(text: String, icon: ImageVector, onClick: () -> Unit) {
+fun SettingsButton(
+    text: String, icon: ImageVector, onClick: () -> Unit,
+    modifier: Modifier,
+    textStyle: TextStyle
+) {
     Button(
         onClick = onClick, colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent
-        ), modifier = Modifier
+        ), modifier = modifier
+            .heightIn(min = 48.dp)
             .border(
                 2.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(8.dp)
             )
@@ -493,7 +558,7 @@ fun SettingsButton(text: String, icon: ImageVector, onClick: () -> Unit) {
         Text(
             text = text,
             color = colorResource(id = R.color.teal_900),
-            style = MaterialTheme.typography.bodyMedium
+            style = textStyle
         )
         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
         Icon(
@@ -511,7 +576,9 @@ fun MyOutlinedBufferInputField(
     onValueChange: (Int) -> Unit,
     bufferTimeLength: MutableIntState,
     isMaxExceeded: MutableState<Boolean>,
-    isNull: MutableState<Boolean>
+    isNull: MutableState<Boolean>,
+    modifier: Modifier,
+    textStyle: TextStyle
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focusManager = LocalFocusManager.current
@@ -541,7 +608,7 @@ fun MyOutlinedBufferInputField(
                 }
             }
         },
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth(0.75f)
             .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 0.dp)
             .onFocusChanged {
@@ -550,7 +617,9 @@ fun MyOutlinedBufferInputField(
                 }
             },
         textStyle = TextStyle(
-            color = colorResource(id = R.color.teal_900), fontWeight = FontWeight.Medium
+            color = colorResource(id = R.color.teal_900),
+            fontWeight = FontWeight.Medium,
+            fontSize = textStyle.fontSize
         ),
         keyboardOptions = KeyboardOptions.Default.copy(
             imeAction = ImeAction.Done, keyboardType = KeyboardType.Number
@@ -569,7 +638,8 @@ fun MyOutlinedBufferInputField(
             label = {
                 Text(
                     stringResource(id = R.string.buffer_length_seconds),
-                    color = colorResource(id = R.color.purple_accent)
+                    color = colorResource(id = R.color.purple_accent),
+                    fontSize = textStyle.fontSize * 0.8f
                 )
             },
             container = {

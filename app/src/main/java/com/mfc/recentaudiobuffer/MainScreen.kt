@@ -73,6 +73,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -135,8 +136,7 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = stringResource(id = R.string.main),
-                onSettingsClick = onSettingsClick
+                title = stringResource(id = R.string.main), onSettingsClick = onSettingsClick
             )
         }) { innerPadding ->
         Box(
@@ -422,13 +422,11 @@ fun MainButton(
     contentPadding: Dp = 16.dp,
     bottomPadding: Dp = 30.dp,
     iconSize: Dp = 22.dp,
-    maxLines: Int = 1
+    maxLines: Int = 1,
+    textStyle: TextStyle = TextStyle(
+        fontWeight = FontWeight.Normal, fontSize = 14.sp
+    )
 ) {
-    // --- ADJUSTED OFFSETS ---
-    // The button calculates its specific insets based on its internal padding.
-    val horizontalInset = (16.dp - contentPadding) / 3.5f
-    val verticalInset = (16.dp - contentPadding) / 1.9f
-
     Button(
         onClick = onClick,
         modifier = modifier
@@ -436,9 +434,11 @@ fun MainButton(
             .roundedRectShadow(
                 shadowRadius = 5.dp,
                 offsetY = 5.dp,
-                cornerRadius = 8.dp, // This button has 8dp corners
-                insetX = horizontalInset,
-                insetY = verticalInset
+                cornerRadius = 8.dp,
+                insetX = (16.dp - contentPadding) / 20f,
+                insetY = if (contentPadding < 16.dp) {
+                    (16.dp - contentPadding) / 1.9f
+                } else 0.dp
             ),
         colors = ButtonDefaults.buttonColors(
             containerColor = colorResource(id = R.color.teal_350),
@@ -470,8 +470,7 @@ fun MainButton(
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = if (enabled) text else "Disabled",
-                fontWeight = FontWeight.Normal,
-                fontSize = 14.sp,
+                style = textStyle,
                 maxLines = maxLines,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
