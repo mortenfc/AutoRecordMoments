@@ -492,7 +492,7 @@ private fun RecordingButtonWithInfo(
     elementsColor: Color,
     onToggleRecordingClick: () -> Unit,
     onPrivacyInfoClick: () -> Unit,
-    buttonSize: Dp = 180.dp,
+    buttonSize: Dp = 165.dp,
     iconSize: Dp = 32.dp
 ) {
     // ConstraintLayout is the perfect tool for positioning one item relative to another.
@@ -570,7 +570,7 @@ fun RecordingToggleButton(
                 text = buttonText,
                 color = elementsColor,
                 fontWeight = FontWeight.Bold,
-                fontSize = 19.sp,
+                fontSize = 16.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 8.dp)
             )

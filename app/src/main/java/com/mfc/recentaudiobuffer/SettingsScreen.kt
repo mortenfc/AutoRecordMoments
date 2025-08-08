@@ -212,22 +212,25 @@ private fun SettingsScreenContent(
                     color = colorResource(id = R.color.teal_150), shape = RoundedCornerShape(12.dp)
                 )
         ) {
-            val isExpanded = widthSizeClass == WindowWidthSizeClass.Expanded && heightSizeClass == WindowHeightSizeClass.Medium
+            val isTabletLandscape = widthSizeClass == WindowWidthSizeClass.Expanded && heightSizeClass == WindowHeightSizeClass.Medium
+            val isTabletPortrait = widthSizeClass == WindowWidthSizeClass.Medium && heightSizeClass == WindowHeightSizeClass.Expanded
+            val isTablet = isTabletLandscape || isTabletPortrait
+            val isLandscape = widthSizeClass == WindowWidthSizeClass.Expanded || heightSizeClass == WindowHeightSizeClass.Compact
             IconButton(
                 onClick = { showHelpDialog = true },
                 modifier = Modifier
-                    .align(if (isExpanded) Alignment.TopStart else Alignment.TopEnd)
-                    .padding(if (isExpanded) 16.dp else 0.dp)
+                    .align(if (isLandscape) Alignment.TopStart else Alignment.TopEnd)
+                    .padding(if (isTablet) 16.dp else 0.dp)
             ) {
                 Icon(
                     Icons.Default.Info,
                     "Show settings help",
                     tint = colorResource(id = R.color.purple_accent),
-                    modifier = Modifier.size(if (isExpanded) 70.dp else 25.dp)
+                    modifier = Modifier.size(if (isTablet) 70.dp else 25.dp)
                 )
             }
-            when (widthSizeClass) {
-                WindowWidthSizeClass.Compact -> {
+            when (isLandscape) {
+                false -> {
                     Column(
                         modifier = Modifier
                             .padding(horizontal = 12.dp, vertical = 12.dp)
@@ -238,21 +241,21 @@ private fun SettingsScreenContent(
                         verticalArrangement = Arrangement.SpaceEvenly
                     ) {
                         AudioSettingsGroup(
-                            state, onSampleRateChanged, onBitDepthChanged, onBufferTimeLengthChanged
+                            state, onSampleRateChanged, onBitDepthChanged, onBufferTimeLengthChanged, isTablet = isTablet
                         )
-                        AISettingsGroup(state, onAiAutoClipChanged)
-                        ActionsGroup(state, onSubmit, isUserSignedIn)
+                        AISettingsGroup(state, onAiAutoClipChanged, isTablet = isTablet)
+                        ActionsGroup(state, onSubmit, isUserSignedIn, isTablet = isTablet)
                         if (isUserSignedIn) {
-                            DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick)
+                            DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick, isTablet = isTablet)
                         }
                     }
                 }
 
-                else -> { // Expanded Layout
+                true -> { // Landscape Layout
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 50.dp, vertical = 25.dp),
+                            .padding(horizontal = if(isTablet) 50.dp else 20.dp, vertical = if (isTablet) 25.dp else 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(32.dp),
                         verticalAlignment = Alignment.CenterVertically // Center both panes vertically
                     ) {
@@ -270,9 +273,14 @@ private fun SettingsScreenContent(
                                 onSampleRateChanged,
                                 onBitDepthChanged,
                                 onBufferTimeLengthChanged,
-                                spacerModifier = Modifier.height(60.dp),
-                                isExpanded = isExpanded
+                                isTablet = isTablet
                             )
+                            if (!isTablet && isUserSignedIn) {
+                                DangerZoneGroup(
+                                    onDeleteAccountClick = onDeleteAccountClick,
+                                    isTablet = isTablet
+                                )
+                            }
                         }
 
                         // --- Right Pane ---
@@ -287,17 +295,17 @@ private fun SettingsScreenContent(
                         ) {
                             Spacer(Modifier.weight(.2f))
 
-                            AISettingsGroup(state, onAiAutoClipChanged, isExpanded = isExpanded)
+                            AISettingsGroup(state, onAiAutoClipChanged, isTablet = isTablet)
 
                             Spacer(Modifier.weight(.2f))
-                            ActionsGroup(state, onSubmit, isUserSignedIn, isExpanded = isExpanded)
+                            ActionsGroup(state, onSubmit, isUserSignedIn, isTablet = isTablet)
                             Spacer(Modifier.weight(.1f))
 
-                            if (isUserSignedIn) {
+                            if (isTablet && isUserSignedIn) {
                                 Spacer(Modifier.height(32.dp))
                                 DangerZoneGroup(
                                     onDeleteAccountClick = onDeleteAccountClick,
-                                    isExpanded = isExpanded
+                                    isTablet = isTablet
                                 )
                             }
 
@@ -330,14 +338,14 @@ private fun AudioSettingsGroup(
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
     onBufferTimeLengthChanged: (Int) -> Unit,
-    @SuppressLint("ModifierParameter") spacerModifier: Modifier = Modifier,
-    isExpanded: Boolean = false
+    isTablet: Boolean = false
 ) {
 
     val typography =
-        if (isExpanded) TextStyle(fontSize = 30.sp) else MaterialTheme.typography.bodyMedium
-    val settingsButtonModifier = if (isExpanded) Modifier.height(100.dp) else Modifier
-
+        if (isTablet) TextStyle(fontSize = 30.sp) else MaterialTheme.typography.bodyMedium
+    val settingsButtonModifier = if (isTablet) Modifier.height(100.dp) else Modifier
+    var spacerModifier : Modifier = Modifier.height(0.dp)
+    if (isTablet) spacerModifier = Modifier.height(60.dp)
     var showSampleRateMenu by remember { mutableStateOf(false) }
     var showBitDepthMenu by remember { mutableStateOf(false) }
 
@@ -395,18 +403,18 @@ private fun AudioSettingsGroup(
 private fun AISettingsGroup(
     state: MutableState<SettingsScreenState>,
     onAiAutoClipChanged: (Boolean) -> Unit,
-    isExpanded: Boolean = false
+    isTablet: Boolean = false
 ) {
 
     val titleTypography =
-        if (isExpanded) TextStyle(fontSize = 30.sp) else TextStyle(fontSize = 16.sp)
+        if (isTablet) TextStyle(fontSize = 30.sp) else TextStyle(fontSize = 16.sp)
     val bodyTypography =
-        if (isExpanded) TextStyle(fontSize = 22.sp) else TextStyle(fontSize = 12.sp)
+        if (isTablet) TextStyle(fontSize = 22.sp) else TextStyle(fontSize = 12.sp)
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(if (isExpanded) 12.dp else 2.dp)
+        verticalArrangement = Arrangement.spacedBy(if (isTablet) 12.dp else 2.dp)
     ) {
         HorizontalDivider(
             color = colorResource(id = R.color.purple_accent).copy(
@@ -436,7 +444,7 @@ private fun AISettingsGroup(
                     uncheckedTrackColor = colorResource(id = R.color.teal_100),
                     uncheckedBorderColor = colorResource(id = R.color.teal_350),
                 ),
-                modifier = if (isExpanded) Modifier.scale(1.3f) else Modifier
+                modifier = if (isTablet) Modifier.scale(1.3f) else Modifier
             )
         }
         Text(
@@ -467,12 +475,12 @@ private fun AISettingsGroup(
 @Composable
 private fun ActionsGroup(
     state: MutableState<SettingsScreenState>, onSubmit: (Int) -> Unit, isUserSignedIn: Boolean,
-    isExpanded: Boolean = false
+    isTablet: Boolean = false
 ) {
     val buttonModifier =
-        if (isExpanded) Modifier.fillMaxWidth(0.55f) else Modifier.fillMaxWidth(fraction = 0.55f)
+        if (isTablet) Modifier.fillMaxWidth(0.55f) else Modifier.fillMaxWidth(fraction = 0.55f)
     val textStyle =
-        if (isExpanded) TextStyle(
+        if (isTablet) TextStyle(
             fontSize = 26.sp,
             fontWeight = FontWeight.SemiBold
         ) else MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
@@ -490,7 +498,7 @@ private fun ActionsGroup(
             text = "Apply Settings", // Shorter text
             textStyle = textStyle,
             icon = R.drawable.outline_restore_page_24,
-            iconSize = if (isExpanded) 40.dp else 22.dp,
+            iconSize = if (isTablet) 40.dp else 22.dp,
             onClick = {
                 if (state.value.isSubmitEnabled.value) {
                     onSubmit(state.value.bufferTimeLengthTemp.intValue)
@@ -500,7 +508,7 @@ private fun ActionsGroup(
             iconTint = colorResource(id = R.color.purple_accent),
             enabled = state.value.isSubmitEnabled.value,
             modifier = buttonModifier,
-            contentPadding = if (isExpanded) 20.dp else 3.dp
+            contentPadding = if (isTablet) 20.dp else 3.dp
         )
         if (!isUserSignedIn) {
             Text(
@@ -515,10 +523,10 @@ private fun ActionsGroup(
 }
 
 @Composable
-private fun DangerZoneGroup(onDeleteAccountClick: () -> Unit, isExpanded: Boolean = false) {
+private fun DangerZoneGroup(onDeleteAccountClick: () -> Unit, isTablet: Boolean = false) {
     val textStyle =
-        if (isExpanded) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium
-    val spacerModifier = if (isExpanded) Modifier.height(20.dp) else Modifier.height(0.dp)
+        if (isTablet) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium
+    val spacerModifier = if (isTablet) Modifier.height(20.dp) else Modifier.height(0.dp)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -624,8 +632,8 @@ fun MyOutlinedBufferInputField(
             }
         },
         modifier = modifier
-            .fillMaxWidth(0.75f)
-            .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 0.dp)
+            .fillMaxWidth(0.7f)
+            .padding(start = 0.dp, top = 0.dp, end = 0.dp, bottom = 0.dp)
             .onFocusChanged {
                 if (!it.isFocused) {
                     Timber.v("Focus lost")
@@ -1126,11 +1134,11 @@ fun SettingsScreenCompactSignedOutPreview() {
 @SuppressLint("UnrememberedMutableState")
 @Preview(
     showBackground = true,
-    name = "Expanded (Tablet)",
+    name = "Landscape (Tablet)",
     device = "spec:width=1280dp,height=800dp,dpi=480"
 )
 @Composable
-fun SettingsScreenExpandedPreview() {
+fun SettingsScreenLandscapeTabletPreview() {
     RecentAudioBufferTheme {
         SettingsScreenContent(
             state = mutableStateOf(SettingsScreenState(SettingsConfig())),
@@ -1151,8 +1159,33 @@ fun SettingsScreenExpandedPreview() {
 @SuppressLint("UnrememberedMutableState")
 @Preview(
     showBackground = true,
-    name = "Expanded (Phone)",
-    device = "spec:width=1280dp,height=800dp,dpi=480"
+    name = "Portrait (Tablet)",
+    device = "spec:width=800dp,height=1280dp,dpi=480"
+)
+@Composable
+fun SettingsScreenPortaitTabletPreview() {
+    RecentAudioBufferTheme {
+        SettingsScreenContent(
+            state = mutableStateOf(SettingsScreenState(SettingsConfig())),
+            widthSizeClass = WindowWidthSizeClass.Medium,
+            heightSizeClass = WindowHeightSizeClass.Expanded,
+            isUserSignedIn = true,
+            onDeleteAccountClick = {},
+            onSampleRateChanged = {},
+            isPreview = true,
+            onBitDepthChanged = {},
+            onBufferTimeLengthChanged = {},
+            onAiAutoClipChanged = {},
+            onSubmit = {},
+            justExit = {})
+    }
+}
+
+@SuppressLint("UnrememberedMutableState")
+@Preview(
+    showBackground = true,
+    name = "Phone Landscape (16:9)",
+    device = "spec:width=640dp,height=360dp,dpi=480" // 16:9 aspect ratio for a phone
 )
 @Composable
 fun SettingsScreenPhoneLandscapePreview() {
