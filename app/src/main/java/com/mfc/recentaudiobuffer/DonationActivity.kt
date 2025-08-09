@@ -26,6 +26,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import com.stripe.android.PaymentConfiguration
@@ -89,6 +91,7 @@ class DonationActivity : AppCompatActivity() {
     }
 
 
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setupPaymentMethods()
@@ -106,6 +109,7 @@ class DonationActivity : AppCompatActivity() {
                         onPayClick = ::fetchClientSecret,
                         onBackClick = { this.finish() },
                         allowedPaymentMethodsJson = allowedPaymentMethodsJson,
+                        windowSizeClass = calculateWindowSizeClass(this)
                     )
                 }
             }

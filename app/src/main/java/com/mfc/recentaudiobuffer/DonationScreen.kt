@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,8 +53,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
+import androidx.compose.material3.windowsizeclass.WindowSizeClass
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,9 +68,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -82,34 +88,43 @@ import org.joda.money.Money
 import org.joda.money.format.MoneyFormatterBuilder
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
 fun DonationScreen(
     viewModel: DonationViewModel,
     onPayClick: (Int, CurrencyUnit) -> Unit,
     onBackClick: () -> Unit,
     authError: AuthError?,
-    allowedPaymentMethodsJson: String
+    allowedPaymentMethodsJson: String,
+    windowSizeClass: WindowSizeClass
 ) {
     val state = viewModel.uiState
     // This stateless composable is now easily previewable
     DonationScreenContent(
+        widthSizeClass = windowSizeClass.widthSizeClass,
+        heightSizeClass = windowSizeClass.heightSizeClass,
         state = state,
         onPayClick = onPayClick,
         onBackClick = onBackClick,
         authError = authError,
         allowedPaymentMethodsJson = allowedPaymentMethodsJson,
-        onCurrencySelected = { currency -> viewModel.updateSelectedCurrency(currency) })
+        onCurrencySelected = { currency -> viewModel.updateSelectedCurrency(currency) },
+        useLiveViewModel = true
+    )
 }
 
 // Stateless content composable that handles all UI logic
 @Composable
 private fun DonationScreenContent(
+    widthSizeClass: WindowWidthSizeClass,
+    heightSizeClass: WindowHeightSizeClass,
     state: DonationScreenState,
     onPayClick: (Int, CurrencyUnit) -> Unit,
     onBackClick: () -> Unit,
     authError: AuthError?,
     allowedPaymentMethodsJson: String,
     onCurrencySelected: (String) -> Unit,
+    useLiveViewModel: Boolean
 ) {
     var currencyToUse = state.selectedCurrency
     var ruleToUse: CurrencyRule? = state.rules[currencyToUse.code]
@@ -121,10 +136,23 @@ private fun DonationScreenContent(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = "Donate",
-                onBackButtonClicked = onBackClick,
-            )
+            if (useLiveViewModel) {
+                TopAppBar(
+                    title = "Donate",
+                    onBackButtonClicked = onBackClick,
+                )
+            } else {
+                TopAppBarContent(
+                    title = "Donate",
+                    signInButtonText = "Sign In",
+                    isSigningIn = false,
+                    authError = null,
+                    onSignInClick = {},
+                    onDismissErrorDialog = {},
+                    onBackButtonClicked = onBackClick,
+                    onIconClick = {},
+                    onSettingsClick = {})
+            }
         }) { innerPadding ->
         when {
             state.isLoading -> {
@@ -170,6 +198,14 @@ private fun DonationScreenContent(
             }
 
             else -> {
+                val isTabletLandscape =
+                    widthSizeClass == WindowWidthSizeClass.Expanded && heightSizeClass == WindowHeightSizeClass.Medium
+                val isTabletPortrait =
+                    widthSizeClass == WindowWidthSizeClass.Medium && heightSizeClass == WindowHeightSizeClass.Expanded
+                val isTablet = isTabletLandscape || isTabletPortrait
+                val isLandscape =
+                    widthSizeClass == WindowWidthSizeClass.Expanded || heightSizeClass == WindowHeightSizeClass.Compact
+
                 DonationContent(
                     modifier = Modifier.padding(innerPadding),
                     rule = ruleToUse,
@@ -178,7 +214,9 @@ private fun DonationScreenContent(
                     isGooglePayReady = state.isGooglePayReady && authError == null,
                     allowedPaymentMethodsJson = allowedPaymentMethodsJson,
                     supportedCurrencies = state.rules.keys.toList(),
-                    onCurrencySelected = onCurrencySelected
+                    onCurrencySelected = onCurrencySelected,
+                    isTablet = isTablet,
+                    isLandscape = isLandscape
                 )
             }
         }
@@ -190,13 +228,14 @@ private fun DonationScreenContent(
 private fun DonationContent(
     modifier: Modifier = Modifier,
     rule: CurrencyRule,
-    // The currency to use, which may be the user's or the EUR fallback
     currencyToUse: CurrencyUnit,
     onPayClick: (Int, CurrencyUnit) -> Unit,
     isGooglePayReady: Boolean,
     allowedPaymentMethodsJson: String,
     supportedCurrencies: List<String>,
-    onCurrencySelected: (String) -> Unit
+    onCurrencySelected: (String) -> Unit,
+    isTablet: Boolean,
+    isLandscape: Boolean
 ) {
     var amountString by remember { mutableStateOf("") }
     var isAmountError by remember { mutableStateOf(false) }
@@ -211,63 +250,145 @@ private fun DonationContent(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(colorResource(id = R.color.teal_100))
-            .verticalScroll(rememberScrollState()) // Allow scrolling
-            .padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        DonationHeader()
+    val sharedModifier = modifier
+        .fillMaxSize()
+        .background(colorResource(id = R.color.teal_100))
 
-        Spacer(Modifier.height(24.dp))
-
-        DonationInput(
-            supportedCurrencies = supportedCurrencies,
-            selectedCurrency = currencyToUse,
-            onCurrencySelected = { currencyCode ->
-                amountString = ""
-                isAmountError = false
-                onCurrencySelected(currencyCode)
-            },
-            amount = amountString,
-            onAmountChange = { newAmountString ->
-                amountString = newAmountString
-                val amount = newAmountString.toDoubleOrNull()
-                val minMajorUnit = rule.min.toDouble() / rule.multiplier
-                isAmountError = amount == null || amount < minMajorUnit
-            },
-            isAmountError = isAmountError,
-            rule = rule
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        if (isGooglePayReady) {
-            AndroidView(
+    if (isLandscape) {
+        Row(
+            modifier = sharedModifier.padding(
+                horizontal = if (isTablet) 48.dp else 24.dp, vertical = 16.dp
+            ),
+            horizontalArrangement = Arrangement.spacedBy(if (isTablet) 48.dp else 24.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // --- Left Pane (Visual) ---
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp), factory = { context ->
-                    PayButton(context).apply {
-                        val buttonOptions = ButtonOptions.newBuilder()
-                            .setButtonType(ButtonConstants.ButtonType.DONATE)
-                            .setButtonTheme(ButtonConstants.ButtonTheme.DARK)
-                            .setAllowedPaymentMethods(allowedPaymentMethodsJson).build()
-                        initialize(buttonOptions)
-                        setOnClickListener { performPayClick() }
-                    }
-                })
-        } else {
-            CardPayButton(onClick = ::performPayClick)
+                    .weight(1.3f) // Give more space to the visual
+                    .fillMaxHeight(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                DonationVisuals(isTablet = isTablet, isLandscape = true)
+            }
+            // --- Right Pane (Input and Payment) ---
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Spacer(Modifier.weight(0.5f))
+                DonationDescription(isTablet = isTablet)
+                Spacer(Modifier.weight(0.5f))
+                DonationInput(
+                    isTablet = isTablet,
+                    supportedCurrencies = supportedCurrencies,
+                    selectedCurrency = currencyToUse,
+                    onCurrencySelected = { currencyCode ->
+                        amountString = ""
+                        isAmountError = false
+                        onCurrencySelected(currencyCode)
+                    },
+                    amount = amountString,
+                    onAmountChange = { newAmountString ->
+                        amountString = newAmountString
+                        val amount = newAmountString.toDoubleOrNull()
+                        val minMajorUnit = rule.min.toDouble() / rule.multiplier
+                        isAmountError = amount == null || amount < minMajorUnit
+                    },
+                    isAmountError = isAmountError,
+                    rule = rule
+                )
+                Spacer(Modifier.weight(0.5f))
+                PaymentButtons(
+                    isTablet = isTablet,
+                    isGooglePayReady = isGooglePayReady,
+                    allowedPaymentMethodsJson = allowedPaymentMethodsJson,
+                    onPayClick = ::performPayClick
+                )
+                Spacer(Modifier.weight(0.5f))
+            }
+        }
+    } else { // Portrait Layout
+        Column(
+            modifier = sharedModifier
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = if (isTablet) 48.dp else 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Spacer(Modifier.weight(0.2f))
+            DonationVisuals(isTablet = isTablet, isLandscape = false)
+            Spacer(Modifier.weight(0.2f))
+            DonationDescription(isTablet = isTablet)
+            Spacer(Modifier.weight(0.4f))
+            DonationInput(
+                isTablet = isTablet,
+                supportedCurrencies = supportedCurrencies,
+                selectedCurrency = currencyToUse,
+                onCurrencySelected = { currencyCode ->
+                    amountString = ""
+                    isAmountError = false
+                    onCurrencySelected(currencyCode)
+                },
+                amount = amountString,
+                onAmountChange = { newAmountString ->
+                    amountString = newAmountString
+                    val amount = newAmountString.toDoubleOrNull()
+                    val minMajorUnit = rule.min.toDouble() / rule.multiplier
+                    isAmountError = amount == null || amount < minMajorUnit
+                },
+                isAmountError = isAmountError,
+                rule = rule
+            )
+            Spacer(Modifier.weight(0.3f))
+            PaymentButtons(
+                isTablet = isTablet,
+                isGooglePayReady = isGooglePayReady,
+                allowedPaymentMethodsJson = allowedPaymentMethodsJson,
+                onPayClick = ::performPayClick
+            )
+            Spacer(Modifier.weight(0.3f))
         }
     }
 }
 
+@Composable
+private fun PaymentButtons(
+    isTablet: Boolean,
+    isGooglePayReady: Boolean,
+    allowedPaymentMethodsJson: String,
+    onPayClick: () -> Unit
+) {
+    val buttonHeight = if (isTablet) 60.dp else 48.dp
+    if (isGooglePayReady) {
+        AndroidView(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(buttonHeight), factory = { context ->
+                PayButton(context).apply {
+                    val buttonOptions =
+                        ButtonOptions.newBuilder().setButtonType(ButtonConstants.ButtonType.DONATE)
+                            .setButtonTheme(ButtonConstants.ButtonTheme.DARK)
+                            .setAllowedPaymentMethods(allowedPaymentMethodsJson).build()
+                    initialize(buttonOptions)
+                    setOnClickListener { onPayClick() }
+                }
+            })
+    } else {
+        CardPayButton(isTablet = isTablet, onClick = onPayClick)
+    }
+}
+
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DonationInput(
+    isTablet: Boolean,
     amount: String,
     onAmountChange: (String) -> Unit,
     isAmountError: Boolean,
@@ -288,24 +409,25 @@ private fun DonationInput(
 
     var isDropdownExpanded by remember { mutableStateOf(false) }
 
+    val textStyle =
+        if (isTablet) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge
+    val labelTextStyle =
+        if (isTablet) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium
+    val supportingTextStyle =
+        if (isTablet) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodySmall
+
+
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        // Border and Label
         focusedBorderColor = colorResource(R.color.purple_accent),
         unfocusedBorderColor = colorResource(R.color.purple_accent),
         focusedLabelColor = colorResource(R.color.purple_accent),
         unfocusedLabelColor = colorResource(R.color.teal_900),
-
-        // Container background changes on focus
         focusedContainerColor = colorResource(R.color.teal_150).copy(alpha = 0.9f),
         unfocusedContainerColor = Color.White.copy(alpha = 0.35f),
-
-        // Text and Icon
         focusedTextColor = colorResource(R.color.teal_900),
         unfocusedTextColor = colorResource(R.color.teal_900),
         focusedTrailingIconColor = colorResource(R.color.purple_accent),
         unfocusedTrailingIconColor = colorResource(R.color.purple_accent),
-
-        // Error state colors
         errorBorderColor = MaterialTheme.colorScheme.error,
         errorSupportingTextColor = MaterialTheme.colorScheme.error,
         errorContainerColor = colorResource(id = R.color.teal_150)
@@ -318,11 +440,11 @@ private fun DonationInput(
             OutlinedTextField(
                 value = amount,
                 onValueChange = { text -> onAmountChange(text) },
-                label = { Text("Donation Amount") }, // Label is simpler now
+                textStyle = textStyle,
+                label = { Text("Donation Amount", style = labelTextStyle) },
                 supportingText = {
-                    // Supporting text is a better place for the minimum amount hint
                     if (!isAmountError) {
-                        Text("Minimum: $minAmountFormatted")
+                        Text("Minimum: $minAmountFormatted", style = supportingTextStyle)
                     }
                 },
                 isError = isAmountError,
@@ -337,34 +459,37 @@ private fun DonationInput(
                         Text(
                             selectedCurrency.code,
                             color = colorResource(R.color.purple_accent),
+                            style = textStyle,
                             fontWeight = FontWeight.Bold
                         )
                         Icon(
                             imageVector = Icons.Default.CurrencyExchange,
                             contentDescription = "Change Currency",
-                            tint = colorResource(R.color.purple_accent)
+                            tint = colorResource(R.color.purple_accent),
+                            modifier = Modifier.size(if (isTablet) 36.dp else 24.dp)
                         )
                         Spacer(Modifier.width(12.dp))
                     }
                 },
                 modifier = Modifier
                     .menuAnchor(MenuAnchorType.Companion.PrimaryEditable, true)
-                    .fillMaxWidth(fraction = 0.95f)
+                    .fillMaxWidth()
             )
 
-            // The actual dropdown menu
             ExposedDropdownMenu(
                 expanded = isDropdownExpanded,
                 onDismissRequest = { isDropdownExpanded = false },
                 modifier = Modifier.background(colorResource(R.color.teal_100))
             ) {
                 supportedCurrencies.forEach { currencyCode ->
-                    DropdownMenuItem(
-                        text = { Text(currencyCode, color = colorResource(R.color.teal_900)) },
-                        onClick = {
-                            onCurrencySelected(currencyCode)
-                            isDropdownExpanded = false
-                        })
+                    DropdownMenuItem(text = {
+                        Text(
+                            currencyCode, color = colorResource(R.color.teal_900), style = textStyle
+                        )
+                    }, onClick = {
+                        onCurrencySelected(currencyCode)
+                        isDropdownExpanded = false
+                    })
                 }
             }
         }
@@ -372,7 +497,7 @@ private fun DonationInput(
             Text(
                 text = "Amount must be at least $minAmountFormatted",
                 color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
+                style = supportingTextStyle,
                 modifier = Modifier.padding(start = 16.dp, top = 4.dp)
             )
         }
@@ -380,70 +505,88 @@ private fun DonationInput(
 }
 
 @Composable
-fun DonationHeader() {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Image(
-            painter = painterResource(id = R.drawable.teal_gradient_orange),
-            contentDescription = stringResource(id = R.string.donate_ads_away),
-            modifier = Modifier
+fun DonationVisuals(isTablet: Boolean, isLandscape: Boolean) {
+    Image(
+        painter = painterResource(id = R.drawable.teal_gradient_orange),
+        contentDescription = stringResource(id = R.string.donate_ads_away),
+        contentScale = ContentScale.Fit, // Use Fit to prevent any clipping
+        modifier = if (isLandscape) {
+            Modifier.fillMaxHeight(0.9f) // Allow some padding around the image
+        } else {
+            Modifier
                 .fillMaxWidth()
-                .height(350.dp)
-                .padding(top = 25.dp)
+                .height(if (isTablet) 700.dp else 300.dp)
+        }
+    )
+}
+
+@Composable
+fun DonationDescription(isTablet: Boolean) {
+    val headerStyle =
+        if (isTablet) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineSmall
+    val bodyStyle =
+        if (isTablet) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = stringResource(id = R.string.donate_your_heart_out),
+            style = headerStyle,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.primary
         )
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(start = 5.dp),
-        ) {
-            Text(
-                text = stringResource(id = R.string.donate_your_heart_out),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .padding(top = 30.dp)
-                    .align(Alignment.CenterHorizontally),
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            Text(
-                text = stringResource(id = R.string.it_supports_the_developer_and_gets_rid_of_ads),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 5.dp, bottom = 15.dp),
-                color = MaterialTheme.colorScheme.secondary
-            )
-        }
+        Text(
+            text = stringResource(id = R.string.it_supports_the_developer_and_gets_rid_of_ads),
+            style = bodyStyle,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.secondary
+        )
     }
 }
 
 @Composable
-fun CardPayButton(onClick: () -> Unit) {
+fun CardPayButton(isTablet: Boolean, onClick: () -> Unit) {
     CustomPaymentButton(
         onClick = onClick,
-        painterResource(id = R.drawable.baseline_credit_card_24),
-        stringResource(id = R.string.pay_with_credit_card),
-        stringResource(id = R.string.pay_with_credit_card)
+        icon = painterResource(id = R.drawable.baseline_credit_card_24),
+        contentDescription = stringResource(id = R.string.pay_with_credit_card),
+        text = stringResource(id = R.string.pay_with_credit_card),
+        isTablet = isTablet
     )
 }
 
 @Composable
 fun CustomPaymentButton(
-    onClick: () -> Unit, icon: Painter, contentDescription: String, text: String
+    isTablet: Boolean, onClick: () -> Unit, icon: Painter, contentDescription: String, text: String
 ) {
+    val buttonHeight = if (isTablet) 60.dp else 48.dp
+    val iconSize = if (isTablet) 30.dp else 24.dp
+    val textStyle = if (isTablet) TextStyle(
+        fontSize = 22.sp, fontWeight = FontWeight.Medium, color = Color.White
+    ) else TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium, color = Color.White)
+
     Button(
-        onClick = onClick, modifier = Modifier
-            // Set a minimum height, but allow it to grow if the text wraps
-            .defaultMinSize(minHeight = 48.dp)
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = buttonHeight)
             .pillShapeShadow(shadowRadius = 5.dp, offsetY = 5.dp)
-            .clip(CircleShape) // Fully rounded corners
-            .background(Color.Black), colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Transparent, // Make container transparent
+            .clip(CircleShape)
+            .background(Color.Black),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Transparent,
             contentColor = Color.White,
-        ), border = ButtonDefaults.outlinedButtonBorder().copy(
+        ),
+        border = ButtonDefaults.outlinedButtonBorder().copy(
             brush = androidx.compose.ui.graphics.SolidColor(
                 colorResource(id = R.color.teal_100)
             ), width = 2.dp
-        ), shape = CircleShape
+        ),
+        shape = CircleShape
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -452,12 +595,12 @@ fun CustomPaymentButton(
             Image(
                 painter = icon,
                 contentDescription = contentDescription,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(iconSize),
                 colorFilter = ColorFilter.tint(colorResource(id = R.color.teal_150))
             )
-            Spacer(modifier = Modifier.width(5.dp))
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = text, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = Color.White
+                text = text, style = textStyle
             )
         }
     }
@@ -465,105 +608,90 @@ fun CustomPaymentButton(
 
 // Mock data for previews
 private val mockRules = mapOf(
-    "USD" to CurrencyRule(100, 50), "EUR" to CurrencyRule(100, 50)
+    "USD" to CurrencyRule(100, 50), "EUR" to CurrencyRule(100, 50), "GBP" to CurrencyRule(100, 50)
+)
+private val mockState = DonationScreenState(
+    isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
 )
 
-@Preview(showBackground = true, name = "State: Google Pay Ready")
+@Preview(
+    showBackground = true, name = "Phone Portrait", device = "spec:width=360dp,height=640dp,dpi=420"
+)
 @Composable
-private fun DonationScreenGooglePayPreview() {
+private fun DonationScreenPhonePortraitPreview() {
     MaterialTheme {
         DonationScreenContent(
-            state = DonationScreenState(
-            isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
-        ),
+            widthSizeClass = WindowWidthSizeClass.Compact,
+            heightSizeClass = WindowHeightSizeClass.Expanded,
+            state = mockState,
             onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
             allowedPaymentMethodsJson = "",
-            onCurrencySelected = {} // Add this
-        )
+            onCurrencySelected = {},
+            useLiveViewModel = false)
     }
 }
 
-@Preview(showBackground = true, name = "State: Card Payment Only")
+@Preview(
+    showBackground = true,
+    name = "Phone Landscape",
+    device = "spec:width=640dp,height=360dp,dpi=420"
+)
 @Composable
-private fun DonationScreenCardPaymentPreview() {
+private fun DonationScreenPhoneLandscapePreview() {
     MaterialTheme {
         DonationScreenContent(
-            state = DonationScreenState(
-            isLoading = false, error = null, rules = mockRules, isGooglePayReady = false
-        ),
+            widthSizeClass = WindowWidthSizeClass.Expanded,
+            heightSizeClass = WindowHeightSizeClass.Compact,
+            state = mockState,
             onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
             allowedPaymentMethodsJson = "",
-            onCurrencySelected = {} // Add this
-        )
+            onCurrencySelected = {},
+            useLiveViewModel = false)
     }
 }
 
-@Preview(showBackground = true, name = "State: Sign-In Failed")
+@Preview(
+    showBackground = true,
+    name = "Tablet Portrait",
+    device = "spec:width=720dp,height=1280dp,dpi=240"
+)
 @Composable
-private fun DonationScreenSignInFailedPreview() {
+private fun DonationScreenTabletPortraitPreview() {
     MaterialTheme {
         DonationScreenContent(
-            state = DonationScreenState(
-            isLoading = false, error = null, rules = mockRules, isGooglePayReady = true
-        ),
-            onPayClick = { _, _ -> },
-            onBackClick = {},
-            authError = AuthError.Generic("There was a problem signing you in with Google."),
-            allowedPaymentMethodsJson = "",
-            onCurrencySelected = {} // Add this
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "State: Loading")
-@Composable
-private fun DonationScreenLoadingPreview() {
-    MaterialTheme {
-        DonationScreenContent(
-            state = DonationScreenState(isLoading = true),
+            widthSizeClass = WindowWidthSizeClass.Medium,
+            heightSizeClass = WindowHeightSizeClass.Expanded,
+            state = mockState,
             onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
             allowedPaymentMethodsJson = "",
-            onCurrencySelected = {} // Add this
-        )
+            onCurrencySelected = {},
+            useLiveViewModel = false)
     }
 }
 
-@Preview(showBackground = true, name = "State: Network Error")
+@Preview(
+    showBackground = true,
+    name = "Tablet Landscape",
+    device = "spec:width=1280dp,height=720dp,dpi=240"
+)
 @Composable
-private fun DonationScreenErrorPreview() {
+private fun DonationScreenTabletLandscapePreview() {
     MaterialTheme {
         DonationScreenContent(
-            state = DonationScreenState(
-            isLoading = false, error = "Failed to connect"
-        ),
+            widthSizeClass = WindowWidthSizeClass.Expanded,
+            heightSizeClass = WindowHeightSizeClass.Medium,
+            state = mockState,
             onPayClick = { _, _ -> },
             onBackClick = {},
             authError = null,
             allowedPaymentMethodsJson = "",
-            onCurrencySelected = {} // Add this
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "State: No Currency Available")
-@Composable
-private fun DonationScreenNoCurrencyPreview() {
-    MaterialTheme {
-        DonationScreenContent(
-            state = DonationScreenState(
-            isLoading = false, error = null, rules = mapOf(), isGooglePayReady = true
-        ),
-            onPayClick = { _, _ -> },
-            onBackClick = {},
-            authError = null,
-            allowedPaymentMethodsJson = "",
-            onCurrencySelected = {} // Add this
-        )
+            onCurrencySelected = {},
+            useLiveViewModel = false)
     }
 }

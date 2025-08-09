@@ -18,7 +18,6 @@
 
 package com.mfc.recentaudiobuffer
 
-import android.app.Activity
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
@@ -41,7 +40,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -61,10 +59,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
-import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -227,8 +223,13 @@ private fun MainScreenContent(
             }
         }) { innerPadding ->
 
-        val isPhoneLandscape =
-            widthSizeClass != WindowWidthSizeClass.Compact && heightSizeClass == WindowHeightSizeClass.Compact
+        val isTabletLandscape =
+            widthSizeClass == WindowWidthSizeClass.Expanded && heightSizeClass == WindowHeightSizeClass.Medium
+        val isTabletPortrait =
+            widthSizeClass == WindowWidthSizeClass.Medium && heightSizeClass == WindowHeightSizeClass.Expanded
+        val isTablet = isTabletLandscape || isTabletPortrait
+        val isLandscape =
+            widthSizeClass == WindowWidthSizeClass.Expanded || heightSizeClass == WindowHeightSizeClass.Compact
 
         Box(
             modifier = Modifier
@@ -236,38 +237,48 @@ private fun MainScreenContent(
                 .fillMaxSize()
                 .background(colorResource(id = R.color.teal_100))
         ) {
-            if (isPhoneLandscape) {
-                // --- DEDICATED PHONE LANDSCAPE LAYOUT ---
-                PhoneLandscapeLayout(
-                    isRecordingFromService,
-                    recordingButtonBackgroundColor,
-                    recordingButtonElementsColor,
-                    { if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick() },
-                    { showPrivacyInfoDialog = true },
-                    onSaveBufferClick,
-                    onTrimFileClick,
-                    onPickAndPlayFileClick,
-                    onResetBufferClick
-                )
-            } else {
-                // --- STANDARD PORTRAIT / TABLET LAYOUT ---
-                StandardLayout(
-                    useLiveViewModel,
-                    hasDonated,
-                    isRewardActive,
-                    rewardExpiryTimestamp,
-                    isRecordingFromService,
-                    recordingButtonBackgroundColor,
-                    recordingButtonElementsColor,
-                    { if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick() },
-                    { showPrivacyInfoDialog = true },
-                    onSaveBufferClick,
-                    onTrimFileClick,
-                    onPickAndPlayFileClick,
-                    onResetBufferClick,
-                    onDonateClick,
-                    mediaPlayerManager
-                )
+            when (isLandscape) {
+                true -> {
+                    // --- DEDICATED LANDSCAPE LAYOUT ---
+                    LandscapeLayout(
+                        isTablet = isTablet,
+                        isRecordingFromService = isRecordingFromService,
+                        recordingButtonBackgroundColor = recordingButtonBackgroundColor,
+                        recordingButtonElementsColor = recordingButtonElementsColor,
+                        onToggleRecordingClick = { if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick() },
+                        onPrivacyInfoClick = { showPrivacyInfoDialog = true },
+                        onSaveBufferClick = onSaveBufferClick,
+                        onTrimFileClick = onTrimFileClick,
+                        onPickAndPlayFileClick = onPickAndPlayFileClick,
+                        onResetBufferClick = onResetBufferClick,
+                        hasDonated = hasDonated,
+                        onDonateClick = onDonateClick,
+                        mediaPlayerManager = mediaPlayerManager,
+                        useLiveViewModel = useLiveViewModel
+                    )
+                }
+
+                false -> {
+                    // --- PORTRAIT / COMPACT LAYOUT ---
+                    PortraitLayout(
+                        isTablet = isTablet,
+                        useLiveViewModel = useLiveViewModel,
+                        hasDonated = hasDonated,
+                        isRewardActive = isRewardActive,
+                        rewardExpiryTimestamp = rewardExpiryTimestamp,
+                        isRecordingFromService = isRecordingFromService,
+                        recordingButtonBackgroundColor = recordingButtonBackgroundColor,
+                        recordingButtonElementsColor = recordingButtonElementsColor,
+                        onToggleRecordingClick = { if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick() },
+                        onPrivacyInfoClick = { showPrivacyInfoDialog = true },
+                        onSaveBufferClick = onSaveBufferClick,
+                        onTrimFileClick = onTrimFileClick,
+                        onPickAndPlayFileClick = onPickAndPlayFileClick,
+                        onResetBufferClick = onResetBufferClick,
+                        onDonateClick = onDonateClick,
+                        mediaPlayerManager = mediaPlayerManager
+                    )
+                }
             }
         }
     }
@@ -308,7 +319,8 @@ private fun MainScreenContent(
 
 @OptIn(UnstableApi::class)
 @Composable
-private fun StandardLayout(
+private fun PortraitLayout(
+    isTablet: Boolean,
     useLiveViewModel: Boolean,
     hasDonated: Boolean,
     isRewardActive: Boolean,
@@ -344,43 +356,83 @@ private fun StandardLayout(
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceEvenly
         ) {
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(0.5f))
+
+            // Define styles based on device type
+            val mainButtonTextStyle = if (isTablet) TextStyle(
+                fontWeight = FontWeight.Bold, fontSize = 22.sp, textAlign = TextAlign.Center
+            ) else TextStyle(
+                fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center
+            )
+            val secondaryButtonTextStyle = if (isTablet) TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 16.sp,
+                color = colorResource(id = R.color.teal_900),
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp
+            ) else TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                color = colorResource(id = R.color.teal_900),
+                textAlign = TextAlign.Center,
+                lineHeight = 16.sp
+            )
 
             RecordingButtonWithInfo(
                 isRecording = isRecordingFromService,
                 backgroundColor = recordingButtonBackgroundColor,
                 elementsColor = recordingButtonElementsColor,
                 onToggleRecordingClick = onToggleRecordingClick,
-                onPrivacyInfoClick = onPrivacyInfoClick
+                onPrivacyInfoClick = onPrivacyInfoClick,
+                buttonSize = if (isTablet) 280.dp else 165.dp,
+                infoIconSize = if (isTablet) 48.dp else 32.dp,
+                mainIconSize = if (isTablet) 80.dp else 64.dp,
+                textStyle = mainButtonTextStyle
             )
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(0.2f))
             Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (isTablet) 32.dp else 16.dp),
                 verticalAlignment = Alignment.Top
             ) {
+                val buttonSize = if (isTablet) 110.dp else 72.dp
+                val iconSize = if (isTablet) 50.dp else 32.dp
+
                 SecondaryActionButton(
                     text = stringResource(R.string.save_the_buffer_as_a_recording),
                     icon = R.drawable.baseline_save_alt_24,
-                    onClick = onSaveBufferClick
+                    onClick = onSaveBufferClick,
+                    modifier = Modifier.size(buttonSize),
+                    iconSize = iconSize,
+                    textStyle = secondaryButtonTextStyle
                 )
                 SecondaryActionButton(
                     text = "Remove All Non-\nSpeech From File",
                     icon = R.drawable.outline_content_cut_24,
-                    onClick = onTrimFileClick
+                    onClick = onTrimFileClick,
+                    modifier = Modifier.size(buttonSize),
+                    iconSize = iconSize,
+                    textStyle = secondaryButtonTextStyle
                 )
                 SecondaryActionButton(
                     text = stringResource(R.string.play_a_recording),
                     icon = R.drawable.baseline_play_circle_outline_24,
-                    onClick = onPickAndPlayFileClick
+                    onClick = onPickAndPlayFileClick,
+                    modifier = Modifier.size(buttonSize),
+                    iconSize = iconSize,
+                    textStyle = secondaryButtonTextStyle
                 )
             }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(if (isTablet) 32.dp else 16.dp))
             SecondaryActionButton(
                 text = stringResource(R.string.clear_the_buffer),
                 icon = R.drawable.baseline_delete_outline_24,
-                onClick = onResetBufferClick
+                onClick = onResetBufferClick,
+                modifier = Modifier.size(if (isTablet) 110.dp else 72.dp),
+                iconSize = if (isTablet) 50.dp else 32.dp,
+                textStyle = secondaryButtonTextStyle
             )
             Spacer(Modifier.weight(1f))
         }
@@ -391,12 +443,29 @@ private fun StandardLayout(
                 .padding(bottom = 12.dp)
                 .fillMaxWidth()
         ) {
+            val thankYouButtonSize = if (isTablet) 90.dp else 72.dp
+            val thankYouIconSize = if (isTablet) 42.dp else 32.dp
+            val thankYouTextStyle = if (isTablet) TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 16.sp,
+                color = colorResource(id = R.color.teal_900),
+                textAlign = TextAlign.Center
+            ) else TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                color = colorResource(id = R.color.teal_900),
+                textAlign = TextAlign.Center
+            )
+
             if (hasDonated) {
                 ThankYouButton(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .padding(end = 16.dp),
-                    onClick = onDonateClick
+                    onClick = onDonateClick,
+                    buttonSize = thankYouButtonSize,
+                    iconSize = thankYouIconSize,
+                    textStyle = thankYouTextStyle
                 )
             } else {
                 DonateBanner(
@@ -413,8 +482,10 @@ private fun StandardLayout(
     }
 }
 
+@OptIn(UnstableApi::class)
 @Composable
-private fun PhoneLandscapeLayout(
+private fun LandscapeLayout(
+    isTablet: Boolean,
     isRecordingFromService: Boolean,
     recordingButtonBackgroundColor: Color,
     recordingButtonElementsColor: Color,
@@ -423,63 +494,144 @@ private fun PhoneLandscapeLayout(
     onSaveBufferClick: () -> Unit,
     onTrimFileClick: () -> Unit,
     onPickAndPlayFileClick: () -> Unit,
-    onResetBufferClick: () -> Unit
+    onResetBufferClick: () -> Unit,
+    hasDonated: Boolean,
+    onDonateClick: () -> Unit,
+    mediaPlayerManager: MediaPlayerManager,
+    useLiveViewModel: Boolean
 ) {
     Row(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalArrangement = Arrangement.spacedBy(if (isTablet) 32.dp else 16.dp)
     ) {
-        // --- Left Pane: Main Recording Button ---
-        Column( // Use a column to allow centering the entire component
-            modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally
+        // --- Left Pane: Main Recording Button & Donation ---
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceAround // Evenly space the items
         ) {
+            val mainButtonTextStyle = if (isTablet) TextStyle(
+                fontWeight = FontWeight.Bold, fontSize = 22.sp, textAlign = TextAlign.Center
+            ) else TextStyle(
+                fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center
+            )
+
             RecordingButtonWithInfo(
                 isRecording = isRecordingFromService,
                 backgroundColor = recordingButtonBackgroundColor,
                 elementsColor = recordingButtonElementsColor,
                 onToggleRecordingClick = onToggleRecordingClick,
                 onPrivacyInfoClick = onPrivacyInfoClick,
-                buttonSize = 165.dp, // Pass the smaller size
-                iconSize = 28.dp
+                buttonSize = if (isTablet) 240.dp else 165.dp,
+                infoIconSize = if (isTablet) 40.dp else 28.dp,
+                mainIconSize = if (isTablet) 72.dp else 64.dp,
+                textStyle = mainButtonTextStyle
             )
+
+            val thankYouButtonSize = if (isTablet) 90.dp else 72.dp
+            val thankYouIconSize = if (isTablet) 42.dp else 32.dp
+            val thankYouTextStyle = if (isTablet) TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 16.sp,
+                color = colorResource(id = R.color.teal_900),
+                textAlign = TextAlign.Center
+            ) else TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                color = colorResource(id = R.color.teal_900),
+                textAlign = TextAlign.Center
+            )
+
+            if (hasDonated) {
+                ThankYouButton(
+                    onClick = onDonateClick,
+                    buttonSize = thankYouButtonSize,
+                    iconSize = thankYouIconSize,
+                    textStyle = thankYouTextStyle
+                )
+            } else {
+                DonateBanner(onClick = onDonateClick)
+            }
         }
 
-        // --- Right Pane: Scrollable Secondary Actions ---
+        // --- Right Pane: Secondary Actions & Player ---
         Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .verticalScroll(rememberScrollState()),
+                .weight(if (isTablet) 1.2f else 1f) // Give right pane more space on tablet
+                .fillMaxHeight(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                SecondaryActionButton(
-                    text = stringResource(R.string.save_the_buffer_as_a_recording),
-                    icon = R.drawable.baseline_save_alt_24,
-                    onClick = onSaveBufferClick
+            // This column groups the buttons to center them vertically in the available space
+            Column(
+                modifier = Modifier.weight(1f, fill = false), // Let this column wrap its content
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                val buttonSize = if (isTablet) 100.dp else 72.dp
+                val iconSize = if (isTablet) 45.dp else 32.dp
+                val spacing = if (isTablet) 24.dp else 16.dp
+                val secondaryButtonTextStyle = if (isTablet) TextStyle(
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 16.sp,
+                    color = colorResource(id = R.color.teal_900),
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                ) else TextStyle(
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                    color = colorResource(id = R.color.teal_900),
+                    textAlign = TextAlign.Center,
+                    lineHeight = 16.sp
                 )
-                SecondaryActionButton(
-                    text = stringResource(R.string.play_a_recording),
-                    icon = R.drawable.baseline_play_circle_outline_24,
-                    onClick = onPickAndPlayFileClick
-                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                    SecondaryActionButton(
+                        text = stringResource(R.string.save_the_buffer_as_a_recording),
+                        icon = R.drawable.baseline_save_alt_24,
+                        onClick = onSaveBufferClick,
+                        modifier = Modifier.size(buttonSize),
+                        iconSize = iconSize,
+                        textStyle = secondaryButtonTextStyle
+                    )
+                    SecondaryActionButton(
+                        text = stringResource(R.string.play_a_recording),
+                        icon = R.drawable.baseline_play_circle_outline_24,
+                        onClick = onPickAndPlayFileClick,
+                        modifier = Modifier.size(buttonSize),
+                        iconSize = iconSize,
+                        textStyle = secondaryButtonTextStyle
+                    )
+                }
+                Spacer(Modifier.height(spacing))
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                    SecondaryActionButton(
+                        text = "Remove All Non-\nSpeech From File",
+                        icon = R.drawable.outline_content_cut_24,
+                        onClick = onTrimFileClick,
+                        modifier = Modifier.size(buttonSize),
+                        iconSize = iconSize,
+                        textStyle = secondaryButtonTextStyle
+                    )
+                    SecondaryActionButton(
+                        text = stringResource(R.string.clear_the_buffer),
+                        icon = R.drawable.baseline_delete_outline_24,
+                        onClick = onResetBufferClick,
+                        modifier = Modifier.size(buttonSize),
+                        iconSize = iconSize,
+                        textStyle = secondaryButtonTextStyle
+                    )
+                }
             }
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                SecondaryActionButton(
-                    text = "Remove All Non-\nSpeech From File",
-                    icon = R.drawable.outline_content_cut_24,
-                    onClick = onTrimFileClick
-                )
-                SecondaryActionButton(
-                    text = stringResource(R.string.clear_the_buffer),
-                    icon = R.drawable.baseline_delete_outline_24,
-                    onClick = onResetBufferClick
-                )
+            // Player appears at the bottom if active
+            if (!useLiveViewModel) {
+                Spacer(Modifier.height(16.dp))
+                PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
             }
         }
     }
@@ -492,8 +644,10 @@ private fun RecordingButtonWithInfo(
     elementsColor: Color,
     onToggleRecordingClick: () -> Unit,
     onPrivacyInfoClick: () -> Unit,
-    buttonSize: Dp = 165.dp,
-    iconSize: Dp = 32.dp
+    buttonSize: Dp,
+    infoIconSize: Dp,
+    mainIconSize: Dp,
+    textStyle: TextStyle
 ) {
     // ConstraintLayout is the perfect tool for positioning one item relative to another.
     ConstraintLayout {
@@ -514,7 +668,10 @@ private fun RecordingButtonWithInfo(
                     bottom.linkTo(parent.bottom)
                     start.linkTo(parent.start)
                     end.linkTo(parent.end)
-                })
+                },
+            iconSize = mainIconSize,
+            textStyle = textStyle
+        )
 
         IconButton(
             onClick = onPrivacyInfoClick, modifier = Modifier.constrainAs(iconRef) {
@@ -530,7 +687,7 @@ private fun RecordingButtonWithInfo(
                 Icons.Default.Info,
                 "Show privacy info",
                 tint = colorResource(id = R.color.purple_accent),
-                modifier = Modifier.size(iconSize)
+                modifier = Modifier.size(infoIconSize)
             )
         }
     }
@@ -538,11 +695,13 @@ private fun RecordingButtonWithInfo(
 
 @Composable
 fun RecordingToggleButton(
-    modifier: Modifier = Modifier.size(180.dp),
+    modifier: Modifier = Modifier,
     isRecording: Boolean,
     backgroundColor: Color,
     elementsColor: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    iconSize: Dp,
+    textStyle: TextStyle
 ) {
     val buttonText = if (isRecording) "Pause\nRecording" else "Start\nRecording"
     val iconRes = if (isRecording) R.drawable.baseline_mic_off_24 else R.drawable.baseline_mic_24
@@ -562,16 +721,14 @@ fun RecordingToggleButton(
             Icon(
                 painter = painterResource(id = iconRes),
                 contentDescription = buttonText,
-                modifier = Modifier.size(64.dp),
+                modifier = Modifier.size(iconSize),
                 tint = elementsColor
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = buttonText,
                 color = elementsColor,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                textAlign = TextAlign.Center,
+                style = textStyle,
                 modifier = Modifier.padding(horizontal = 8.dp)
             )
         }
@@ -580,13 +737,17 @@ fun RecordingToggleButton(
 
 @Composable
 fun SecondaryActionButton(
-    modifier: Modifier = Modifier.size(72.dp),
-    iconSize: Dp = 32.dp,
+    modifier: Modifier = Modifier,
+    iconSize: Dp,
     text: String,
     icon: Int,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    textStyle: TextStyle
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(95.dp)) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(if (iconSize > 40.dp) 130.dp else 95.dp)
+    ) {
         Button(
             onClick = onClick,
             modifier = modifier.roundedRectShadow(
@@ -609,13 +770,7 @@ fun SecondaryActionButton(
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = text, style = TextStyle(
-                fontWeight = FontWeight.Medium,
-                fontSize = 12.sp,
-                color = colorResource(id = R.color.teal_900),
-                textAlign = TextAlign.Center,
-                lineHeight = 16.sp,
-            )
+            text = text, style = textStyle
         )
     }
 }
@@ -794,7 +949,13 @@ fun DonateBanner(modifier: Modifier = Modifier, onClick: () -> Unit) {
 }
 
 @Composable
-fun ThankYouButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun ThankYouButton(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    buttonSize: Dp = 72.dp,
+    iconSize: Dp = 32.dp,
+    textStyle: TextStyle = MaterialTheme.typography.bodySmall
+) {
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -803,8 +964,10 @@ fun ThankYouButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
         Button(
             onClick = onClick,
             modifier = Modifier
-                .size(72.dp)
-                .roundedRectShadow(shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = 36.dp),
+                .size(buttonSize)
+                .roundedRectShadow(
+                    shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = buttonSize / 2
+                ),
             shape = CircleShape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = colorResource(id = R.color.teal_350),
@@ -816,15 +979,14 @@ fun ThankYouButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
             Icon(
                 painter = painterResource(id = R.drawable.volunteer_activism_24),
                 contentDescription = "Thank you for your support",
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(iconSize),
                 tint = colorResource(id = R.color.gold)
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "Supporter",
-            fontWeight = FontWeight.Medium,
-            fontSize = 12.sp,
+            style = textStyle,
             color = colorResource(id = R.color.teal_900),
             textAlign = TextAlign.Center
         )
@@ -916,96 +1078,16 @@ fun PlayerControlViewContainer(
     }
 }
 
-@OptIn(UnstableApi::class)
-@Preview(showBackground = true)
-@Composable
-fun MainScreenPreview() {
-    MaterialTheme {
-        MainScreenContent(
-            widthSizeClass = WindowWidthSizeClass.Compact,
-            heightSizeClass = WindowHeightSizeClass.Medium,
-            isRecordingFromService = true,
-            onStartBufferingClick = {},
-            onStopBufferingClick = {},
-            onResetBufferClick = {},
-            onSaveBufferClick = {},
-            onPickAndPlayFileClick = {},
-            showRecentFilesDialog = false,
-            onFileSelected = {},
-            onDonateClick = {},
-            hasDonated = true,
-            isRewardActive = true,
-            rewardExpiryTimestamp = System.currentTimeMillis() + TimeUnit.DAYS.toMillis(2),
-            onSettingsClick = {},
-            showDirectoryPermissionDialog = false,
-            onDirectoryAlertDismiss = {},
-            onTrimFileClick = {},
-            showTrimFileDialog = false,
-            onTrimFileSelected = {},
-            mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
-            isLoading = false,
-            showSaveDialog = false,
-            suggestedFileName = "preview_file.wav",
-            onConfirmSave = {},
-            onDismissSaveDialog = {},
-            useLiveViewModel = false
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun MainButtonPreview() {
-    MainButton(
-        "jesper ROFLMFAO",
-        icon = R.drawable.baseline_play_circle_outline_24,
-        {},
-        Color.White,
-        Modifier.fillMaxWidth(0.7f),
-        true
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun ToggleButtonPreview() {
-    val recordingButtonColor by animateColorAsState(
-        targetValue = colorResource(id = R.color.red_pause).copy(red = 0.65f),
-        label = "RecordingButtonColor"
-    )
-    RecordingToggleButton(
-        isRecording = true,
-        backgroundColor = recordingButtonColor,
-        elementsColor = Color.White,
-        onClick = {})
-}
-
-@Preview(showBackground = true)
-@Composable
-fun SecondaryButtonPreview() {
-    SecondaryActionButton(
-        modifier = Modifier.size(72.dp),
-        iconSize = 22.dp,
-        text = stringResource(R.string.play_a_recording),
-        icon = R.drawable.baseline_play_circle_outline_24,
-        onClick = {})
-}
-
-@Preview(showBackground = true)
-@Composable
-fun DonateBannerPreview() {
-    DonateBanner(
-        modifier = Modifier.padding(16.dp), onClick = {})
-}
+// --- PREVIEWS ---
 
 @OptIn(UnstableApi::class)
 @Preview(
     showBackground = true,
-    name = "Phone Portrait (9:16)",
+    name = "Phone Portrait (Compact)",
     device = "spec:width=360dp,height=640dp,dpi=480"
 )
 @Composable
-fun MainScreenPhone9x16Preview() {
+fun MainScreenPhonePortraitPreview() {
     MaterialTheme {
         MainScreenContent(
             widthSizeClass = WindowWidthSizeClass.Compact,
@@ -1042,11 +1124,11 @@ fun MainScreenPhone9x16Preview() {
 @OptIn(UnstableApi::class)
 @Preview(
     showBackground = true,
-    name = "Phone Landscape (16:9)",
-    device = "spec:width=640dp,height=360dp,dpi=480" // 16:9 aspect ratio for a phone
+    name = "Phone Landscape (Compact Height)",
+    device = "spec:width=800dp,height=360dp,dpi=480"
 )
 @Composable
-fun MainScreenPhone16x9Preview() {
+fun MainScreenPhoneLandscapePreview() {
     MaterialTheme {
         MainScreenContent(
             widthSizeClass = WindowWidthSizeClass.Medium,
@@ -1083,11 +1165,53 @@ fun MainScreenPhone16x9Preview() {
 @OptIn(UnstableApi::class)
 @Preview(
     showBackground = true,
-    name = "Tablet Landscape (16:9)",
-    device = "spec:width=1920dp,height=1080dp,dpi=480" // 16:9 aspect ratio for a tablet
+    name = "Tablet Portrait (Medium Width)",
+    device = "spec:width=800dp,height=1280dp,dpi=240"
 )
 @Composable
-fun MainScreenTablet16x9Preview() {
+fun MainScreenTabletPortraitPreview() {
+    MaterialTheme {
+        MainScreenContent(
+            widthSizeClass = WindowWidthSizeClass.Medium,
+            heightSizeClass = WindowHeightSizeClass.Expanded,
+            isRecordingFromService = true,
+            onStartBufferingClick = {},
+            onStopBufferingClick = {},
+            onResetBufferClick = {},
+            onSaveBufferClick = {},
+            onPickAndPlayFileClick = {},
+            showRecentFilesDialog = false,
+            onFileSelected = {},
+            onDonateClick = {},
+            hasDonated = true,
+            isRewardActive = false,
+            rewardExpiryTimestamp = 0,
+            onSettingsClick = {},
+            showDirectoryPermissionDialog = false,
+            onDirectoryAlertDismiss = {},
+            onTrimFileClick = {},
+            showTrimFileDialog = false,
+            onTrimFileSelected = {},
+            mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
+            isLoading = false,
+            showSaveDialog = false,
+            suggestedFileName = "preview_file.wav",
+            onConfirmSave = {},
+            onDismissSaveDialog = {},
+            useLiveViewModel = false
+        )
+    }
+}
+
+
+@OptIn(UnstableApi::class)
+@Preview(
+    showBackground = true,
+    name = "Tablet Landscape (Expanded Width)",
+    device = "spec:width=1280dp,height=800dp,dpi=240"
+)
+@Composable
+fun MainScreenTabletLandscapePreview() {
     MaterialTheme {
         MainScreenContent(
             widthSizeClass = WindowWidthSizeClass.Expanded,
