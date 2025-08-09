@@ -166,7 +166,7 @@ fun MainScreen(
         suggestedFileName = suggestedFileName,
         onConfirmSave = onConfirmSave,
         onDismissSaveDialog = onDismissSaveDialog,
-        useLiveViewModel = true // Tell the content to use the live TopAppBar
+        useLiveViewModel = true
     )
 }
 
@@ -278,7 +278,9 @@ private fun MainScreenContent(
 
         val phoneSizing = LayoutSizing(
             mainButtonTextStyle = TextStyle(
-                fontWeight = FontWeight.Bold, fontSize = 20.sp, textAlign = TextAlign.Center
+                fontWeight = FontWeight.Bold,
+                fontSize = if (!isLandscape) 20.sp else 16.sp,
+                textAlign = TextAlign.Center
             ),
             secondaryButtonTextStyle = TextStyle(
                 fontWeight = FontWeight.Medium,
@@ -287,7 +289,7 @@ private fun MainScreenContent(
                 textAlign = TextAlign.Center,
                 lineHeight = 16.sp
             ),
-            recordingButtonSize = 180.dp,
+            recordingButtonSize = if (!isLandscape) 180.dp else 160.dp,
             recordingInfoIconSize = 28.dp,
             recordingMainIconSize = 64.dp,
             secondaryActionButtonSize = 72.dp,
@@ -419,10 +421,9 @@ private fun PortraitLayout(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // --- HEADER SECTION ---
-        if (!useLiveViewModel && !hasDonated && !isRewardActive) {
+        if (useLiveViewModel && !hasDonated && !isRewardActive) {
             AdMobBanner(modifier = Modifier.padding(top = 8.dp))
-        }
-        if (isRewardActive) {
+        } else if (isRewardActive) {
             Spacer(Modifier.height(10.dp))
             RewardStatusCard(modifier = Modifier, expiryTimestamp = rewardExpiryTimestamp)
         }
@@ -520,7 +521,7 @@ private fun PortraitLayout(
                 )
             }
         }
-        if (!useLiveViewModel) {
+        if (useLiveViewModel) {
             PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
         }
     }
@@ -547,8 +548,7 @@ private fun LandscapeLayout(
 ) {
     Row(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
+            .fillMaxSize(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
@@ -588,66 +588,70 @@ private fun LandscapeLayout(
         Column(
             modifier = Modifier
                 .weight(if (isTablet) 1.2f else 1f) // Give right pane more space on tablet
-                .fillMaxHeight(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // This column groups the buttons to center them vertically in the available space
+            // This column groups the buttons, is weighted, and centers its content
             Column(
-                modifier = Modifier.weight(1f, fill = false), // Let this column wrap its content
+                modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(sizing.secondaryActionSpacing)) {
-                    SecondaryActionButton(
-                        text = stringResource(R.string.save_the_buffer_as_a_recording),
-                        icon = R.drawable.baseline_save_alt_24,
-                        onClick = onSaveBufferClick,
-                        buttonSize = sizing.secondaryActionButtonSize,
-                        columnWidth = sizing.secondaryActionColumnWidth,
-                        iconSize = sizing.secondaryActionIconSize,
-                        textStyle = sizing.secondaryButtonTextStyle
-                    )
-                    SecondaryActionButton(
-                        text = stringResource(R.string.play_a_recording),
-                        icon = R.drawable.baseline_play_circle_outline_24,
-                        onClick = onPickAndPlayFileClick,
-                        buttonSize = sizing.secondaryActionButtonSize,
-                        columnWidth = sizing.secondaryActionColumnWidth,
-                        iconSize = sizing.secondaryActionIconSize,
-                        textStyle = sizing.secondaryButtonTextStyle
-                    )
-                }
-                Spacer(Modifier.height(sizing.secondaryActionSpacing))
-                Row(horizontalArrangement = Arrangement.spacedBy(sizing.secondaryActionSpacing)) {
-                    SecondaryActionButton(
-                        text = "Remove All Non-\nSpeech From File",
-                        icon = R.drawable.outline_content_cut_24,
-                        onClick = onTrimFileClick,
-                        buttonSize = sizing.secondaryActionButtonSize,
-                        columnWidth = sizing.secondaryActionColumnWidth,
-                        iconSize = sizing.secondaryActionIconSize,
-                        textStyle = sizing.secondaryButtonTextStyle
-                    )
-                    SecondaryActionButton(
-                        text = stringResource(R.string.clear_the_buffer),
-                        icon = R.drawable.baseline_delete_outline_24,
-                        onClick = onResetBufferClick,
-                        buttonSize = sizing.secondaryActionButtonSize,
-                        columnWidth = sizing.secondaryActionColumnWidth,
-                        iconSize = sizing.secondaryActionIconSize,
-                        textStyle = sizing.secondaryButtonTextStyle
-                    )
+                // This inner column just keeps the two rows of buttons together
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(sizing.secondaryActionSpacing)) {
+                        SecondaryActionButton(
+                            text = stringResource(R.string.save_the_buffer_as_a_recording),
+                            icon = R.drawable.baseline_save_alt_24,
+                            onClick = onSaveBufferClick,
+                            buttonSize = sizing.secondaryActionButtonSize,
+                            columnWidth = sizing.secondaryActionColumnWidth,
+                            iconSize = sizing.secondaryActionIconSize,
+                            textStyle = sizing.secondaryButtonTextStyle
+                        )
+                        SecondaryActionButton(
+                            text = stringResource(R.string.play_a_recording),
+                            icon = R.drawable.baseline_play_circle_outline_24,
+                            onClick = onPickAndPlayFileClick,
+                            buttonSize = sizing.secondaryActionButtonSize,
+                            columnWidth = sizing.secondaryActionColumnWidth,
+                            iconSize = sizing.secondaryActionIconSize,
+                            textStyle = sizing.secondaryButtonTextStyle
+                        )
+                    }
+                    Spacer(Modifier.height(sizing.secondaryActionSpacing))
+                    Row(horizontalArrangement = Arrangement.spacedBy(sizing.secondaryActionSpacing)) {
+                        SecondaryActionButton(
+                            text = "Remove All Non-\nSpeech From File",
+                            icon = R.drawable.outline_content_cut_24,
+                            onClick = onTrimFileClick,
+                            buttonSize = sizing.secondaryActionButtonSize,
+                            columnWidth = sizing.secondaryActionColumnWidth,
+                            iconSize = sizing.secondaryActionIconSize,
+                            textStyle = sizing.secondaryButtonTextStyle
+                        )
+                        SecondaryActionButton(
+                            text = stringResource(R.string.clear_the_buffer),
+                            icon = R.drawable.baseline_delete_outline_24,
+                            onClick = onResetBufferClick,
+                            buttonSize = sizing.secondaryActionButtonSize,
+                            columnWidth = sizing.secondaryActionColumnWidth,
+                            iconSize = sizing.secondaryActionIconSize,
+                            textStyle = sizing.secondaryButtonTextStyle
+                        )
+                    }
                 }
             }
-            // Player appears at the bottom if active
-            if (!useLiveViewModel) {
-                Spacer(Modifier.height(16.dp))
+            // Player appears at the bottom of the pane, outside the weighted content
+            if (useLiveViewModel) {
                 PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
             }
         }
     }
 }
+
 
 @Composable
 private fun RecordingButtonWithInfo(
@@ -702,7 +706,7 @@ private fun RecordingButtonWithInfo(
                 Icons.Default.Info,
                 "Show privacy info",
                 tint = colorResource(id = R.color.purple_accent),
-                modifier = Modifier.size(infoIconSize)
+                modifier = Modifier.fillMaxSize()
             )
         }
     }
@@ -1042,7 +1046,7 @@ fun PlayerControlViewContainer(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.8f))
+                    .background(Color.Black.copy(alpha = 0.3f))
             ) {
                 ConstraintLayout(modifier = Modifier.fillMaxWidth()) {
                     val (playerViewRef, fileNameRef) = createRefs()
