@@ -81,6 +81,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -555,7 +556,7 @@ private fun LandscapeLayout(
                     textStyle = thankYouTextStyle
                 )
             } else {
-                DonateBanner(onClick = onDonateClick)
+                DonateBanner(onClick = onDonateClick, fontSize = 16.sp)
             }
         }
 
@@ -917,7 +918,7 @@ fun LoadingIndicator(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun DonateBanner(modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun DonateBanner(modifier: Modifier = Modifier, onClick: () -> Unit, fontSize: TextUnit = 20.sp) {
     Card(
         onClick = onClick,
         modifier = modifier.roundedRectShadow(5.dp, 5.dp, 16.dp),
@@ -942,7 +943,7 @@ fun DonateBanner(modifier: Modifier = Modifier, onClick: () -> Unit) {
                 text = stringResource(id = R.string.donate_and_remove_ads),
                 fontWeight = FontWeight.Bold,
                 color = colorResource(id = R.color.teal_900),
-                fontSize = 20.sp
+                fontSize = fontSize
             )
         }
     }
