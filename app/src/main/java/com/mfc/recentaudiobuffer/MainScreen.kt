@@ -278,7 +278,7 @@ private fun MainScreenContent(
 
         val phoneSizing = LayoutSizing(
             mainButtonTextStyle = TextStyle(
-                fontWeight = FontWeight.Bold, fontSize = 15.sp, textAlign = TextAlign.Center
+                fontWeight = FontWeight.Bold, fontSize = 20.sp, textAlign = TextAlign.Center
             ),
             secondaryButtonTextStyle = TextStyle(
                 fontWeight = FontWeight.Medium,
@@ -287,13 +287,13 @@ private fun MainScreenContent(
                 textAlign = TextAlign.Center,
                 lineHeight = 16.sp
             ),
-            recordingButtonSize = 140.dp,
+            recordingButtonSize = 180.dp,
             recordingInfoIconSize = 28.dp,
-            recordingMainIconSize = 48.dp,
+            recordingMainIconSize = 64.dp,
             secondaryActionButtonSize = 72.dp,
-            secondaryActionColumnWidth = 95.dp,
-            secondaryActionIconSize = 32.dp,
-            secondaryActionSpacing = 16.dp,
+            secondaryActionColumnWidth = 102.dp,
+            secondaryActionIconSize = 42.dp,
+            secondaryActionSpacing = 10.dp,
             thankYouButtonSize = 72.dp,
             thankYouIconSize = 32.dp,
             thankYouTextStyle = TextStyle(
@@ -436,7 +436,7 @@ private fun PortraitLayout(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceEvenly
         ) {
-            Spacer(Modifier.weight(0.5f))
+            Spacer(Modifier.weight(0.3f))
 
             RecordingButtonWithInfo(
                 isRecording = isRecordingFromService,
@@ -482,7 +482,7 @@ private fun PortraitLayout(
                     textStyle = sizing.secondaryButtonTextStyle
                 )
             }
-            Spacer(Modifier.height(sizing.secondaryActionSpacing))
+            Spacer(Modifier.weight(0.1f))
             SecondaryActionButton(
                 text = stringResource(R.string.clear_the_buffer),
                 icon = R.drawable.baseline_delete_outline_24,
@@ -492,7 +492,7 @@ private fun PortraitLayout(
                 iconSize = sizing.secondaryActionIconSize,
                 textStyle = sizing.secondaryButtonTextStyle
             )
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(0.2f))
         }
 
         // --- FOOTER SECTION ---
@@ -1105,7 +1105,46 @@ fun PlayerControlViewContainer(
     device = "spec:width=360dp,height=615dp,dpi=480"
 )
 @Composable
-fun MainScreenPhonePortraitPreview() {
+fun MainScreen9x16PhonePortraitPreview() {
+    MaterialTheme {
+        MainScreenContent(
+            widthSizeClass = WindowWidthSizeClass.Compact,
+            heightSizeClass = WindowHeightSizeClass.Medium,
+            isRecordingFromService = false,
+            onStartBufferingClick = {},
+            onStopBufferingClick = {},
+            onResetBufferClick = {},
+            onSaveBufferClick = {},
+            onPickAndPlayFileClick = {},
+            showRecentFilesDialog = false,
+            onFileSelected = {},
+            onDonateClick = {},
+            hasDonated = false,
+            isRewardActive = true,
+            rewardExpiryTimestamp = 0,
+            onSettingsClick = {},
+            showDirectoryPermissionDialog = false,
+            onDirectoryAlertDismiss = {},
+            onTrimFileClick = {},
+            showTrimFileDialog = false,
+            onTrimFileSelected = {},
+            mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
+            isLoading = false,
+            showSaveDialog = false,
+            suggestedFileName = "preview_file.wav",
+            onConfirmSave = {},
+            onDismissSaveDialog = {},
+            useLiveViewModel = false
+        )
+    }
+}
+
+@OptIn(UnstableApi::class)
+@Preview(
+    showBackground = true
+)
+@Composable
+fun MainScreenTypicalPhonePortraitPreview() {
     MaterialTheme {
         MainScreenContent(
             widthSizeClass = WindowWidthSizeClass.Compact,

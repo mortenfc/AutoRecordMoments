@@ -22,16 +22,13 @@ import android.annotation.SuppressLint
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,7 +37,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -68,7 +64,6 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.Typography
 import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
@@ -103,14 +98,34 @@ import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mfc.recentaudiobuffer.ui.theme.RecentAudioBufferTheme
 import timber.log.Timber
 import java.util.Locale
+
+private data class SettingsSizing(
+    val infoIconPadding: Dp,
+    val infoIconSize: Dp,
+    val landscapeHorizontalPadding: Dp,
+    val landscapeVerticalPadding: Dp,
+    val audioSettingsTextStyle: TextStyle,
+    val audioSettingsButtonHeight: Dp,
+    val audioSettingsSpacerHeight: Dp,
+    val aiTitleStyle: TextStyle,
+    val aiBodyStyle: TextStyle,
+    val aiSwitchScale: Float,
+    val actionsButtonTextStyle: TextStyle,
+    val actionsButtonIconSize: Dp,
+    val actionsButtonPadding: Dp,
+    val actionsButtonWidthFraction: Float,
+    val actionsGroupTopSpacerHeight: Dp,
+    val actionsButtonBottomPadding: Dp,
+    val dangerZoneTextStyle: TextStyle,
+    val dangerZoneSpacerHeight: Dp
+)
 
 /**
  * Stateful wrapper for the Settings Screen.
@@ -216,17 +231,62 @@ private fun SettingsScreenContent(
             val isTabletPortrait = widthSizeClass == WindowWidthSizeClass.Medium && heightSizeClass == WindowHeightSizeClass.Expanded
             val isTablet = isTabletLandscape || isTabletPortrait
             val isLandscape = widthSizeClass == WindowWidthSizeClass.Expanded || heightSizeClass == WindowHeightSizeClass.Compact
+
+            val phoneSizing = SettingsSizing(
+                infoIconPadding = 0.dp,
+                infoIconSize = 25.dp,
+                landscapeHorizontalPadding = 20.dp,
+                landscapeVerticalPadding = 10.dp,
+                audioSettingsTextStyle = TextStyle(fontSize = 18.sp),
+                audioSettingsButtonHeight = 52.dp,
+                audioSettingsSpacerHeight = 0.dp,
+                aiTitleStyle = TextStyle(fontSize = 18.sp),
+                aiBodyStyle = TextStyle(fontSize = 15.sp),
+                aiSwitchScale = 1.0f,
+                actionsButtonTextStyle = TextStyle(fontSize = 19.sp).copy(fontWeight = FontWeight.SemiBold),
+                actionsButtonIconSize = 26.dp,
+                actionsButtonPadding = 12.dp,
+                actionsButtonWidthFraction = 0.7f,
+                actionsGroupTopSpacerHeight = 6.dp,
+                actionsButtonBottomPadding = 12.dp,
+                dangerZoneTextStyle = MaterialTheme.typography.titleMedium,
+                dangerZoneSpacerHeight = 0.dp
+            )
+
+            val tabletSizing = SettingsSizing(
+                infoIconPadding = 16.dp,
+                infoIconSize = 70.dp,
+                landscapeHorizontalPadding = 50.dp,
+                landscapeVerticalPadding = 25.dp,
+                audioSettingsTextStyle = TextStyle(fontSize = 32.sp),
+                audioSettingsButtonHeight = 80.dp,
+                audioSettingsSpacerHeight = 40.dp,
+                aiTitleStyle = TextStyle(fontSize = 34.sp),
+                aiBodyStyle = TextStyle(fontSize = 24.sp),
+                aiSwitchScale = 1.5f,
+                actionsButtonTextStyle = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.SemiBold),
+                actionsButtonIconSize = 40.dp,
+                actionsButtonPadding = 20.dp,
+                actionsButtonWidthFraction = 0.6f,
+                actionsGroupTopSpacerHeight = 12.dp,
+                actionsButtonBottomPadding = 12.dp,
+                dangerZoneTextStyle = MaterialTheme.typography.titleLarge,
+                dangerZoneSpacerHeight = 20.dp
+            )
+
+            val sizing = if (isTablet) tabletSizing else phoneSizing
+
             IconButton(
                 onClick = { showHelpDialog = true },
                 modifier = Modifier
                     .align(if (isLandscape) Alignment.TopStart else Alignment.TopEnd)
-                    .padding(if (isTablet) 16.dp else 0.dp)
+                    .padding(sizing.infoIconPadding)
             ) {
                 Icon(
                     Icons.Default.Info,
                     "Show settings help",
                     tint = colorResource(id = R.color.purple_accent),
-                    modifier = Modifier.size(if (isTablet) 70.dp else 25.dp)
+                    modifier = Modifier.size(sizing.infoIconSize)
                 )
             }
             when (isLandscape) {
@@ -238,16 +298,18 @@ private fun SettingsScreenContent(
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState()),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        AudioSettingsGroup(
-                            state, onSampleRateChanged, onBitDepthChanged, onBufferTimeLengthChanged, isTablet = isTablet
-                        )
-                        AISettingsGroup(state, onAiAutoClipChanged, isTablet = isTablet)
-                        ActionsGroup(state, onSubmit, isUserSignedIn, isTablet = isTablet)
+                        Spacer(Modifier.weight(0.1f))
+                        AudioSettingsGroup(state, onSampleRateChanged, onBitDepthChanged, onBufferTimeLengthChanged, sizing)
+                        Spacer(Modifier.weight(0.15f))
+                        AISettingsGroup(state, onAiAutoClipChanged, sizing)
+                        Spacer(Modifier.weight(0.2f))
+                        ActionsGroup(state, onSubmit, isUserSignedIn, sizing)
                         if (isUserSignedIn) {
-                            DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick, isTablet = isTablet)
+                            Spacer(Modifier.weight(0.2f))
+                            DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick, sizing)
                         }
+                        Spacer(Modifier.weight(0.01f))
                     }
                 }
 
@@ -255,61 +317,42 @@ private fun SettingsScreenContent(
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = if(isTablet) 50.dp else 20.dp, vertical = if (isTablet) 25.dp else 10.dp),
+                            .padding(horizontal = sizing.landscapeHorizontalPadding, vertical = sizing.landscapeVerticalPadding),
                         horizontalArrangement = Arrangement.spacedBy(32.dp),
                         verticalAlignment = Alignment.CenterVertically // Center both panes vertically
                     ) {
                         // --- Left Pane ---
-                        // GOAL: Vertically center the entire group of audio settings.
                         Column(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center // This does the magic
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            AudioSettingsGroup(
-                                state,
-                                onSampleRateChanged,
-                                onBitDepthChanged,
-                                onBufferTimeLengthChanged,
-                                isTablet = isTablet
-                            )
+                            AudioSettingsGroup(state, onSampleRateChanged, onBitDepthChanged, onBufferTimeLengthChanged, sizing)
                             if (!isTablet && isUserSignedIn) {
-                                DangerZoneGroup(
-                                    onDeleteAccountClick = onDeleteAccountClick,
-                                    isTablet = isTablet
-                                )
+                                DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick, sizing)
                             }
                         }
 
                         // --- Right Pane ---
-                        // GOAL: Vertically center this block as well, for symmetry.
                         Column(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight()
                                 .verticalScroll(rememberScrollState()),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.SpaceEvenly // This does the magic
+                            verticalArrangement = Arrangement.SpaceEvenly
                         ) {
                             Spacer(Modifier.weight(.2f))
-
-                            AISettingsGroup(state, onAiAutoClipChanged, isTablet = isTablet)
-
+                            AISettingsGroup(state, onAiAutoClipChanged, sizing)
                             Spacer(Modifier.weight(.2f))
-                            ActionsGroup(state, onSubmit, isUserSignedIn, isTablet = isTablet)
-                            Spacer(Modifier.weight(.1f))
-
+                            ActionsGroup(state, onSubmit, isUserSignedIn, sizing)
+                            Spacer(Modifier.weight(.2f))
                             if (isTablet && isUserSignedIn) {
-                                Spacer(Modifier.height(32.dp))
-                                DangerZoneGroup(
-                                    onDeleteAccountClick = onDeleteAccountClick,
-                                    isTablet = isTablet
-                                )
+                                DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick, sizing)
+                                Spacer(Modifier.weight(.01f))
                             }
-
-                            Spacer(Modifier.weight(.2f))
                         }
                     }
                 }
@@ -338,14 +381,8 @@ private fun AudioSettingsGroup(
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
     onBufferTimeLengthChanged: (Int) -> Unit,
-    isTablet: Boolean = false
+    sizing: SettingsSizing
 ) {
-
-    val typography =
-        if (isTablet) TextStyle(fontSize = 30.sp) else MaterialTheme.typography.bodyMedium
-    val settingsButtonModifier = if (isTablet) Modifier.height(100.dp) else Modifier
-    var spacerModifier : Modifier = Modifier.height(0.dp)
-    if (isTablet) spacerModifier = Modifier.height(60.dp)
     var showSampleRateMenu by remember { mutableStateOf(false) }
     var showBitDepthMenu by remember { mutableStateOf(false) }
 
@@ -353,13 +390,13 @@ private fun AudioSettingsGroup(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Spacer(spacerModifier)
+        Spacer(Modifier.height(sizing.audioSettingsSpacerHeight))
         SettingsButton(
             text = "Sample Rate: ${state.value.sampleRateTemp.intValue} Hz",
             icon = Icons.Filled.ArrowDropDown,
             onClick = { showSampleRateMenu = true },
-            modifier = settingsButtonModifier,
-            textStyle = typography
+            modifier = Modifier.height(sizing.audioSettingsButtonHeight),
+            textStyle = sizing.audioSettingsTextStyle
         )
         DropdownMenu(
             expanded = showSampleRateMenu, onDismissRequest = { showSampleRateMenu = false }) {
@@ -370,13 +407,13 @@ private fun AudioSettingsGroup(
                 })
             }
         }
-        Spacer(spacerModifier)
+        Spacer(Modifier.height(sizing.audioSettingsSpacerHeight))
         SettingsButton(
             text = "Bit Depth: ${state.value.bitDepthTemp.value.bits} bit",
             icon = Icons.Filled.ArrowDropDown,
             onClick = { showBitDepthMenu = true },
-            modifier = settingsButtonModifier,
-            textStyle = typography
+            modifier = Modifier.height(sizing.audioSettingsButtonHeight),
+            textStyle = sizing.audioSettingsTextStyle
         )
         DropdownMenu(expanded = showBitDepthMenu, onDismissRequest = { showBitDepthMenu = false }) {
             bitDepths.forEach { (label, value) ->
@@ -386,16 +423,16 @@ private fun AudioSettingsGroup(
                 })
             }
         }
-        Spacer(spacerModifier.height(1.dp))
+        Spacer(Modifier.height(sizing.audioSettingsSpacerHeight))
         MyOutlinedBufferInputField(
             bufferTimeLength = state.value.bufferTimeLengthTemp,
             onValueChange = onBufferTimeLengthChanged,
             isMaxExceeded = state.value.isMaxExceeded,
             isNull = state.value.isBufferTimeLengthNull,
-            modifier = settingsButtonModifier,
-            textStyle = typography
+            modifier = Modifier.height(sizing.audioSettingsButtonHeight),
+            textStyle = sizing.audioSettingsTextStyle
         )
-        Spacer(spacerModifier)
+        Spacer(Modifier.height(sizing.audioSettingsSpacerHeight))
     }
 }
 
@@ -403,18 +440,12 @@ private fun AudioSettingsGroup(
 private fun AISettingsGroup(
     state: MutableState<SettingsScreenState>,
     onAiAutoClipChanged: (Boolean) -> Unit,
-    isTablet: Boolean = false
+    sizing: SettingsSizing
 ) {
-
-    val titleTypography =
-        if (isTablet) TextStyle(fontSize = 30.sp) else TextStyle(fontSize = 16.sp)
-    val bodyTypography =
-        if (isTablet) TextStyle(fontSize = 22.sp) else TextStyle(fontSize = 12.sp)
-
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(if (isTablet) 12.dp else 2.dp)
+        verticalArrangement = Arrangement.spacedBy(if (sizing.aiSwitchScale > 1.2f) 12.dp else 2.dp)
     ) {
         HorizontalDivider(
             color = colorResource(id = R.color.purple_accent).copy(
@@ -429,7 +460,7 @@ private fun AISettingsGroup(
         ) {
             Text(
                 "AI Auto-Trimming",
-                style = titleTypography,
+                style = sizing.aiTitleStyle,
                 fontWeight = FontWeight.SemiBold,
                 color = colorResource(id = R.color.teal_900)
             )
@@ -444,7 +475,7 @@ private fun AISettingsGroup(
                     uncheckedTrackColor = colorResource(id = R.color.teal_100),
                     uncheckedBorderColor = colorResource(id = R.color.teal_350),
                 ),
-                modifier = if (isTablet) Modifier.scale(1.3f) else Modifier
+                modifier = Modifier.scale(sizing.aiSwitchScale)
             )
         }
         Text(
@@ -454,7 +485,7 @@ private fun AISettingsGroup(
                     append("ATTENTION:")
                 }
                 append(" This resamples down to 16 kHz and can take some time to run for long buffers.")
-            }, style = bodyTypography.copy(
+            }, style = sizing.aiBodyStyle.copy(
                 textAlign = TextAlign.Justify,
                 hyphens = Hyphens.Auto,
                 lineBreak = LineBreak.Paragraph,
@@ -474,47 +505,41 @@ private fun AISettingsGroup(
 
 @Composable
 private fun ActionsGroup(
-    state: MutableState<SettingsScreenState>, onSubmit: (Int) -> Unit, isUserSignedIn: Boolean,
-    isTablet: Boolean = false
+    state: MutableState<SettingsScreenState>,
+    onSubmit: (Int) -> Unit,
+    isUserSignedIn: Boolean,
+    sizing: SettingsSizing
 ) {
-    val buttonModifier =
-        if (isTablet) Modifier.fillMaxWidth(0.55f) else Modifier.fillMaxWidth(fraction = 0.55f)
-    val textStyle =
-        if (isTablet) TextStyle(
-            fontSize = 26.sp,
-            fontWeight = FontWeight.SemiBold
-        ) else MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
-
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(sizing.actionsGroupTopSpacerHeight))
         if (state.value.errorMessage.value != null) {
             Text(text = state.value.errorMessage.value!!, color = Color.Red)
             Spacer(modifier = Modifier.height(4.dp))
         }
         MainButton(
-            text = "Apply Settings", // Shorter text
-            textStyle = textStyle,
+            text = "Apply Settings",
+            textStyle = sizing.actionsButtonTextStyle,
             icon = R.drawable.outline_restore_page_24,
-            iconSize = if (isTablet) 40.dp else 22.dp,
+            iconSize = sizing.actionsButtonIconSize,
             onClick = {
                 if (state.value.isSubmitEnabled.value) {
                     onSubmit(state.value.bufferTimeLengthTemp.intValue)
                 }
             },
-            bottomPadding = 6.dp,
+            bottomPadding = sizing.actionsButtonBottomPadding,
             iconTint = colorResource(id = R.color.purple_accent),
             enabled = state.value.isSubmitEnabled.value,
-            modifier = buttonModifier,
-            contentPadding = if (isTablet) 20.dp else 3.dp
+            modifier = Modifier.fillMaxWidth(fraction = sizing.actionsButtonWidthFraction),
+            contentPadding = sizing.actionsButtonPadding
         )
         if (!isUserSignedIn) {
             Text(
                 text = "Sign In to sync settings with cloud",
                 color = colorResource(id = R.color.purple_accent),
-                style = textStyle,
+                style = sizing.audioSettingsTextStyle,
                 textAlign = TextAlign.Center,
                 fontStyle = FontStyle.Italic
             )
@@ -523,38 +548,34 @@ private fun ActionsGroup(
 }
 
 @Composable
-private fun DangerZoneGroup(onDeleteAccountClick: () -> Unit, isTablet: Boolean = false) {
-    val textStyle =
-        if (isTablet) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium
-    val spacerModifier = if (isTablet) Modifier.height(20.dp) else Modifier.height(0.dp)
+private fun DangerZoneGroup(onDeleteAccountClick: () -> Unit, sizing: SettingsSizing) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        Spacer(Modifier.weight(1f))
         HorizontalDivider(
-            color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+            color = colorResource(id = R.color.red).copy(alpha = 0.7f),
             thickness = 4.dp
         )
-        Spacer(spacerModifier)
+        Spacer(Modifier.height(sizing.dangerZoneSpacerHeight))
         Button(
             onClick = onDeleteAccountClick, colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
-                contentColor = MaterialTheme.colorScheme.error,
+                containerColor = colorResource(id = R.color.white).copy(alpha = 0.3f),
+                contentColor = colorResource(id = R.color.red),
                 disabledContainerColor = colorResource(id = R.color.teal_100).copy(alpha = 0.3f),
-                disabledContentColor = MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
+                disabledContentColor = colorResource(id = R.color.red).copy(alpha = 0.3f)
             ), modifier = Modifier.padding(0.dp),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.error)
+            border = BorderStroke(2.dp, colorResource(id = R.color.red))
         ) {
             Text(
                 "Delete Account Permanently",
-                style = textStyle,
-                color = MaterialTheme.colorScheme.error
+                style = sizing.dangerZoneTextStyle,
+                color = colorResource(id = R.color.red)
             )
         }
-        Spacer(spacerModifier)
+        Spacer(Modifier.height(sizing.dangerZoneSpacerHeight))
         HorizontalDivider(
-            color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+            color = colorResource(id = R.color.red).copy(alpha = 0.7f),
             thickness = 4.dp
         )
     }
@@ -562,14 +583,13 @@ private fun DangerZoneGroup(onDeleteAccountClick: () -> Unit, isTablet: Boolean 
 
 @Composable
 fun SettingsButton(
-    text: String, icon: ImageVector, onClick: () -> Unit,
-    modifier: Modifier,
-    textStyle: TextStyle
+    text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier, textStyle: TextStyle
 ) {
     Button(
         onClick = onClick, colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent
         ), modifier = modifier
+            .fillMaxWidth(0.85f)
             .heightIn(min = 48.dp)
             .border(
                 2.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(8.dp)
@@ -579,9 +599,7 @@ fun SettingsButton(
             )
     ) {
         Text(
-            text = text,
-            color = colorResource(id = R.color.teal_900),
-            style = textStyle
+            text = text, color = colorResource(id = R.color.teal_900), style = textStyle
         )
         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
         Icon(
@@ -632,7 +650,7 @@ fun MyOutlinedBufferInputField(
             }
         },
         modifier = modifier
-            .fillMaxWidth(0.7f)
+            .fillMaxWidth(0.85f)
             .padding(start = 0.dp, top = 0.dp, end = 0.dp, bottom = 0.dp)
             .onFocusChanged {
                 if (!it.isFocused) {
@@ -676,7 +694,7 @@ fun MyOutlinedBufferInputField(
                         unfocusedContainerColor = colorResource(id = R.color.teal_100),
                         focusedContainerColor = colorResource(id = R.color.teal_150),
                         errorContainerColor = colorResource(id = R.color.teal_150),
-                        errorIndicatorColor = MaterialTheme.colorScheme.error
+                        errorIndicatorColor = colorResource(id = R.color.red)
                     ),
                     shape = RoundedCornerShape(8.dp),
                     focusedBorderThickness = 4.dp,
@@ -685,6 +703,8 @@ fun MyOutlinedBufferInputField(
             })
     }
 }
+
+// Remaining code omitted for brevity...
 
 @Composable
 fun StyledDropdownMenuItem(
@@ -1084,11 +1104,10 @@ fun ComprehensiveHelpDialog(
 @SuppressLint("UnrememberedMutableState")
 @Preview(
     showBackground = true,
-    name = "Compact - Signed In",
-    device = "spec:width=360dp,height=640dp,dpi=480"
+    name = "Typical Phone Portrait - Signed In",
 )
 @Composable
-fun SettingsScreenCompactSignedInPreview() {
+fun SettingsScreenTypicalPhonePortraitSignedInPreview() {
     RecentAudioBufferTheme {
         SettingsScreenContent(
             state = mutableStateOf(SettingsScreenState(SettingsConfig())),
@@ -1109,11 +1128,36 @@ fun SettingsScreenCompactSignedInPreview() {
 @SuppressLint("UnrememberedMutableState")
 @Preview(
     showBackground = true,
-    name = "Compact - Signed Out",
-    device = "spec:width=360dp,height=640dp,dpi=480"
+    name = "Phone Portrait - Signed In",
+    device = "spec:width=360dp,height=625dp,dpi=480"
 )
 @Composable
-fun SettingsScreenCompactSignedOutPreview() {
+fun SettingsScreenPhonePortraitSignedInPreview() {
+    RecentAudioBufferTheme {
+        SettingsScreenContent(
+            state = mutableStateOf(SettingsScreenState(SettingsConfig())),
+            widthSizeClass = WindowWidthSizeClass.Compact,
+            heightSizeClass = WindowHeightSizeClass.Medium,
+            isUserSignedIn = true,
+            isPreview = true,
+            onDeleteAccountClick = {},
+            onSampleRateChanged = {},
+            onBitDepthChanged = {},
+            onBufferTimeLengthChanged = {},
+            onAiAutoClipChanged = {},
+            onSubmit = {},
+            justExit = {})
+    }
+}
+
+@SuppressLint("UnrememberedMutableState")
+@Preview(
+    showBackground = true,
+    name = "Phone Portrait - Signed Out",
+    device = "spec:width=360dp,height=625dp,dpi=480"
+)
+@Composable
+fun SettingsScreenPhonePortraitSignedOutPreview() {
     RecentAudioBufferTheme {
         SettingsScreenContent(
             state = mutableStateOf(SettingsScreenState(SettingsConfig())),
