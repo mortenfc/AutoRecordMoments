@@ -90,6 +90,21 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
 import java.util.concurrent.TimeUnit
 
+private data class LayoutSizing(
+    val mainButtonTextStyle: TextStyle,
+    val secondaryButtonTextStyle: TextStyle,
+    val recordingButtonSize: Dp,
+    val recordingInfoIconSize: Dp,
+    val recordingMainIconSize: Dp,
+    val secondaryActionButtonSize: Dp,
+    val secondaryActionColumnWidth: Dp,
+    val secondaryActionIconSize: Dp,
+    val secondaryActionSpacing: Dp,
+    val thankYouButtonSize: Dp,
+    val thankYouIconSize: Dp,
+    val thankYouTextStyle: TextStyle
+)
+
 /**
  * STATEFUL WRAPPER: The live app calls this composable.
  * It is responsible for connecting to ViewModels.
@@ -232,6 +247,66 @@ private fun MainScreenContent(
         val isLandscape =
             widthSizeClass == WindowWidthSizeClass.Expanded || heightSizeClass == WindowHeightSizeClass.Compact
 
+        // --- Centralized Sizing Configuration ---
+        val tabletSizing = LayoutSizing(
+            mainButtonTextStyle = TextStyle(
+                fontWeight = FontWeight.Bold, fontSize = 30.sp, textAlign = TextAlign.Center
+            ),
+            secondaryButtonTextStyle = TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 26.sp,
+                color = colorResource(id = R.color.teal_900),
+                textAlign = TextAlign.Center,
+                lineHeight = 32.sp
+            ),
+            recordingButtonSize = 340.dp,
+            recordingInfoIconSize = 60.dp,
+            recordingMainIconSize = 100.dp,
+            secondaryActionButtonSize = 150.dp,
+            secondaryActionColumnWidth = 210.dp,
+            secondaryActionIconSize = 70.dp,
+            secondaryActionSpacing = 50.dp,
+            thankYouButtonSize = 120.dp,
+            thankYouIconSize = 60.dp,
+            thankYouTextStyle = TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 26.sp,
+                color = colorResource(id = R.color.teal_900),
+                textAlign = TextAlign.Center
+            )
+        )
+
+        val phoneSizing = LayoutSizing(
+            mainButtonTextStyle = TextStyle(
+                fontWeight = FontWeight.Bold, fontSize = 15.sp, textAlign = TextAlign.Center
+            ),
+            secondaryButtonTextStyle = TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                color = colorResource(id = R.color.teal_900),
+                textAlign = TextAlign.Center,
+                lineHeight = 16.sp
+            ),
+            recordingButtonSize = 140.dp,
+            recordingInfoIconSize = 28.dp,
+            recordingMainIconSize = 48.dp,
+            secondaryActionButtonSize = 72.dp,
+            secondaryActionColumnWidth = 95.dp,
+            secondaryActionIconSize = 32.dp,
+            secondaryActionSpacing = 16.dp,
+            thankYouButtonSize = 72.dp,
+            thankYouIconSize = 32.dp,
+            thankYouTextStyle = TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                color = colorResource(id = R.color.teal_900),
+                textAlign = TextAlign.Center
+            )
+        )
+
+        val currentSizing = if (isTablet) tabletSizing else phoneSizing
+
+
         Box(
             modifier = Modifier
                 .padding(innerPadding)
@@ -243,6 +318,7 @@ private fun MainScreenContent(
                     // --- DEDICATED LANDSCAPE LAYOUT ---
                     LandscapeLayout(
                         isTablet = isTablet,
+                        sizing = currentSizing,
                         isRecordingFromService = isRecordingFromService,
                         recordingButtonBackgroundColor = recordingButtonBackgroundColor,
                         recordingButtonElementsColor = recordingButtonElementsColor,
@@ -262,7 +338,7 @@ private fun MainScreenContent(
                 false -> {
                     // --- PORTRAIT / COMPACT LAYOUT ---
                     PortraitLayout(
-                        isTablet = isTablet,
+                        sizing = currentSizing,
                         useLiveViewModel = useLiveViewModel,
                         hasDonated = hasDonated,
                         isRewardActive = isRewardActive,
@@ -321,7 +397,7 @@ private fun MainScreenContent(
 @OptIn(UnstableApi::class)
 @Composable
 private fun PortraitLayout(
-    isTablet: Boolean,
+    sizing: LayoutSizing,
     useLiveViewModel: Boolean,
     hasDonated: Boolean,
     isRewardActive: Boolean,
@@ -362,78 +438,59 @@ private fun PortraitLayout(
         ) {
             Spacer(Modifier.weight(0.5f))
 
-            // Define styles based on device type
-            val mainButtonTextStyle = if (isTablet) TextStyle(
-                fontWeight = FontWeight.Bold, fontSize = 22.sp, textAlign = TextAlign.Center
-            ) else TextStyle(
-                fontWeight = FontWeight.Bold, fontSize = 15.sp, textAlign = TextAlign.Center
-            )
-            val secondaryButtonTextStyle = if (isTablet) TextStyle(
-                fontWeight = FontWeight.Medium,
-                fontSize = 16.sp,
-                color = colorResource(id = R.color.teal_900),
-                textAlign = TextAlign.Center,
-                lineHeight = 20.sp
-            ) else TextStyle(
-                fontWeight = FontWeight.Medium,
-                fontSize = 12.sp,
-                color = colorResource(id = R.color.teal_900),
-                textAlign = TextAlign.Center,
-                lineHeight = 16.sp
-            )
-
             RecordingButtonWithInfo(
                 isRecording = isRecordingFromService,
                 backgroundColor = recordingButtonBackgroundColor,
                 elementsColor = recordingButtonElementsColor,
                 onToggleRecordingClick = onToggleRecordingClick,
                 onPrivacyInfoClick = onPrivacyInfoClick,
-                buttonSize = if (isTablet) 280.dp else 140.dp,
-                infoIconSize = if (isTablet) 48.dp else 28.dp,
-                mainIconSize = if (isTablet) 80.dp else 48.dp,
-                textStyle = mainButtonTextStyle
+                buttonSize = sizing.recordingButtonSize,
+                infoIconSize = sizing.recordingInfoIconSize,
+                mainIconSize = sizing.recordingMainIconSize,
+                textStyle = sizing.mainButtonTextStyle
             )
             Spacer(Modifier.weight(0.2f))
             Row(
-                horizontalArrangement = Arrangement.spacedBy(if (isTablet) 32.dp else 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(sizing.secondaryActionSpacing),
                 verticalAlignment = Alignment.Top
             ) {
-                val buttonSize = if (isTablet) 110.dp else 72.dp
-                val iconSize = if (isTablet) 50.dp else 32.dp
-
                 SecondaryActionButton(
                     text = stringResource(R.string.save_the_buffer_as_a_recording),
                     icon = R.drawable.baseline_save_alt_24,
                     onClick = onSaveBufferClick,
-                    modifier = Modifier.size(buttonSize),
-                    iconSize = iconSize,
-                    textStyle = secondaryButtonTextStyle
+                    buttonSize = sizing.secondaryActionButtonSize,
+                    columnWidth = sizing.secondaryActionColumnWidth,
+                    iconSize = sizing.secondaryActionIconSize,
+                    textStyle = sizing.secondaryButtonTextStyle
                 )
                 SecondaryActionButton(
                     text = "Remove All Non-\nSpeech From File",
                     icon = R.drawable.outline_content_cut_24,
                     onClick = onTrimFileClick,
-                    modifier = Modifier.size(buttonSize),
-                    iconSize = iconSize,
-                    textStyle = secondaryButtonTextStyle
+                    buttonSize = sizing.secondaryActionButtonSize,
+                    columnWidth = sizing.secondaryActionColumnWidth,
+                    iconSize = sizing.secondaryActionIconSize,
+                    textStyle = sizing.secondaryButtonTextStyle
                 )
                 SecondaryActionButton(
                     text = stringResource(R.string.play_a_recording),
                     icon = R.drawable.baseline_play_circle_outline_24,
                     onClick = onPickAndPlayFileClick,
-                    modifier = Modifier.size(buttonSize),
-                    iconSize = iconSize,
-                    textStyle = secondaryButtonTextStyle
+                    buttonSize = sizing.secondaryActionButtonSize,
+                    columnWidth = sizing.secondaryActionColumnWidth,
+                    iconSize = sizing.secondaryActionIconSize,
+                    textStyle = sizing.secondaryButtonTextStyle
                 )
             }
-            Spacer(Modifier.height(if (isTablet) 32.dp else 16.dp))
+            Spacer(Modifier.height(sizing.secondaryActionSpacing))
             SecondaryActionButton(
                 text = stringResource(R.string.clear_the_buffer),
                 icon = R.drawable.baseline_delete_outline_24,
                 onClick = onResetBufferClick,
-                modifier = Modifier.size(if (isTablet) 110.dp else 72.dp),
-                iconSize = if (isTablet) 50.dp else 32.dp,
-                textStyle = secondaryButtonTextStyle
+                buttonSize = sizing.secondaryActionButtonSize,
+                columnWidth = sizing.secondaryActionColumnWidth,
+                iconSize = sizing.secondaryActionIconSize,
+                textStyle = sizing.secondaryButtonTextStyle
             )
             Spacer(Modifier.weight(1f))
         }
@@ -444,29 +501,15 @@ private fun PortraitLayout(
                 .padding(bottom = 12.dp)
                 .fillMaxWidth()
         ) {
-            val thankYouButtonSize = if (isTablet) 90.dp else 72.dp
-            val thankYouIconSize = if (isTablet) 42.dp else 32.dp
-            val thankYouTextStyle = if (isTablet) TextStyle(
-                fontWeight = FontWeight.Medium,
-                fontSize = 16.sp,
-                color = colorResource(id = R.color.teal_900),
-                textAlign = TextAlign.Center
-            ) else TextStyle(
-                fontWeight = FontWeight.Medium,
-                fontSize = 12.sp,
-                color = colorResource(id = R.color.teal_900),
-                textAlign = TextAlign.Center
-            )
-
             if (hasDonated) {
                 ThankYouButton(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .padding(end = 16.dp),
                     onClick = onDonateClick,
-                    buttonSize = thankYouButtonSize,
-                    iconSize = thankYouIconSize,
-                    textStyle = thankYouTextStyle
+                    buttonSize = sizing.thankYouButtonSize,
+                    iconSize = sizing.thankYouIconSize,
+                    textStyle = sizing.thankYouTextStyle
                 )
             } else {
                 DonateBanner(
@@ -487,6 +530,7 @@ private fun PortraitLayout(
 @Composable
 private fun LandscapeLayout(
     isTablet: Boolean,
+    sizing: LayoutSizing,
     isRecordingFromService: Boolean,
     recordingButtonBackgroundColor: Color,
     recordingButtonElementsColor: Color,
@@ -506,7 +550,7 @@ private fun LandscapeLayout(
             .fillMaxSize()
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(if (isTablet) 32.dp else 16.dp)
+        horizontalArrangement = Arrangement.Center
     ) {
         // --- Left Pane: Main Recording Button & Donation ---
         Column(
@@ -516,44 +560,24 @@ private fun LandscapeLayout(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceAround // Evenly space the items
         ) {
-            val mainButtonTextStyle = if (isTablet) TextStyle(
-                fontWeight = FontWeight.Bold, fontSize = 22.sp, textAlign = TextAlign.Center
-            ) else TextStyle(
-                fontWeight = FontWeight.Bold, fontSize = 15.sp, textAlign = TextAlign.Center
-            )
-
             RecordingButtonWithInfo(
                 isRecording = isRecordingFromService,
                 backgroundColor = recordingButtonBackgroundColor,
                 elementsColor = recordingButtonElementsColor,
                 onToggleRecordingClick = onToggleRecordingClick,
                 onPrivacyInfoClick = onPrivacyInfoClick,
-                buttonSize = if (isTablet) 280.dp else 140.dp,
-                infoIconSize = if (isTablet) 48.dp else 28.dp,
-                mainIconSize = if (isTablet) 80.dp else 48.dp,
-                textStyle = mainButtonTextStyle
-            )
-
-            val thankYouButtonSize = if (isTablet) 90.dp else 72.dp
-            val thankYouIconSize = if (isTablet) 42.dp else 32.dp
-            val thankYouTextStyle = if (isTablet) TextStyle(
-                fontWeight = FontWeight.Medium,
-                fontSize = 16.sp,
-                color = colorResource(id = R.color.teal_900),
-                textAlign = TextAlign.Center
-            ) else TextStyle(
-                fontWeight = FontWeight.Medium,
-                fontSize = 12.sp,
-                color = colorResource(id = R.color.teal_900),
-                textAlign = TextAlign.Center
+                buttonSize = sizing.recordingButtonSize,
+                infoIconSize = sizing.recordingInfoIconSize,
+                mainIconSize = sizing.recordingMainIconSize,
+                textStyle = sizing.mainButtonTextStyle
             )
 
             if (hasDonated) {
                 ThankYouButton(
                     onClick = onDonateClick,
-                    buttonSize = thankYouButtonSize,
-                    iconSize = thankYouIconSize,
-                    textStyle = thankYouTextStyle
+                    buttonSize = sizing.thankYouButtonSize,
+                    iconSize = sizing.thankYouIconSize,
+                    textStyle = sizing.thankYouTextStyle
                 )
             } else {
                 DonateBanner(onClick = onDonateClick, fontSize = 16.sp)
@@ -574,58 +598,45 @@ private fun LandscapeLayout(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                val buttonSize = if (isTablet) 100.dp else 72.dp
-                val iconSize = if (isTablet) 45.dp else 32.dp
-                val spacing = if (isTablet) 24.dp else 16.dp
-                val secondaryButtonTextStyle = if (isTablet) TextStyle(
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 16.sp,
-                    color = colorResource(id = R.color.teal_900),
-                    textAlign = TextAlign.Center,
-                    lineHeight = 20.sp
-                ) else TextStyle(
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 12.sp,
-                    color = colorResource(id = R.color.teal_900),
-                    textAlign = TextAlign.Center,
-                    lineHeight = 16.sp
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(sizing.secondaryActionSpacing)) {
                     SecondaryActionButton(
                         text = stringResource(R.string.save_the_buffer_as_a_recording),
                         icon = R.drawable.baseline_save_alt_24,
                         onClick = onSaveBufferClick,
-                        modifier = Modifier.size(buttonSize),
-                        iconSize = iconSize,
-                        textStyle = secondaryButtonTextStyle
+                        buttonSize = sizing.secondaryActionButtonSize,
+                        columnWidth = sizing.secondaryActionColumnWidth,
+                        iconSize = sizing.secondaryActionIconSize,
+                        textStyle = sizing.secondaryButtonTextStyle
                     )
                     SecondaryActionButton(
                         text = stringResource(R.string.play_a_recording),
                         icon = R.drawable.baseline_play_circle_outline_24,
                         onClick = onPickAndPlayFileClick,
-                        modifier = Modifier.size(buttonSize),
-                        iconSize = iconSize,
-                        textStyle = secondaryButtonTextStyle
+                        buttonSize = sizing.secondaryActionButtonSize,
+                        columnWidth = sizing.secondaryActionColumnWidth,
+                        iconSize = sizing.secondaryActionIconSize,
+                        textStyle = sizing.secondaryButtonTextStyle
                     )
                 }
-                Spacer(Modifier.height(spacing))
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                Spacer(Modifier.height(sizing.secondaryActionSpacing))
+                Row(horizontalArrangement = Arrangement.spacedBy(sizing.secondaryActionSpacing)) {
                     SecondaryActionButton(
                         text = "Remove All Non-\nSpeech From File",
                         icon = R.drawable.outline_content_cut_24,
                         onClick = onTrimFileClick,
-                        modifier = Modifier.size(buttonSize),
-                        iconSize = iconSize,
-                        textStyle = secondaryButtonTextStyle
+                        buttonSize = sizing.secondaryActionButtonSize,
+                        columnWidth = sizing.secondaryActionColumnWidth,
+                        iconSize = sizing.secondaryActionIconSize,
+                        textStyle = sizing.secondaryButtonTextStyle
                     )
                     SecondaryActionButton(
                         text = stringResource(R.string.clear_the_buffer),
                         icon = R.drawable.baseline_delete_outline_24,
                         onClick = onResetBufferClick,
-                        modifier = Modifier.size(buttonSize),
-                        iconSize = iconSize,
-                        textStyle = secondaryButtonTextStyle
+                        buttonSize = sizing.secondaryActionButtonSize,
+                        columnWidth = sizing.secondaryActionColumnWidth,
+                        iconSize = sizing.secondaryActionIconSize,
+                        textStyle = sizing.secondaryButtonTextStyle
                     )
                 }
             }
@@ -675,15 +686,18 @@ private fun RecordingButtonWithInfo(
         )
 
         IconButton(
-            onClick = onPrivacyInfoClick, modifier = Modifier.constrainAs(iconRef) {
-                // 1. Center the icon vertically on the button's top edge.
-                top.linkTo(buttonRef.top)
-                bottom.linkTo(buttonRef.top)
+            onClick = onPrivacyInfoClick,
+            modifier = Modifier
+                .size(infoIconSize)
+                .constrainAs(iconRef) {
+                    // 1. Center the icon vertically on the button's top edge.
+                    top.linkTo(buttonRef.top)
+                    bottom.linkTo(buttonRef.top)
 
-                // 2. Center the icon horizontally on the button's end (right) edge.
-                start.linkTo(buttonRef.end)
-                end.linkTo(buttonRef.end)
-            }) {
+                    // 2. Center the icon horizontally on the button's end (right) edge.
+                    start.linkTo(buttonRef.end)
+                    end.linkTo(buttonRef.end)
+                }) {
             Icon(
                 Icons.Default.Info,
                 "Show privacy info",
@@ -739,6 +753,8 @@ fun RecordingToggleButton(
 @Composable
 fun SecondaryActionButton(
     modifier: Modifier = Modifier,
+    buttonSize: Dp,
+    columnWidth: Dp,
     iconSize: Dp,
     text: String,
     icon: Int,
@@ -746,14 +762,15 @@ fun SecondaryActionButton(
     textStyle: TextStyle
 ) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(if (iconSize > 40.dp) 130.dp else 95.dp)
+        horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier.width(columnWidth)
     ) {
         Button(
             onClick = onClick,
-            modifier = modifier.roundedRectShadow(
-                shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = 24.dp
-            ),
+            modifier = Modifier
+                .size(buttonSize)
+                .roundedRectShadow(
+                    shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = 24.dp
+                ),
             shape = RoundedCornerShape(24.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = colorResource(id = R.color.teal_350),
