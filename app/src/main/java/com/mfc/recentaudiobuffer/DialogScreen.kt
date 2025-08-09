@@ -192,58 +192,49 @@ fun FileSaveDialog(
 
 @Composable
 fun DeleteAccountConfirmationDialog(
-    onDismissRequest: () -> Unit,
-    onConfirm: () -> Unit
+    onDismissRequest: () -> Unit, onConfirm: () -> Unit
 ) {
     var inputText by remember { mutableStateOf("") }
     val isConfirmEnabled = inputText == "DELETE"
 
-    CustomAlertDialog(
-        onDismissRequest = onDismissRequest,
-        title = {
+    CustomAlertDialog(onDismissRequest = onDismissRequest, title = {
+        Text(
+            "Are you sure?",
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.error,
+            fontSize = 22.sp
+        )
+    }, text = {
+        Column {
             Text(
-                "Are you sure?",
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.error,
-                fontSize = 22.sp
+                "This action is permanent and cannot be undone. All your synced settings will be lost. To proceed, please type DELETE in the box below.",
+                color = colorResource(id = R.color.teal_900),
+                fontSize = 16.sp
             )
-        },
-        text = {
-            Column {
-                Text(
-                    "This action is permanent and cannot be undone. All your synced settings will be lost. To proceed, please type DELETE in the box below.",
-                    color = colorResource(id = R.color.teal_900),
-                    fontSize = 16.sp
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    label = { Text("Type DELETE to confirm") },
-                    singleLine = true,
-                    keyboardActions = KeyboardActions(onDone = { if (isConfirmEnabled) onConfirm() }),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismissRequest) {
-                Text("CANCEL")
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                enabled = isConfirmEnabled,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    disabledContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
-                )
-            ) {
-                Text("CONFIRM DELETE")
-            }
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedTextField(
+                value = inputText,
+                onValueChange = { inputText = it },
+                label = { Text("Type DELETE to confirm") },
+                singleLine = true,
+                keyboardActions = KeyboardActions(onDone = { if (isConfirmEnabled) onConfirm() }),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
-    )
+    }, dismissButton = {
+        TextButton(onClick = onDismissRequest) {
+            Text("CANCEL")
+        }
+    }, confirmButton = {
+        Button(
+            onClick = onConfirm, enabled = isConfirmEnabled, colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                disabledContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+            )
+        ) {
+            Text("CONFIRM DELETE")
+        }
+    })
 }
 
 @Composable
@@ -277,6 +268,45 @@ fun PrivacyInfoDialog(onDismissRequest: () -> Unit) {
     })
 }
 
+
+@Composable
+fun LockScreenInfoDialog(
+    onDismissRequest: () -> Unit, onConfirm: () -> Unit, onDismiss: () -> Unit
+) {
+    CustomAlertDialog(onDismissRequest = onDismissRequest, title = {
+        Text(
+            "Lock Screen Controls",
+            color = colorResource(id = R.color.teal_900),
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp
+        )
+    }, text = {
+        Text(
+            text = "To use the controls from the lock screen, your system needs to show detailed notifications. The steps vary by device.\n\n" +
+                    "1. Tap 'Open Settings'.\n" +
+                    "2. Find 'Notifications on lock screen' and set it to 'Show all content' (or similar wording like 'Show details' or 'Show sensitive content').\n" +
+                    "3. Some devices have a 'Customize lock screen' option, so search for it in global Settings. If so, ensure notifications are set to display as a 'List' or 'Details', not just icons.",
+            color = colorResource(id = R.color.teal_900),
+            fontSize = 16.sp,
+            lineHeight = 22.sp,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                textAlign = TextAlign.Justify,
+                hyphens = Hyphens.Auto,
+                lineBreak = LineBreak.Paragraph,
+            )
+        )
+    }, dismissButton = {
+        TextButton(onClick = onDismiss) {
+            Text("LATER")
+        }
+    }, confirmButton = {
+        Button(onClick = onConfirm) {
+            Text("OPEN SETTINGS")
+        }
+    })
+}
+
+
 @Preview(showBackground = true)
 @Composable
 fun DialogsPreview() {
@@ -289,4 +319,10 @@ fun DialogsPreview() {
             message = "Not enough memory to start recording. Please reduce config values in settings.",
             onDismiss = {})
     }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun LockScreenInfoDialogPreview() {
+    LockScreenInfoDialog({}, {}, {})
 }

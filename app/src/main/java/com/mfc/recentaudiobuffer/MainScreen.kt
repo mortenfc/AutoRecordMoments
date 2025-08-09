@@ -62,7 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -133,8 +133,12 @@ fun MainScreen(
     showTrimFileDialog: Boolean,
     onTrimFileSelected: (Uri) -> Unit,
     mediaPlayerManager: MediaPlayerManager,
+    playerUiState: PlayerUiState,
+    onPlayerClose: () -> Unit,
     isLoading: Boolean,
     showSaveDialog: Boolean,
+    showLockscreenInfoDialog: MutableState<Boolean>,
+    openLockScreenSettings: () -> Unit,
     suggestedFileName: String,
     onConfirmSave: (fileName: String) -> Unit,
     onDismissSaveDialog: () -> Unit
@@ -161,8 +165,12 @@ fun MainScreen(
         showTrimFileDialog = showTrimFileDialog,
         onTrimFileSelected = onTrimFileSelected,
         mediaPlayerManager = mediaPlayerManager,
+        playerUiState = playerUiState,
+        onPlayerClose = onPlayerClose,
         isLoading = isLoading,
         showSaveDialog = showSaveDialog,
+        showLockscreenInfoDialog = showLockscreenInfoDialog,
+        openLockScreenSettings = openLockScreenSettings,
         suggestedFileName = suggestedFileName,
         onConfirmSave = onConfirmSave,
         onDismissSaveDialog = onDismissSaveDialog,
@@ -194,8 +202,12 @@ private fun MainScreenContent(
     showTrimFileDialog: Boolean,
     onTrimFileSelected: (Uri) -> Unit,
     mediaPlayerManager: MediaPlayerManager,
+    playerUiState: PlayerUiState,
+    onPlayerClose: () -> Unit,
     isLoading: Boolean,
     showSaveDialog: Boolean,
+    showLockscreenInfoDialog: MutableState<Boolean>,
+    openLockScreenSettings: () -> Unit,
     suggestedFileName: String,
     onConfirmSave: (fileName: String) -> Unit,
     onDismissSaveDialog: () -> Unit,
@@ -333,6 +345,8 @@ private fun MainScreenContent(
                         hasDonated = hasDonated,
                         onDonateClick = onDonateClick,
                         mediaPlayerManager = mediaPlayerManager,
+                        playerUiState = playerUiState,
+                        onPlayerClose = onPlayerClose,
                         useLiveViewModel = useLiveViewModel
                     )
                 }
@@ -355,7 +369,9 @@ private fun MainScreenContent(
                         onPickAndPlayFileClick = onPickAndPlayFileClick,
                         onResetBufferClick = onResetBufferClick,
                         onDonateClick = onDonateClick,
-                        mediaPlayerManager = mediaPlayerManager
+                        mediaPlayerManager = mediaPlayerManager,
+                        playerUiState = playerUiState,
+                        onPlayerClose = onPlayerClose
                     )
                 }
             }
@@ -380,8 +396,22 @@ private fun MainScreenContent(
     }
 
     if (showPrivacyInfoDialog) {
-        PrivacyInfoDialog(onDismissRequest = { showPrivacyInfoDialog = false })
+        PrivacyInfoDialog(onDismissRequest = {
+            showPrivacyInfoDialog = false
+            showLockscreenInfoDialog.value = true
+        })
     }
+
+    if (showLockscreenInfoDialog.value) {
+        LockScreenInfoDialog(
+            onDismissRequest = { showLockscreenInfoDialog.value = false },
+            onConfirm = {
+                showLockscreenInfoDialog.value = false
+                openLockScreenSettings()
+            },
+            onDismiss = { showLockscreenInfoDialog.value = false })
+    }
+
 
     if (showDirectoryPermissionDialog) {
         DirectoryPickerDialog(onDismiss = onDirectoryAlertDismiss)
@@ -414,7 +444,9 @@ private fun PortraitLayout(
     onPickAndPlayFileClick: () -> Unit,
     onResetBufferClick: () -> Unit,
     onDonateClick: () -> Unit,
-    mediaPlayerManager: MediaPlayerManager
+    mediaPlayerManager: MediaPlayerManager,
+    playerUiState: PlayerUiState,
+    onPlayerClose: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -522,7 +554,11 @@ private fun PortraitLayout(
             }
         }
         if (useLiveViewModel) {
-            PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
+            PlayerControlViewContainer(
+                mediaPlayerManager = mediaPlayerManager,
+                playerUiState = playerUiState,
+                onPlayerClose = onPlayerClose
+            )
         }
     }
 }
@@ -544,6 +580,8 @@ private fun LandscapeLayout(
     hasDonated: Boolean,
     onDonateClick: () -> Unit,
     mediaPlayerManager: MediaPlayerManager,
+    playerUiState: PlayerUiState,
+    onPlayerClose: () -> Unit,
     useLiveViewModel: Boolean
 ) {
     Row(
@@ -646,7 +684,11 @@ private fun LandscapeLayout(
             }
             // Player appears at the bottom of the pane, outside the weighted content
             if (useLiveViewModel) {
-                PlayerControlViewContainer(mediaPlayerManager = mediaPlayerManager)
+                PlayerControlViewContainer(
+                    mediaPlayerManager = mediaPlayerManager,
+                    playerUiState = playerUiState,
+                    onPlayerClose = onPlayerClose
+                )
             }
         }
     }
@@ -1018,31 +1060,18 @@ fun ThankYouButton(
 @UnstableApi
 @Composable
 fun PlayerControlViewContainer(
-    mediaPlayerManager: MediaPlayerManager, modifier: Modifier = Modifier
+    mediaPlayerManager: MediaPlayerManager,
+    playerUiState: PlayerUiState,
+    onPlayerClose: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    var isVisible by remember { mutableStateOf(false) }
-    var currentFileName by remember { mutableStateOf("") }
-    var currentUri by remember { mutableStateOf<Uri?>(null) }
-
-    DisposableEffect(mediaPlayerManager) {
-        mediaPlayerManager.onPlayerReady = { uri, fileName ->
-            isVisible = true
-            currentUri = uri
-            currentFileName = fileName
-        }
-        onDispose {
-            mediaPlayerManager.closeMediaPlayer()
-        }
-    }
-
-
     AnimatedVisibility(
-        visible = isVisible,
+        visible = playerUiState.isVisible,
         modifier = modifier,
         enter = fadeIn(animationSpec = tween(durationMillis = 200)),
         exit = fadeOut(animationSpec = tween(durationMillis = 200))
     ) {
-        key(currentUri) {
+        key(playerUiState.currentUri) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1067,7 +1096,7 @@ fun PlayerControlViewContainer(
                         view.show()
                     })
                     Text(
-                        text = currentFileName,
+                        text = playerUiState.currentFileName,
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
@@ -1081,10 +1110,8 @@ fun PlayerControlViewContainer(
                         })
                 }
                 IconButton(
-                    onClick = {
-                        mediaPlayerManager.closeMediaPlayer()
-                        isVisible = false
-                    }, modifier = Modifier
+                    onClick = onPlayerClose,
+                    modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(4.dp)
                         .size(40.dp)
@@ -1133,8 +1160,12 @@ fun MainScreen9x16PhonePortraitPreview() {
             showTrimFileDialog = false,
             onTrimFileSelected = {},
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
+            playerUiState = PlayerUiState(),
+            onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
+            showLockscreenInfoDialog = mutableStateOf(false),
+            openLockScreenSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
@@ -1172,8 +1203,12 @@ fun MainScreenTypicalPhonePortraitPreview() {
             showTrimFileDialog = false,
             onTrimFileSelected = {},
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
+            playerUiState = PlayerUiState(),
+            onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
+            showLockscreenInfoDialog = mutableStateOf(false),
+            openLockScreenSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
@@ -1213,8 +1248,12 @@ fun MainScreenPhoneLandscapePreview() {
             showTrimFileDialog = false,
             onTrimFileSelected = {},
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
+            playerUiState = PlayerUiState(),
+            onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
+            showLockscreenInfoDialog = mutableStateOf(false),
+            openLockScreenSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
@@ -1254,8 +1293,12 @@ fun MainScreenTabletPortraitPreview() {
             showTrimFileDialog = false,
             onTrimFileSelected = {},
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
+            playerUiState = PlayerUiState(),
+            onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
+            showLockscreenInfoDialog = mutableStateOf(false),
+            openLockScreenSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
@@ -1296,8 +1339,12 @@ fun MainScreenTabletLandscapePreview() {
             showTrimFileDialog = false,
             onTrimFileSelected = {},
             mediaPlayerManager = MediaPlayerManager(LocalContext.current) { _, _ -> },
+            playerUiState = PlayerUiState(),
+            onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
+            showLockscreenInfoDialog = mutableStateOf(false),
+            openLockScreenSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},

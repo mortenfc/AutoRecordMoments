@@ -34,6 +34,7 @@ class MediaPlayerManager(
     private val context: Context,
     var onPlayerReady: (uri: Uri, fileName: String) -> Unit
 ) {
+    private val applicationContext: Context = context.applicationContext
     var player: ExoPlayer? = null
     var playerControlView: PlayerControlView? = null
     var selectedUri: Uri? = null
@@ -70,7 +71,7 @@ class MediaPlayerManager(
             closeMediaPlayer()
 
             selectedUri = selectedMediaToPlayUri
-            player = ExoPlayer.Builder(context).build().apply {
+            player = ExoPlayer.Builder(applicationContext).build().apply {
                 val mediaItem = MediaItem.fromUri(selectedMediaToPlayUri)
                 setMediaItem(mediaItem)
                 addListener(playerListener)
@@ -91,13 +92,14 @@ class MediaPlayerManager(
             it.release()
         }
         player = null
+        selectedUri = null // Clear the URI when the player is closed
     }
 
     private fun getFileNameFromSelectedUri(): String {
         if (selectedUri == null) return "Unknown File"
         var fileName = "Unknown File"
 
-        context.contentResolver.query(selectedUri!!, null, null, null, null)?.use { cursor ->
+        applicationContext.contentResolver.query(selectedUri!!, null, null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (nameIndex != -1) {

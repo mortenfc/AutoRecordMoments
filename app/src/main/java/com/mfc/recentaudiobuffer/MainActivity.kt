@@ -20,6 +20,7 @@ package com.mfc.recentaudiobuffer
 
 import android.Manifest
 import android.app.AlertDialog
+import android.app.Application
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -35,6 +36,7 @@ import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
@@ -45,11 +47,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
 import com.google.android.gms.ads.MobileAds
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -58,6 +67,68 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
+import kotlin.getValue
+
+
+// --- ViewModel and State classes to manage player state across configuration changes ---
+
+/**
+ * Data class representing the UI state of the media player.
+ * It's kept separate from the Activity/Composable to survive configuration changes.
+ */
+data class PlayerUiState(
+    val isVisible: Boolean = false, val currentUri: Uri? = null, val currentFileName: String = ""
+)
+
+/**
+ * ViewModel to hold the MediaPlayerManager and its UI state.
+ * This ensures the player survives screen rotations and other configuration changes.
+ */
+@HiltViewModel
+class MainViewModel @Inject constructor(
+    application: Application
+) : ViewModel() {
+
+    private val _playerUiState = MutableStateFlow(PlayerUiState())
+    val playerUiState: StateFlow<PlayerUiState> = _playerUiState.asStateFlow()
+
+    // The MediaPlayerManager is now owned by the ViewModel.
+    val mediaPlayerManager: MediaPlayerManager = MediaPlayerManager(application) { uri, fileName ->
+        viewModelScope.launch {
+            _playerUiState.update {
+                it.copy(
+                    isVisible = true, currentUri = uri, currentFileName = fileName
+                )
+            }
+        }
+    }
+
+    /**
+     * Handles the user closing the media player UI.
+     */
+    fun onPlayerClose() {
+        mediaPlayerManager.closeMediaPlayer()
+        _playerUiState.update { it.copy(isVisible = false) }
+    }
+
+    /**
+     * Sets up the media player with a new URI.
+     */
+    fun setUpMediaPlayer(uri: Uri) {
+        mediaPlayerManager.setUpMediaPlayer(uri)
+    }
+
+    /**
+     * This is called when the ViewModel is about to be destroyed.
+     * It's the correct place to release the player resources.
+     */
+    override fun onCleared() {
+        super.onCleared()
+        mediaPlayerManager.closeMediaPlayer()
+        Timber.d("MainViewModel cleared, player released.")
+    }
+}
+
 
 @AndroidEntryPoint
 @UnstableApi
@@ -78,6 +149,8 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var interstitialAdManager: InterstitialAdManager
+
+    private val viewModel: MainViewModel by viewModels()
     private var myBufferService: MyBufferServiceInterface? = null
 
     // --- UI State Management ---
@@ -88,6 +161,7 @@ class MainActivity : AppCompatActivity() {
     private var showTrimFileDialog by mutableStateOf(false)
     private var showSaveDialog by mutableStateOf(false)
     private var showDirectoryPermissionDialog by mutableStateOf(false)
+    private var showLockscreenInfoDialog = mutableStateOf(false)
     private var hasDonated by mutableStateOf(false)
 
     // State for the save dialog
@@ -111,7 +185,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private var mediaPlayerManager: MediaPlayerManager? = null
     private lateinit var foregroundServiceAudioBuffer: Intent
 
     private val foregroundBufferServiceConn = object : ServiceConnection {
@@ -205,8 +278,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
-        mediaPlayerManager =
-            MediaPlayerManager(context = this) { _, _ -> Timber.i("Player is ready.") }
 
         MobileAds.initialize(this)
         updateRewardState()
@@ -220,6 +291,7 @@ class MainActivity : AppCompatActivity() {
 
         setContent {
             val windowSizeClass = calculateWindowSizeClass(this)
+            val playerUiState by viewModel.playerUiState.collectAsState()
             MainScreen(
                 widthSizeClass = windowSizeClass.widthSizeClass,
                 heightSizeClass = windowSizeClass.heightSizeClass,
@@ -232,7 +304,7 @@ class MainActivity : AppCompatActivity() {
                 showRecentFilesDialog = showRecentFilesDialog,
                 onFileSelected = { uri ->
                     showRecentFilesDialog = false
-                    if (uri != Uri.EMPTY) setUpMediaPlayer(uri)
+                    if (uri != Uri.EMPTY) viewModel.setUpMediaPlayer(uri)
                 },
                 onDonateClick = { onClickDonate() },
                 hasDonated = hasDonated,
@@ -250,9 +322,13 @@ class MainActivity : AppCompatActivity() {
                     showDirectoryPermissionDialog = false
                     pickDirectory()
                 },
-                mediaPlayerManager = mediaPlayerManager!!,
+                mediaPlayerManager = viewModel.mediaPlayerManager,
+                playerUiState = playerUiState,
+                onPlayerClose = { viewModel.onPlayerClose() },
                 isLoading = isLoading,
                 showSaveDialog = showSaveDialog,
+                showLockscreenInfoDialog = showLockscreenInfoDialog,
+                openLockScreenSettings = { openLockScreenSettings() },
                 suggestedFileName = suggestedFileNameState,
                 onConfirmSave = { fileName ->
                     showSaveDialog = false
@@ -264,7 +340,6 @@ class MainActivity : AppCompatActivity() {
                     audioConfigState = null
                     suggestedFileNameState = ""
                 })
-
             serviceError?.let { message ->
                 RecordingErrorDialog(
                     message = message, onDismiss = { serviceError = null })
@@ -308,14 +383,13 @@ class MainActivity : AppCompatActivity() {
         if (foregroundBufferServiceConn.isBound) {
             unbindService(foregroundBufferServiceConn)
         }
-        mediaPlayerManager?.closeMediaPlayer()
     }
 
     private fun handleIntent(intent: Intent) {
         if (intent.action == FileSavingService.ACTION_OPEN_FILE) {
             val savedFileUri =
                 intent.getParcelableExtra<Uri>(FileSavingService.EXTRA_SAVED_FILE_URI)
-            savedFileUri?.let { setUpMediaPlayer(it) }
+            savedFileUri?.let { viewModel.setUpMediaPlayer(it) }
         }
         if (intent.action == ACTION_REQUEST_DIRECTORY_PERMISSION) {
             pickDirectory()
@@ -323,8 +397,35 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun openLockScreenSettings() {
+        try {
+            // This intent takes the user to the global lock screen notification settings.
+            val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                // Use the constant from your service
+                putExtra(Settings.EXTRA_CHANNEL_ID, MyBufferService.CHRONIC_NOTIFICATION_CHANNEL_ID)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            // Fallback for older devices or custom ROMs that might not have this specific screen.
+            Timber.w(e, "Could not open lock screen settings, falling back to app details.")
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            intent.data = Uri.fromParts("package", packageName, null)
+            startActivity(intent)
+        }
+    }
+
     private fun onClickStartRecording() {
         getPermissionsAndThen(requiredPermissions) {
+            lifecycleScope.launch {
+                val settings = settingsRepository.getSettingsConfig()
+                if (!settings.hasShownLockscreenInfo) {
+                    showLockscreenInfoDialog.value = true
+                    // Persist the change so the dialog doesn't show again
+                    settingsRepository.updateHasShownLockscreenInfo(true)
+                }
+            }
+
             if (!foregroundBufferServiceConn.isBound) {
                 wasStartRecordingButtonPress = true
                 startForegroundService(foregroundServiceAudioBuffer)
@@ -474,10 +575,6 @@ class MainActivity : AppCompatActivity() {
             onPermissionsGrantedCallback?.invoke()
             onPermissionsGrantedCallback = null
         }
-    }
-
-    private fun setUpMediaPlayer(selectedMediaToPlayUri: Uri) {
-        mediaPlayerManager?.setUpMediaPlayer(selectedMediaToPlayUri)
     }
 
     private fun trimAndSaveFile(fileUri: Uri) {

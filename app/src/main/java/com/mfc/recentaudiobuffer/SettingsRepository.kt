@@ -117,6 +117,7 @@ data class SettingsConfig(
     var bitDepth: BitDepth = bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
     var areAdsEnabled: Boolean = true,
     var isAiAutoClipEnabled: Boolean = true,
+    var hasShownLockscreenInfo: Boolean = false,
 )
 
 fun SettingsConfig.toAudioConfig(): AudioConfig {
@@ -146,6 +147,7 @@ class SettingsRepository @Inject constructor(
         val BIT_DEPTH = stringPreferencesKey("bit_depth")
         val ARE_ADS_ENABLED = booleanPreferencesKey("are_ads_enabled")
         val IS_AI_AUTO_CLIP_ENABLED = booleanPreferencesKey("is_ai_auto_clip_enabled")
+        val HAS_SHOWN_LOCKSCREEN_INFO = booleanPreferencesKey("has_shown_lockscreen_info")
     }
 
     // Helper function to get the current user ID or null if not logged in
@@ -201,6 +203,10 @@ class SettingsRepository @Inject constructor(
 
     }
 
+    suspend fun updateHasShownLockscreenInfo(shown: Boolean) {
+        updateSetting(PreferencesKeys.HAS_SHOWN_LOCKSCREEN_INFO, shown, "hasShownLockscreenInfo")
+    }
+
     private fun getBitDepth(key: String): BitDepth {
         return BitDepth.fromString(key) ?: BitDepth(8, AudioFormat.ENCODING_PCM_8BIT)
     }
@@ -218,15 +224,17 @@ class SettingsRepository @Inject constructor(
     }
 
     private fun DocumentSnapshot.toSettingsConfig(): SettingsConfig {
-        val audioConfig = this.toAudioConfig() // Reuse the other helper!
+        val audioConfig = this.toAudioConfig()
         val areAdsEnabled = getBoolean("areAdsEnabled") ?: true
         val isAiAutoClipEnabled = getBoolean("isAiAutoClipEnabled") ?: true
+        val hasShownLockscreenInfo = getBoolean("hasShownLockscreenInfo") ?: false
         return SettingsConfig(
             sampleRateHz = audioConfig.sampleRateHz,
             bufferTimeLengthS = audioConfig.bufferTimeLengthS,
             bitDepth = audioConfig.bitDepth,
             areAdsEnabled = areAdsEnabled,
-            isAiAutoClipEnabled = isAiAutoClipEnabled
+            isAiAutoClipEnabled = isAiAutoClipEnabled,
+            hasShownLockscreenInfo = hasShownLockscreenInfo
         )
     }
 
@@ -240,7 +248,8 @@ class SettingsRepository @Inject constructor(
                 prefs[PreferencesKeys.BIT_DEPTH] ?: DEFAULT_BIT_DEPTH_KEY
             ) ?: bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
             areAdsEnabled = prefs[PreferencesKeys.ARE_ADS_ENABLED] ?: true,
-            isAiAutoClipEnabled = prefs[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] ?: true
+            isAiAutoClipEnabled = prefs[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] ?: true,
+            hasShownLockscreenInfo = prefs[PreferencesKeys.HAS_SHOWN_LOCKSCREEN_INFO] ?: false
         )
     }
 
@@ -274,6 +283,8 @@ class SettingsRepository @Inject constructor(
                     preferences[PreferencesKeys.ARE_ADS_ENABLED] = settingsToCache.areAdsEnabled
                     preferences[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] =
                         settingsToCache.isAiAutoClipEnabled
+                    preferences[PreferencesKeys.HAS_SHOWN_LOCKSCREEN_INFO] =
+                        settingsToCache.hasShownLockscreenInfo
                 }
             }
         }

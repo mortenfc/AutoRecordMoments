@@ -87,7 +87,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
     companion object {
         const val CHRONIC_NOTIFICATION_ID = 1
-        private const val CHRONIC_NOTIFICATION_CHANNEL_ID = "recording_channel"
+        const val CHRONIC_NOTIFICATION_CHANNEL_ID = "recording_channel"
         const val ACTION_STOP_RECORDING_SERVICE = "com.example.app.ACTION_STOP_RECORDING_SERVICE"
         const val ACTION_START_RECORDING_SERVICE = "com.example.app.ACTION_START_RECORDING_SERVICE"
         const val ACTION_SAVE_RECORDING_SERVICE = "com.example.app.ACTION_SAVE_RECORDING_SERVICE"
@@ -557,10 +557,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             val destDirUri = FileSavingUtils.getCachedGrantedUri(this)
 
             if (tempFileUri != null && destDirUri != null) {
-                val timestamp =
-                    SimpleDateFormat("yy-MM-dd_HH-mm", Locale.getDefault()).format(
-                        Date()
-                    )
+                val timestamp = SimpleDateFormat("yy-MM-dd_HH-mm", Locale.getDefault()).format(
+                    Date()
+                )
                 val fileName = "quicksave_${timestamp}.wav"
 
                 val saveIntent = Intent(this, FileSavingService::class.java).apply {
@@ -573,11 +572,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             } else {
                 Timber.e("Failed to quick save. Temp URI: $tempFileUri, Dest Dir URI: $destDirUri")
                 Toast.makeText(
-                    this,
-                    "Quick save failed. No save directory set.",
-                    Toast.LENGTH_LONG
-                )
-                    .show()
+                    this, "Quick save failed. No save directory set.", Toast.LENGTH_LONG
+                ).show()
                 val selfIntent = Intent(this, MyBufferService::class.java).apply {
                     action = ACTION_ON_SAVE_FAIL
                 }
@@ -738,30 +734,21 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     @OptIn(UnstableApi::class)
     private fun createNotification(): Notification {
         val stopIntent = PendingIntent.getBroadcast(
-            this,
-            REQUEST_CODE_STOP,
-            Intent(this, NotificationActionReceiver::class.java).apply {
+            this, REQUEST_CODE_STOP, Intent(this, NotificationActionReceiver::class.java).apply {
                 action = NotificationActionReceiver.ACTION_STOP_RECORDING
-            },
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val startIntent = PendingIntent.getBroadcast(
-            this,
-            REQUEST_CODE_START,
-            Intent(this, NotificationActionReceiver::class.java).apply {
+            this, REQUEST_CODE_START, Intent(this, NotificationActionReceiver::class.java).apply {
                 action = NotificationActionReceiver.ACTION_START_RECORDING
-            },
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val saveIntent = PendingIntent.getBroadcast(
-            this,
-            REQUEST_CODE_SAVE,
-            Intent(this, NotificationActionReceiver::class.java).apply {
+            this, REQUEST_CODE_SAVE, Intent(this, NotificationActionReceiver::class.java).apply {
                 action = NotificationActionReceiver.ACTION_SAVE_RECORDING
-            },
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         // Intent to open MainActivity when the notification body is clicked
@@ -778,34 +765,34 @@ class MyBufferService : Service(), MyBufferServiceInterface {
             .setContentTitle("Buffered Recent Audio")
             .setSmallIcon(R.drawable.baseline_record_voice_over_24)
             .setAutoCancel(false) // Keep notification after being tapped
-            .setSmallIcon(R.drawable.baseline_record_voice_over_24) // Set the small icon
             .setOngoing(true) // Make it a chronic notification
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true) // IMPORTANCE_DEFAULT otherwise notifies on each update
             .setSilent(true) // Don't make sounds
             .setContentIntent(contentIntent) // Onclick open MainScreen
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
 
         if (_isLoading.value) {
             if (_trimmingProgress.value >= 0f) {
                 val progressPercent = (_trimmingProgress.value * 100).roundToInt()
-                val etaText =
-                    if (_trimmingEta.value > 0) " -- ETA ${_trimmingEta.value}s" else ""
+                val etaText = if (_trimmingEta.value > 0) " -- ETA ${_trimmingEta.value}s" else ""
                 builder.setContentText("AI Trimming... [${progressPercent}%${etaText}]")
                     .setProgress(100, progressPercent, false)
             } else {
-                // We are in the saving phase.
-                builder.setContentText("Saving...")
-                    .setProgress(0, 0, true) // Indeterminate progress
+                builder.setContentText("Saving...").setProgress(0, 0, true)
             }
         } else {
-            builder.setContentText(
-                "${
-                    if (hasOverflowed.get()) "100%" else "${
-                        ((recorderIndex.get()
-                            .toFloat() / totalRingBufferSize.get()) * 100).roundToInt()
-                    }%"
-                } - ${recordedDuration.get()}"
+            builder.setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText(
+                        "${
+                            if (hasOverflowed.get()) "100%" else "${
+                                ((recorderIndex.get()
+                                    .toFloat() / totalRingBufferSize.get()) * 100).roundToInt()
+                            }%"
+                        } - ${recordedDuration.get()}"
+                    )
             ).setProgress(
                 totalRingBufferSize.get(),
                 if (hasOverflowed.get()) totalRingBufferSize.get() else recorderIndex.get(),
@@ -815,9 +802,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 if (_isRecording.value) "Pause" else "Continue",
                 if (_isRecording.value) stopIntent else startIntent
             ).addAction(
-                R.drawable.baseline_save_alt_24,
-                "Save and Clear",
-                if (canSave) saveIntent else null
+                R.drawable.baseline_save_alt_24, "Save and Clear", if (canSave) saveIntent else null
             )
         }
 

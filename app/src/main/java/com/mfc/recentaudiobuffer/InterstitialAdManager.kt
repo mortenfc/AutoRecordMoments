@@ -85,7 +85,8 @@ class InterstitialAdManager @Inject constructor(
         val appOpenCount = prefs.getInt("appOpenCount", 0) + 1
         prefs.edit { putInt("appOpenCount", appOpenCount) }
 
-        if (appOpenCount % OPEN_COUNT_GOAL == 0) {
+        // Only trigger ad on the 3rd open, not the first 2
+        if (appOpenCount % OPEN_COUNT_GOAL != 0) {
             Timber.d("App open count is $appOpenCount. Not an ad trigger.")
             return
         }

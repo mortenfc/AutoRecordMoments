@@ -20,6 +20,7 @@ package com.mfc.recentaudiobuffer
 
 import android.app.Activity
 import android.app.Application
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Bundle
@@ -63,9 +64,15 @@ class AutoRecordMomentsApp : Application(), Application.ActivityLifecycleCallbac
     private fun createNotificationChannels() {
         // Recording Channel
         val recordingChannel = NotificationChannel(
-            "recording_channel", "Recording Into RingBuffer", NotificationManager.IMPORTANCE_DEFAULT
+            MyBufferService.CHRONIC_NOTIFICATION_CHANNEL_ID, "Background Recording in Ring-Buffer",
+            // Use default importance to avoid sound on every update. Priority is for pre-Oreo.
+            NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "Channel for the persistent recording notification banner"
+            description = "Persistent notification for audio buffering controls."
+            // Request to show on lock screen, but user can override.
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            // The service updates frequently, so we don't want sound.
+            setSound(null, null)
         }
 
         // Result Channel
