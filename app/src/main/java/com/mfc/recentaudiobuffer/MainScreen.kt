@@ -365,7 +365,7 @@ private fun PortraitLayout(
             val mainButtonTextStyle = if (isTablet) TextStyle(
                 fontWeight = FontWeight.Bold, fontSize = 22.sp, textAlign = TextAlign.Center
             ) else TextStyle(
-                fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center
+                fontWeight = FontWeight.Bold, fontSize = 15.sp, textAlign = TextAlign.Center
             )
             val secondaryButtonTextStyle = if (isTablet) TextStyle(
                 fontWeight = FontWeight.Medium,
@@ -387,9 +387,9 @@ private fun PortraitLayout(
                 elementsColor = recordingButtonElementsColor,
                 onToggleRecordingClick = onToggleRecordingClick,
                 onPrivacyInfoClick = onPrivacyInfoClick,
-                buttonSize = if (isTablet) 280.dp else 165.dp,
-                infoIconSize = if (isTablet) 48.dp else 32.dp,
-                mainIconSize = if (isTablet) 80.dp else 64.dp,
+                buttonSize = if (isTablet) 280.dp else 140.dp,
+                infoIconSize = if (isTablet) 48.dp else 28.dp,
+                mainIconSize = if (isTablet) 80.dp else 48.dp,
                 textStyle = mainButtonTextStyle
             )
             Spacer(Modifier.weight(0.2f))
@@ -518,7 +518,7 @@ private fun LandscapeLayout(
             val mainButtonTextStyle = if (isTablet) TextStyle(
                 fontWeight = FontWeight.Bold, fontSize = 22.sp, textAlign = TextAlign.Center
             ) else TextStyle(
-                fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center
+                fontWeight = FontWeight.Bold, fontSize = 15.sp, textAlign = TextAlign.Center
             )
 
             RecordingButtonWithInfo(
@@ -527,9 +527,9 @@ private fun LandscapeLayout(
                 elementsColor = recordingButtonElementsColor,
                 onToggleRecordingClick = onToggleRecordingClick,
                 onPrivacyInfoClick = onPrivacyInfoClick,
-                buttonSize = if (isTablet) 240.dp else 165.dp,
-                infoIconSize = if (isTablet) 40.dp else 28.dp,
-                mainIconSize = if (isTablet) 72.dp else 64.dp,
+                buttonSize = if (isTablet) 280.dp else 140.dp,
+                infoIconSize = if (isTablet) 48.dp else 28.dp,
+                mainIconSize = if (isTablet) 80.dp else 48.dp,
                 textStyle = mainButtonTextStyle
             )
 
@@ -1084,7 +1084,7 @@ fun PlayerControlViewContainer(
 @Preview(
     showBackground = true,
     name = "Phone Portrait (Compact)",
-    device = "spec:width=360dp,height=640dp,dpi=480"
+    device = "spec:width=360dp,height=615dp,dpi=480"
 )
 @Composable
 fun MainScreenPhonePortraitPreview() {
@@ -1125,7 +1125,7 @@ fun MainScreenPhonePortraitPreview() {
 @Preview(
     showBackground = true,
     name = "Phone Landscape (Compact Height)",
-    device = "spec:width=800dp,height=360dp,dpi=480"
+    device = "spec:width=640dp,height=335dp,dpi=480"
 )
 @Composable
 fun MainScreenPhoneLandscapePreview() {
