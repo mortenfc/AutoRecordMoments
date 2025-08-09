@@ -53,7 +53,8 @@ class InterstitialAdManager @Inject constructor(
         private const val AD_PREFS = "AdPrefs"
         private const val KEY_REWARD_EXPIRY_TIMESTAMP = "rewardExpiryTimestamp"
 
-        private const val OPEN_COUNT_GOAL = 3
+        private const val INITIAL_OPEN_COUNT_GOAL = 4
+        private const val CONTINUED_OPEN_COUNT_GOAL = 2
         private val REWARD_DURATION_MS = TimeUnit.DAYS.toMillis(2)
         private const val REWARDED_INTERSTITIAL_AD_UNIT_ID =
             "ca-app-pub-5330230981165217/4603016372"
@@ -83,10 +84,11 @@ class InterstitialAdManager @Inject constructor(
 
         val prefs = context.getSharedPreferences(AD_PREFS, Context.MODE_PRIVATE)
         val appOpenCount = prefs.getInt("appOpenCount", 0) + 1
+        val openCountGoal = prefs.getInt("openCountGoal", INITIAL_OPEN_COUNT_GOAL)
         prefs.edit { putInt("appOpenCount", appOpenCount) }
 
         // Only trigger ad on the 3rd open, not the first 2
-        if (appOpenCount % OPEN_COUNT_GOAL != 0) {
+        if (appOpenCount % openCountGoal != 0) {
             Timber.d("App open count is $appOpenCount. Not an ad trigger.")
             return
         }
@@ -94,6 +96,11 @@ class InterstitialAdManager @Inject constructor(
         // Prevent loading a new ad while one is already showing.
         if (rewardedInterstitialAd != null) {
             return
+        }
+
+        if (appOpenCount == INITIAL_OPEN_COUNT_GOAL) {
+            prefs.edit { putInt("openCountGoal", CONTINUED_OPEN_COUNT_GOAL) }
+            Timber.d("Initial ad goal met. Updating goal to $CONTINUED_OPEN_COUNT_GOAL for future launches.")
         }
 
         Timber.d("App open count is $appOpenCount. Loading Rewarded Interstitial Ad.")
