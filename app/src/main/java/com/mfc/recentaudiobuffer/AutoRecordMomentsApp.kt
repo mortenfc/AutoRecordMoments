@@ -25,26 +25,39 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Bundle
 import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
-import com.google.android.gms.ads.MobileAds
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 @HiltAndroidApp
 class AutoRecordMomentsApp : Application(), Application.ActivityLifecycleCallbacks,
     DefaultLifecycleObserver {
     @Inject
     lateinit var interstitialAdManager: InterstitialAdManager
-
     private var isAppComingToForeground = false
+    private val isAdSdkInitialized = AtomicBoolean(false)
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate() {
         super<Application>.onCreate()
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         registerActivityLifecycleCallbacks(this)
-        MobileAds.initialize(this)
+
+        this.applicationScope.launch {
+            AdInitializer.isInitialized.collect { isInitialized ->
+                if (isInitialized) {
+                    isAdSdkInitialized.set(true)
+                }
+            }
+        }
 
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
@@ -99,7 +112,7 @@ class AutoRecordMomentsApp : Application(), Application.ActivityLifecycleCallbac
      */
     override fun onActivityResumed(activity: Activity) {
         // Check if the app is coming to the foreground.
-        if (isAppComingToForeground) {
+        if (isAppComingToForeground && isAdSdkInitialized.get()) {
             // Reset the flag immediately so the ad doesn't show on every single resume.
             isAppComingToForeground = false
             // Now, safely call the ad logic with a guaranteed valid activity.

@@ -51,7 +51,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
-import com.google.android.gms.ads.MobileAds
+import com.google.android.ump.ConsentInformation
+import com.google.android.ump.ConsentRequestParameters
+import com.google.android.ump.UserMessagingPlatform
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -162,8 +164,6 @@ class MainActivity : AppCompatActivity() {
     private var showSaveDialog by mutableStateOf(false)
     private var showDirectoryPermissionDialog by mutableStateOf(false)
     private var showLockscreenInfoDialog = mutableStateOf(false)
-
-    private var showBatteryInfoDialog = mutableStateOf(false)
     private var hasDonated by mutableStateOf(false)
 
     // State for the save dialog
@@ -188,6 +188,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private lateinit var foregroundServiceAudioBuffer: Intent
+    private lateinit var consentInformation: ConsentInformation
 
     private val foregroundBufferServiceConn = object : ServiceConnection {
         var isBound: Boolean = false
@@ -281,7 +282,26 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
 
-        MobileAds.initialize(this)
+        val params = ConsentRequestParameters.Builder().build()
+
+        consentInformation = UserMessagingPlatform.getConsentInformation(this)
+        consentInformation.requestConsentInfoUpdate(
+            this,
+            params,
+            {
+                UserMessagingPlatform.loadAndShowConsentFormIfRequired(this) { loadAndShowError ->
+                    if (loadAndShowError != null) {
+                        Timber.e("Consent form failed to load: ${loadAndShowError.message}")
+                    }
+
+                    AdInitializer.initialize(this)
+                }
+            },
+            { requestConsentError ->
+                Timber.e("Consent info update failed: ${requestConsentError.message}")
+            }
+        )
+
         updateRewardState()
 
         // Listen for reward state changes from the AdManager
