@@ -11,14 +11,14 @@ plugins {
 
 android {
     namespace = 'com.mfc.recentaudiobuffer'
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.mfc.recentaudiobuffer"
         minSdk = 32
-        targetSdk = 34
-        versionCode = 31
-        versionName = "1.0.31"
+        targetSdk = 36
+        versionCode = 32
+        versionName = "1.0.32"
 
         testInstrumentationRunner = "com.mfc.recentaudiobuffer.HiltTestRunner"
         vectorDrawables {

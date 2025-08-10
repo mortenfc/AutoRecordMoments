@@ -286,15 +286,15 @@ private fun DonationContent(
         horizontalPadding = 64.dp,
         landscapePaneSpacing = 64.dp,
         visualPortraitHeight = 600.dp,
-        descriptionHeaderStyle = TextStyle(fontSize = 40.sp),
-        descriptionBodyStyle = TextStyle(fontSize = 26.sp),
-        inputTextStyle = TextStyle(fontSize = 32.sp),
-        inputLabelStyle = TextStyle(fontSize = 32.sp),
-        inputSupportingTextStyle = TextStyle(fontSize = 22.sp),
-        inputIconSize = 42.dp,
-        paymentButtonHeight = 68.dp,
+        descriptionHeaderStyle = TextStyle(fontSize = 34.sp),
+        descriptionBodyStyle = TextStyle(fontSize = 24.sp),
+        inputTextStyle = TextStyle(fontSize = 22.sp),
+        inputLabelStyle = TextStyle(fontSize = 22.sp),
+        inputSupportingTextStyle = TextStyle(fontSize = 16.sp),
+        inputIconSize = 34.dp,
+        paymentButtonHeight = 52.dp,
         cardPaymentButtonIconSize = 40.dp,
-        cardPaymentButtonTextStyle = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Medium, color = Color.White)
+        cardPaymentButtonTextStyle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.Medium, color = Color.White)
     )
 
     val sizing = if (isTablet) tabletSizing else phoneSizing

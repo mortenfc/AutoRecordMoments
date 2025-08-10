@@ -267,20 +267,20 @@ private fun MainScreenContent(
         // --- Centralized Sizing Configuration ---
         val tabletSizing = LayoutSizing(
             mainButtonTextStyle = TextStyle(
-                fontWeight = FontWeight.Bold, fontSize = 30.sp, textAlign = TextAlign.Center
+                fontWeight = FontWeight.Bold, fontSize = 26.sp, textAlign = TextAlign.Center
             ),
             secondaryButtonTextStyle = TextStyle(
                 fontWeight = FontWeight.Medium,
-                fontSize = 26.sp,
+                fontSize = 18.sp,
                 color = colorResource(id = R.color.teal_900),
                 textAlign = TextAlign.Center,
-                lineHeight = 32.sp
+                lineHeight = 22.sp
             ),
-            recordingButtonSize = 340.dp,
+            recordingButtonSize = 280.dp,
             recordingInfoIconSize = 60.dp,
             recordingMainIconSize = 100.dp,
-            secondaryActionButtonSize = 150.dp,
-            secondaryActionColumnWidth = 210.dp,
+            secondaryActionButtonSize = 110.dp,
+            secondaryActionColumnWidth = 150.dp,
             secondaryActionIconSize = 70.dp,
             secondaryActionSpacing = 50.dp,
             thankYouButtonSize = 120.dp,

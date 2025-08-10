@@ -113,7 +113,6 @@ private data class SettingsSizing(
     val landscapeVerticalPadding: Dp,
     val audioSettingsTextStyle: TextStyle,
     val audioSettingsButtonHeight: Dp,
-    val audioSettingsSpacerHeight: Dp,
     val aiTitleStyle: TextStyle,
     val aiBodyStyle: TextStyle,
     val aiSwitchScale: Float,
@@ -209,8 +208,7 @@ private fun SettingsScreenContent(
             } else {
                 TopAppBar(
                     title = stringResource(id = R.string.settings),
-                    onBackButtonClicked = { justExit() }
-                )
+                    onBackButtonClicked = { justExit() })
             }
         }) { innerPadding ->
         Box(
@@ -227,10 +225,13 @@ private fun SettingsScreenContent(
                     color = colorResource(id = R.color.teal_150), shape = RoundedCornerShape(12.dp)
                 )
         ) {
-            val isTabletLandscape = widthSizeClass == WindowWidthSizeClass.Expanded && heightSizeClass == WindowHeightSizeClass.Medium
-            val isTabletPortrait = widthSizeClass == WindowWidthSizeClass.Medium && heightSizeClass == WindowHeightSizeClass.Expanded
+            val isTabletLandscape =
+                widthSizeClass == WindowWidthSizeClass.Expanded && heightSizeClass == WindowHeightSizeClass.Medium
+            val isTabletPortrait =
+                widthSizeClass == WindowWidthSizeClass.Medium && heightSizeClass == WindowHeightSizeClass.Expanded
             val isTablet = isTabletLandscape || isTabletPortrait
-            val isLandscape = widthSizeClass == WindowWidthSizeClass.Expanded || heightSizeClass == WindowHeightSizeClass.Compact
+            val isLandscape =
+                widthSizeClass == WindowWidthSizeClass.Expanded || heightSizeClass == WindowHeightSizeClass.Compact
 
             val phoneSizing = SettingsSizing(
                 infoIconPadding = 0.dp,
@@ -239,7 +240,6 @@ private fun SettingsScreenContent(
                 landscapeVerticalPadding = 10.dp,
                 audioSettingsTextStyle = TextStyle(fontSize = 18.sp),
                 audioSettingsButtonHeight = 52.dp,
-                audioSettingsSpacerHeight = 0.dp,
                 aiTitleStyle = TextStyle(fontSize = 18.sp),
                 aiBodyStyle = TextStyle(fontSize = 15.sp),
                 aiSwitchScale = 1.0f,
@@ -258,37 +258,24 @@ private fun SettingsScreenContent(
                 infoIconSize = 70.dp,
                 landscapeHorizontalPadding = 50.dp,
                 landscapeVerticalPadding = 25.dp,
-                audioSettingsTextStyle = TextStyle(fontSize = 32.sp),
+                audioSettingsTextStyle = TextStyle(fontSize = 26.sp),
                 audioSettingsButtonHeight = 80.dp,
-                audioSettingsSpacerHeight = 40.dp,
-                aiTitleStyle = TextStyle(fontSize = 34.sp),
-                aiBodyStyle = TextStyle(fontSize = 24.sp),
-                aiSwitchScale = 1.5f,
-                actionsButtonTextStyle = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.SemiBold),
-                actionsButtonIconSize = 40.dp,
-                actionsButtonPadding = 20.dp,
-                actionsButtonWidthFraction = 0.6f,
+                aiTitleStyle = TextStyle(fontSize = 30.sp),
+                aiBodyStyle = TextStyle(fontSize = 16.sp),
+                aiSwitchScale = 1.2f,
+                actionsButtonTextStyle = TextStyle(
+                    fontSize = 26.sp, fontWeight = FontWeight.Medium
+                ),
+                actionsButtonIconSize = 34.dp,
+                actionsButtonPadding = 14.dp,
+                actionsButtonWidthFraction = 0.7f,
                 actionsGroupTopSpacerHeight = 12.dp,
                 actionsButtonBottomPadding = 12.dp,
                 dangerZoneTextStyle = MaterialTheme.typography.titleLarge,
-                dangerZoneSpacerHeight = 20.dp
+                dangerZoneSpacerHeight = 12.dp
             )
 
             val sizing = if (isTablet) tabletSizing else phoneSizing
-
-            IconButton(
-                onClick = { showHelpDialog = true },
-                modifier = Modifier
-                    .align(if (isLandscape) Alignment.TopStart else Alignment.TopEnd)
-                    .padding(sizing.infoIconPadding)
-            ) {
-                Icon(
-                    Icons.Default.Info,
-                    "Show settings help",
-                    tint = colorResource(id = R.color.purple_accent),
-                    modifier = Modifier.size(sizing.infoIconSize)
-                )
-            }
             when (isLandscape) {
                 false -> {
                     Column(
@@ -300,7 +287,13 @@ private fun SettingsScreenContent(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Spacer(Modifier.weight(0.1f))
-                        AudioSettingsGroup(state, onSampleRateChanged, onBitDepthChanged, onBufferTimeLengthChanged, sizing)
+                        AudioSettingsGroup(
+                            state,
+                            onSampleRateChanged,
+                            onBitDepthChanged,
+                            onBufferTimeLengthChanged,
+                            sizing
+                        )
                         Spacer(Modifier.weight(0.15f))
                         AISettingsGroup(state, onAiAutoClipChanged, sizing)
                         Spacer(Modifier.weight(0.2f))
@@ -317,7 +310,10 @@ private fun SettingsScreenContent(
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = sizing.landscapeHorizontalPadding, vertical = sizing.landscapeVerticalPadding),
+                            .padding(
+                                horizontal = sizing.landscapeHorizontalPadding,
+                                vertical = sizing.landscapeVerticalPadding
+                            ),
                         horizontalArrangement = Arrangement.spacedBy(32.dp),
                         verticalAlignment = Alignment.CenterVertically // Center both panes vertically
                     ) {
@@ -329,7 +325,13 @@ private fun SettingsScreenContent(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            AudioSettingsGroup(state, onSampleRateChanged, onBitDepthChanged, onBufferTimeLengthChanged, sizing)
+                            AudioSettingsGroup(
+                                state,
+                                onSampleRateChanged,
+                                onBitDepthChanged,
+                                onBufferTimeLengthChanged,
+                                sizing
+                            )
                             if (!isTablet && isUserSignedIn) {
                                 DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick, sizing)
                             }
@@ -356,6 +358,20 @@ private fun SettingsScreenContent(
                         }
                     }
                 }
+            }
+
+            IconButton(
+                onClick = { showHelpDialog = true },
+                modifier = Modifier
+                    .align(if (isLandscape) Alignment.TopStart else Alignment.TopEnd)
+                    .padding(sizing.infoIconPadding)
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    "Show settings help",
+                    tint = colorResource(id = R.color.purple_accent),
+                    modifier = Modifier.size(sizing.infoIconSize)
+                )
             }
         }
     }
@@ -390,7 +406,7 @@ private fun AudioSettingsGroup(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Spacer(Modifier.height(sizing.audioSettingsSpacerHeight))
+        Spacer(Modifier.weight(0.3f))
         SettingsButton(
             text = "Sample Rate: ${state.value.sampleRateTemp.intValue} Hz",
             icon = Icons.Filled.ArrowDropDown,
@@ -407,7 +423,7 @@ private fun AudioSettingsGroup(
                 })
             }
         }
-        Spacer(Modifier.height(sizing.audioSettingsSpacerHeight))
+        Spacer(Modifier.weight(0.3f))
         SettingsButton(
             text = "Bit Depth: ${state.value.bitDepthTemp.value.bits} bit",
             icon = Icons.Filled.ArrowDropDown,
@@ -423,7 +439,7 @@ private fun AudioSettingsGroup(
                 })
             }
         }
-        Spacer(Modifier.height(sizing.audioSettingsSpacerHeight))
+        Spacer(Modifier.weight(0.3f))
         MyOutlinedBufferInputField(
             bufferTimeLength = state.value.bufferTimeLengthTemp,
             onValueChange = onBufferTimeLengthChanged,
@@ -432,7 +448,7 @@ private fun AudioSettingsGroup(
             modifier = Modifier.height(sizing.audioSettingsButtonHeight),
             textStyle = sizing.audioSettingsTextStyle
         )
-        Spacer(Modifier.height(sizing.audioSettingsSpacerHeight))
+        Spacer(Modifier.weight(0.3f))
     }
 }
 
@@ -450,8 +466,7 @@ private fun AISettingsGroup(
         HorizontalDivider(
             color = colorResource(id = R.color.purple_accent).copy(
                 alpha = 0.5f,
-            ),
-            thickness = 2.dp
+            ), thickness = 2.dp
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -497,8 +512,7 @@ private fun AISettingsGroup(
         HorizontalDivider(
             color = colorResource(id = R.color.purple_accent).copy(
                 alpha = 0.5f
-            ),
-            thickness = 2.dp
+            ), thickness = 2.dp
         )
     }
 }
@@ -554,17 +568,18 @@ private fun DangerZoneGroup(onDeleteAccountClick: () -> Unit, sizing: SettingsSi
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         HorizontalDivider(
-            color = colorResource(id = R.color.red).copy(alpha = 0.7f),
-            thickness = 4.dp
+            color = colorResource(id = R.color.red).copy(alpha = 0.7f), thickness = 4.dp
         )
         Spacer(Modifier.height(sizing.dangerZoneSpacerHeight))
         Button(
-            onClick = onDeleteAccountClick, colors = ButtonDefaults.buttonColors(
+            onClick = onDeleteAccountClick,
+            colors = ButtonDefaults.buttonColors(
                 containerColor = colorResource(id = R.color.white).copy(alpha = 0.3f),
                 contentColor = colorResource(id = R.color.red),
                 disabledContainerColor = colorResource(id = R.color.teal_100).copy(alpha = 0.3f),
                 disabledContentColor = colorResource(id = R.color.red).copy(alpha = 0.3f)
-            ), modifier = Modifier.padding(0.dp),
+            ),
+            modifier = Modifier.padding(0.dp),
             border = BorderStroke(2.dp, colorResource(id = R.color.red))
         ) {
             Text(
@@ -575,8 +590,7 @@ private fun DangerZoneGroup(onDeleteAccountClick: () -> Unit, sizing: SettingsSi
         }
         Spacer(Modifier.height(sizing.dangerZoneSpacerHeight))
         HorizontalDivider(
-            color = colorResource(id = R.color.red).copy(alpha = 0.7f),
-            thickness = 4.dp
+            color = colorResource(id = R.color.red).copy(alpha = 0.7f), thickness = 4.dp
         )
     }
 }
@@ -838,7 +852,6 @@ fun ComprehensiveHelpDialog(
         val bytesPerSample = bitDepth.bits / 8
         val totalBytes = sampleRate.toLong() * bufferTimeLength * bytesPerSample
         val megabytes = totalBytes / (1024.0 * 1024.0)
-//        val ram = String.format("~%.0f", megabytes)
         val ram = String.format(Locale.getDefault(), "~%.0f", megabytes)
 
         Pair(ram, estimateAudioImpact(sampleRate, bitDepth, bufferTimeLength, isAiAutoClipEnabled))
@@ -1179,7 +1192,7 @@ fun SettingsScreenPhonePortraitSignedOutPreview() {
 @Preview(
     showBackground = true,
     name = "Landscape (Tablet)",
-    device = "spec:width=1280dp,height=800dp,dpi=480"
+    device = "spec:width=1920dp,height=1080dp,dpi=320"
 )
 @Composable
 fun SettingsScreenLandscapeTabletPreview() {

@@ -151,8 +151,6 @@ class MyBufferService : Service(), MyBufferServiceInterface {
 
         notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-
-        requestAudioFocus()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -594,6 +592,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
     override fun startRecording() {
         if (_isRecording.value) return
         _isRecording.value = true
+
+        requestAudioFocus()
 
         // Start the audio recording loop
         recordingJob?.cancel()
