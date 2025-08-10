@@ -73,11 +73,8 @@ class InterstitialAdManager @Inject constructor(
         private const val INITIAL_OPEN_COUNT_GOAL = 6
         private const val CONTINUED_OPEN_COUNT_GOAL = 2
         private val REWARD_DURATION_MS = TimeUnit.DAYS.toMillis(2)
-
-        //        private const val REWARDED_INTERSTITIAL_AD_UNIT_ID =
-        //            "ca-app-pub-5330230981165217/4603016372"    // Real ads
-        private const val REWARDED_INTERSTITIAL_AD_UNIT_ID =
-            "ca-app-pub-3940256099942544/5354046379" // Test ads
+        
+        private val REWARDED_INTERSTITIAL_AD_UNIT_ID = BuildConfig.REWARDED_INTERSTITIAL_AD_ID
     }
 
     fun getRewardExpiryTimestamp(): Long {

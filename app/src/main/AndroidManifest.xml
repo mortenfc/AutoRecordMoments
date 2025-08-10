@@ -1,5 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
+<?xml version="1.0" encoding="utf-8"?><!--
   ~ Auto Record Moments
   ~ Copyright (C) 2025 Morten Fjord Christensen
   ~
@@ -50,8 +49,7 @@
 
         <meta-data
                 android:name="com.google.android.gms.ads.APPLICATION_ID"
-                android:value="ca-app-pub-3940256099942544~3347511713" /> <!-- Test ads -->
-<!--                android:value="ca-app-pub-5330230981165217~5808556024" />--> <!-- Real ads -->
+                android:value="${admob_app_id}" />
 
         <meta-data
                 android:name="com.google.android.gms.version"
@@ -70,7 +68,7 @@
         <activity
                 android:name=".SettingsActivity"
                 android:exported="false"
-                android:label="@string/title_activity_settings"/>
+                android:label="@string/title_activity_settings" />
 
         <activity
                 android:name=".DonationActivity"

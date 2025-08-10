@@ -17,8 +17,8 @@ android {
         applicationId = "com.mfc.recentaudiobuffer"
         minSdk = 32
         targetSdk = 34
-        versionCode = 30
-        versionName = "1.0.30"
+        versionCode = 31
+        versionName = "1.0.31"
 
         testInstrumentationRunner = "com.mfc.recentaudiobuffer.HiltTestRunner"
         vectorDrawables {
@@ -48,14 +48,34 @@ android {
             debuggable = false
             signingConfig = signingConfigs.release
             minifyEnabled = true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+            // --- Production Config ---
             buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_LIVE")}")
+            buildConfigField("String", "REWARDED_INTERSTITIAL_AD_ID", "\"ca-app-pub-5330230981165217/4603016372\"")
+            buildConfigField("String", "BANNER_AD_ID", "\"ca-app-pub-5330230981165217/6883566605\"")
+            manifestPlaceholders["admob_app_id"] = "ca-app-pub-5330230981165217~5808556024"
         }
         debug {
             applicationIdSuffix = ".debug"
             debuggable = true
             signingConfig = signingConfigs.debug
+
+            // --- Debug Config ---
             buildConfigField("String", "STRIPE_API_KEY", "${localProperties.getProperty("STRIPE_API_KEY_TEST")}")
+            buildConfigField("String", "REWARDED_INTERSTITIAL_AD_ID", "\"ca-app-pub-3940256099942544/5354046379\"")
+            buildConfigField("String", "BANNER_AD_ID", "\"ca-app-pub-3940256099942544/9214589741\"")
+            manifestPlaceholders["admob_app_id"] = "ca-app-pub-3940256099942544~3347511713"
+        }
+        // Release but with test ads, for play console testing
+        create("staging") {
+            // Staging is a copy of release, but pointing to test/staging data
+            initWith(getByName("release"))
+
+            // Use test ads for staging builds
+            buildConfigField("String", "REWARDED_INTERSTITIAL_AD_ID", "\"ca-app-pub-3940256099942544/5354046379\"")
+            buildConfigField("String", "BANNER_AD_ID", "\"ca-app-pub-3940256099942544/9214589741\"")
+            manifestPlaceholders["admob_app_id"] = "ca-app-pub-3940256099942544~3347511713"
         }
     }
 
