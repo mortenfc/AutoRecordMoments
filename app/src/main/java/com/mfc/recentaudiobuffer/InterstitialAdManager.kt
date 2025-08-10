@@ -53,7 +53,7 @@ class InterstitialAdManager @Inject constructor(
         private const val AD_PREFS = "AdPrefs"
         private const val KEY_REWARD_EXPIRY_TIMESTAMP = "rewardExpiryTimestamp"
 
-        private const val INITIAL_OPEN_COUNT_GOAL = 4
+        private const val INITIAL_OPEN_COUNT_GOAL = 6
         private const val CONTINUED_OPEN_COUNT_GOAL = 2
         private val REWARD_DURATION_MS = TimeUnit.DAYS.toMillis(2)
         private const val REWARDED_INTERSTITIAL_AD_UNIT_ID =

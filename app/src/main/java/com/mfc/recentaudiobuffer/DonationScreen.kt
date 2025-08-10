@@ -494,8 +494,8 @@ private fun DonationInput(
         unfocusedTextColor = colorResource(R.color.teal_900),
         focusedTrailingIconColor = colorResource(R.color.purple_accent),
         unfocusedTrailingIconColor = colorResource(R.color.purple_accent),
-        errorBorderColor = MaterialTheme.colorScheme.error,
-        errorSupportingTextColor = MaterialTheme.colorScheme.error,
+        errorBorderColor =colorResource(id = R.color.red),
+        errorSupportingTextColor =colorResource(id = R.color.red),
         errorContainerColor = colorResource(id = R.color.teal_150)
     )
 
@@ -562,7 +562,7 @@ private fun DonationInput(
         if (isAmountError) {
             Text(
                 text = "Amount must be at least $minAmountFormatted",
-                color = MaterialTheme.colorScheme.error,
+                color =colorResource(id = R.color.red),
                 style = supportingTextStyle,
                 modifier = Modifier.padding(start = 16.dp, top = 4.dp)
             )

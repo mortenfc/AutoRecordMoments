@@ -139,6 +139,7 @@ fun MainScreen(
     showSaveDialog: Boolean,
     showLockscreenInfoDialog: MutableState<Boolean>,
     openLockScreenSettings: () -> Unit,
+    openBatteryOptimizationSettings: () -> Unit,
     suggestedFileName: String,
     onConfirmSave: (fileName: String) -> Unit,
     onDismissSaveDialog: () -> Unit
@@ -171,6 +172,7 @@ fun MainScreen(
         showSaveDialog = showSaveDialog,
         showLockscreenInfoDialog = showLockscreenInfoDialog,
         openLockScreenSettings = openLockScreenSettings,
+        openBatteryOptimizationSettings = openBatteryOptimizationSettings,
         suggestedFileName = suggestedFileName,
         onConfirmSave = onConfirmSave,
         onDismissSaveDialog = onDismissSaveDialog,
@@ -208,11 +210,14 @@ private fun MainScreenContent(
     showSaveDialog: Boolean,
     showLockscreenInfoDialog: MutableState<Boolean>,
     openLockScreenSettings: () -> Unit,
+    openBatteryOptimizationSettings: () -> Unit,
     suggestedFileName: String,
     onConfirmSave: (fileName: String) -> Unit,
     onDismissSaveDialog: () -> Unit,
     useLiveViewModel: Boolean
 ) {
+    var showBatteryInfoDialog by remember { mutableStateOf(false) }
+
     var showPrivacyInfoDialog by remember { mutableStateOf(false) }
 
     val recordingButtonBackgroundColor by animateColorAsState(
@@ -404,14 +409,30 @@ private fun MainScreenContent(
 
     if (showLockscreenInfoDialog.value) {
         LockScreenInfoDialog(
-            onDismissRequest = { showLockscreenInfoDialog.value = false },
+            onDismissRequest = {
+                showLockscreenInfoDialog.value = false
+                showBatteryInfoDialog = true
+            },
             onConfirm = {
                 showLockscreenInfoDialog.value = false
                 openLockScreenSettings()
+                showBatteryInfoDialog = true
             },
-            onDismiss = { showLockscreenInfoDialog.value = false })
+            onDismiss = {
+                showLockscreenInfoDialog.value = false
+                showBatteryInfoDialog = true
+            })
     }
 
+    if (showBatteryInfoDialog) {
+        BatteryOptimizationDialog(
+            onDismissRequest = { showBatteryInfoDialog = false },
+            onConfirm = {
+                showBatteryInfoDialog = false
+                openBatteryOptimizationSettings()
+            },
+            onDismiss = { showBatteryInfoDialog = false })
+    }
 
     if (showDirectoryPermissionDialog) {
         DirectoryPickerDialog(onDismiss = onDirectoryAlertDismiss)
@@ -585,8 +606,7 @@ private fun LandscapeLayout(
     useLiveViewModel: Boolean
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
@@ -1164,8 +1184,9 @@ fun MainScreen9x16PhonePortraitPreview() {
             onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
-            showLockscreenInfoDialog = mutableStateOf(false),
+            showLockscreenInfoDialog = remember { mutableStateOf(false) },
             openLockScreenSettings = {},
+            openBatteryOptimizationSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
@@ -1207,8 +1228,9 @@ fun MainScreenTypicalPhonePortraitPreview() {
             onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
-            showLockscreenInfoDialog = mutableStateOf(false),
+            showLockscreenInfoDialog = remember { mutableStateOf(false) },
             openLockScreenSettings = {},
+            openBatteryOptimizationSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
@@ -1252,8 +1274,9 @@ fun MainScreenPhoneLandscapePreview() {
             onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
-            showLockscreenInfoDialog = mutableStateOf(false),
+            showLockscreenInfoDialog = remember { mutableStateOf(false) },
             openLockScreenSettings = {},
+            openBatteryOptimizationSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
@@ -1297,8 +1320,9 @@ fun MainScreenTabletPortraitPreview() {
             onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
-            showLockscreenInfoDialog = mutableStateOf(false),
+            showLockscreenInfoDialog = remember { mutableStateOf(false) },
             openLockScreenSettings = {},
+            openBatteryOptimizationSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
@@ -1343,8 +1367,9 @@ fun MainScreenTabletLandscapePreview() {
             onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
-            showLockscreenInfoDialog = mutableStateOf(false),
+            showLockscreenInfoDialog = remember { mutableStateOf(false) },
             openLockScreenSettings = {},
+            openBatteryOptimizationSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},

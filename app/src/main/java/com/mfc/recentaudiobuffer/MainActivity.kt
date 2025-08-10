@@ -162,6 +162,8 @@ class MainActivity : AppCompatActivity() {
     private var showSaveDialog by mutableStateOf(false)
     private var showDirectoryPermissionDialog by mutableStateOf(false)
     private var showLockscreenInfoDialog = mutableStateOf(false)
+
+    private var showBatteryInfoDialog = mutableStateOf(false)
     private var hasDonated by mutableStateOf(false)
 
     // State for the save dialog
@@ -329,6 +331,7 @@ class MainActivity : AppCompatActivity() {
                 showSaveDialog = showSaveDialog,
                 showLockscreenInfoDialog = showLockscreenInfoDialog,
                 openLockScreenSettings = { openLockScreenSettings() },
+                openBatteryOptimizationSettings = { openBatteryOptimizationSettings() },
                 suggestedFileName = suggestedFileNameState,
                 onConfirmSave = { fileName ->
                     showSaveDialog = false
@@ -412,6 +415,20 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
             intent.data = Uri.fromParts("package", packageName, null)
             startActivity(intent)
+        } catch (e: Exception) {
+            Timber.e(e, "Could not open lock screen settings.")
+            Toast.makeText(this, "Could not open settings.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openBatteryOptimizationSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            intent.data = Uri.fromParts("package", packageName, null)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Timber.e(e, "Could not open battery optimization settings.")
+            Toast.makeText(this, "Could not open settings.", Toast.LENGTH_SHORT).show()
         }
     }
 

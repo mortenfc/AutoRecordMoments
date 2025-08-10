@@ -201,7 +201,7 @@ fun DeleteAccountConfirmationDialog(
         Text(
             "Are you sure?",
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.error,
+            color =colorResource(id = R.color.red),
             fontSize = 22.sp
         )
     }, text = {
@@ -228,8 +228,8 @@ fun DeleteAccountConfirmationDialog(
     }, confirmButton = {
         Button(
             onClick = onConfirm, enabled = isConfirmEnabled, colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error,
-                disabledContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                containerColor =colorResource(id = R.color.red),
+                disabledContainerColor =colorResource(id = R.color.red).copy(alpha = 0.5f)
             )
         ) {
             Text("CONFIRM DELETE")
@@ -284,8 +284,8 @@ fun LockScreenInfoDialog(
         Text(
             text = "To use the controls from the lock screen, your system needs to show detailed notifications. The steps vary by device.\n\n" +
                     "1. Tap 'Open Settings'.\n" +
-                    "2. Find 'Notifications on lock screen' and set it to 'Show all content' (or similar wording like 'Show details' or 'Show sensitive content').\n" +
-                    "3. Some devices have a 'Customize lock screen' option, so search for it in global Settings. If so, ensure notifications are set to display as a 'List' or 'Details', not just icons.",
+                    "2. Find 'Lock screen' and set it to 'Show all notification content' (or similar wording like 'Show details' or 'Show sensitive content').\n" +
+                    "3. Some devices have a 'Customize lock screen' option, so search for it in global Settings. If so, set the lock screen notifications are set to display as a 'List' or 'Details', not just icons.",
             color = colorResource(id = R.color.teal_900),
             fontSize = 16.sp,
             lineHeight = 22.sp,
@@ -307,6 +307,44 @@ fun LockScreenInfoDialog(
 }
 
 
+@Composable
+fun BatteryOptimizationDialog(
+    onDismissRequest: () -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    CustomAlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = {
+            Text(
+                "Improve Buffering Lifetime",
+                color = colorResource(id = R.color.teal_900),
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp
+            )
+        },
+        text = {
+            Text(
+                text = "To prevent Android from stopping the recording service in the background after a while, please allow unrestricted battery usage for this app.\n\n" +
+                        "After tapping 'Open Settings', find the battery section, commonly 'App battery usage', and select 'Unrestricted'.",
+                color = colorResource(id = R.color.teal_900),
+                fontSize = 16.sp,
+                lineHeight = 22.sp
+            )
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("LATER")
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("OPEN SETTINGS")
+            }
+        }
+    )
+}
+
 @Preview(showBackground = true)
 @Composable
 fun DialogsPreview() {
@@ -325,4 +363,10 @@ fun DialogsPreview() {
 @Composable
 fun LockScreenInfoDialogPreview() {
     LockScreenInfoDialog({}, {}, {})
+}
+
+@Preview(showBackground = true)
+@Composable
+fun BatteryOptimizationDialogPreview() {
+    BatteryOptimizationDialog({}, {}, {})
 }

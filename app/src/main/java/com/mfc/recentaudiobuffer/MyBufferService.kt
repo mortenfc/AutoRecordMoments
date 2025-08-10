@@ -783,16 +783,13 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                 builder.setContentText("Saving...").setProgress(0, 0, true)
             }
         } else {
-            builder.setStyle(
-                NotificationCompat.BigTextStyle()
-                    .bigText(
-                        "${
-                            if (hasOverflowed.get()) "100%" else "${
-                                ((recorderIndex.get()
-                                    .toFloat() / totalRingBufferSize.get()) * 100).roundToInt()
-                            }%"
-                        } - ${recordedDuration.get()}"
-                    )
+            builder.setContentText(
+                "${
+                    if (hasOverflowed.get()) "100%" else "${
+                        ((recorderIndex.get()
+                            .toFloat() / totalRingBufferSize.get()) * 100).roundToInt()
+                    }%"
+                } - ${recordedDuration.get()}"
             ).setProgress(
                 totalRingBufferSize.get(),
                 if (hasOverflowed.get()) totalRingBufferSize.get() else recorderIndex.get(),
