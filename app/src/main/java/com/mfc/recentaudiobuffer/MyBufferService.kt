@@ -51,7 +51,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.nio.ByteBuffer
@@ -67,7 +66,7 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 
 interface MyBufferServiceInterface {
-    fun pauseSortAndGetBuffer(): ByteBuffer
+    suspend fun pauseSortAndGetBuffer(): ByteBuffer
     fun stopRecording()
     fun startRecording()
     fun resetBuffer()
@@ -431,12 +430,10 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         recordedDuration.set(durationFormatted)
     }
 
-    override fun pauseSortAndGetBuffer(): ByteBuffer {
+    override suspend fun pauseSortAndGetBuffer(): ByteBuffer {
         stopRecording()
-        runBlocking {
-            recordingJob?.join()
-            notificationJob?.join()
-        }
+        recordingJob?.join()
+        notificationJob?.join()
         lock.lock()
         try {
             // Prevent accessing uninitialized data

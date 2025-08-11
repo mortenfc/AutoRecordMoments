@@ -61,7 +61,6 @@ class DonationActivity : AppCompatActivity() {
 
     private lateinit var googlePayLauncher: GooglePayLauncher
     private lateinit var stripePaymentSheet: PaymentSheet
-    private var clientSecret: String? = null
 
     // User's locale information
     private val userLocale: Locale by lazy { Locale.getDefault() }
@@ -106,13 +105,35 @@ class DonationActivity : AppCompatActivity() {
                         viewModel = donationViewModel,
                         authError = authenticationManager.authError.collectAsState().value,
                         // Payment actions
-                        onPayClick = ::fetchClientSecret,
+                        onPayClick = ::onPayClick,
                         onBackClick = { this.finish() },
                         allowedPaymentMethodsJson = allowedPaymentMethodsJson,
                         windowSizeClass = calculateWindowSizeClass(this)
                     )
                 }
             }
+        }
+    }
+
+    private fun presentPaymentFlow() {
+        val showGooglePay =
+            donationViewModel.uiState.isGooglePayReady && authenticationManager.authError.value == null
+
+        if (showGooglePay) {
+            donationViewModel.clientSecret?.let {
+                googlePayLauncher.presentForPaymentIntent(it)
+            }
+        } else {
+            presentCardPaymentSheet()
+        }
+    }
+
+    private fun onPayClick(amount: Int, currency: CurrencyUnit) {
+        // Check if we already have a clientSecret from a previous rotation
+        if (donationViewModel.clientSecret != null) {
+            presentPaymentFlow()
+        } else {
+            fetchClientSecret(amount, currency)
         }
     }
 
@@ -158,24 +179,17 @@ class DonationActivity : AppCompatActivity() {
                     return
                 }
                 val responseBody = response.body?.string() ?: return
-                clientSecret = JSONObject(responseBody).getString("clientSecret")
+                donationViewModel.clientSecret = JSONObject(responseBody).getString("clientSecret")
 
                 runOnUiThread {
-                    val showGooglePay =
-                        donationViewModel.uiState.isGooglePayReady && authenticationManager.authError.value == null
-
-                    if (showGooglePay) {
-                        googlePayLauncher.presentForPaymentIntent(clientSecret!!)
-                    } else {
-                        presentCardPaymentSheet()
-                    }
+                    presentPaymentFlow()
                 }
             }
         })
     }
 
     private fun presentCardPaymentSheet() {
-        clientSecret?.let {
+        donationViewModel.clientSecret?.let {
             val configuration = PaymentSheet.Configuration(
                 merchantDisplayName = "Auto Record Moments",
                 allowsDelayedPaymentMethods = true,
@@ -200,6 +214,8 @@ class DonationActivity : AppCompatActivity() {
                 "Card payment failed", paymentSheetResult.error
             )
         }
+
+        donationViewModel.clientSecret = null
     }
 
     private fun onGooglePayResult(result: GooglePayLauncher.Result) {
@@ -210,6 +226,8 @@ class DonationActivity : AppCompatActivity() {
                 "Google Pay failed", result.error
             )
         }
+
+        donationViewModel.clientSecret = null
     }
 
     private fun showPaymentResultToast(message: String) {

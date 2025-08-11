@@ -52,6 +52,8 @@ class DonationViewModel : ViewModel() {
     var uiState by mutableStateOf(DonationScreenState())
         private set
 
+    var clientSecret: String? = null
+
     init {
         // Initialize with default currency
         uiState = uiState.copy(selectedCurrency = CurrencyUnit.of(Locale.getDefault()))
