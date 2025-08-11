@@ -490,7 +490,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         _trimmingProgress.value = 0f
 
         // --- Simple Moving Average (SMA) setup ---
-        val movingAverageWindow = 5
+        val movingAverageWindow = 7
         val etaHistory = ArrayDeque<Long>(movingAverageWindow)
 
         updateNotification() // Show "Trimming... [5% -- ETA 30s]"

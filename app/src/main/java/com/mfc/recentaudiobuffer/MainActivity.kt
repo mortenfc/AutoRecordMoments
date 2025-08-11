@@ -282,26 +282,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
 
-        val params = ConsentRequestParameters.Builder().build()
-
-        consentInformation = UserMessagingPlatform.getConsentInformation(this)
-        consentInformation.requestConsentInfoUpdate(
-            this,
-            params,
-            {
-                UserMessagingPlatform.loadAndShowConsentFormIfRequired(this) { loadAndShowError ->
-                    if (loadAndShowError != null) {
-                        Timber.e("Consent form failed to load: ${loadAndShowError.message}")
-                    }
-
-                    AdInitializer.initialize(this)
-                }
-            },
-            { requestConsentError ->
-                Timber.e("Consent info update failed: ${requestConsentError.message}")
-            }
-        )
-
         updateRewardState()
 
         // Listen for reward state changes from the AdManager
@@ -373,6 +353,32 @@ class MainActivity : AppCompatActivity() {
             showDirectoryPermissionDialog = true
         }
         handleIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        // It's much safer to check for and show the consent form here.
+        val params = ConsentRequestParameters.Builder().build()
+        consentInformation = UserMessagingPlatform.getConsentInformation(this)
+        consentInformation.requestConsentInfoUpdate(
+            this,
+            params,
+            {
+                // By the time onResume is called, it's safe to show a UI element.
+                UserMessagingPlatform.loadAndShowConsentFormIfRequired(this) { loadAndShowError ->
+                    if (loadAndShowError != null) {
+                        Timber.e("Consent form failed to load: ${loadAndShowError.message}")
+                        return@loadAndShowConsentFormIfRequired
+                    }
+
+                    AdInitializer.initialize(this)
+                }
+            },
+            { requestConsentError ->
+                Timber.e("Consent info update failed: ${requestConsentError.message}")
+            }
+        )
     }
 
     private fun onClickSettings() {

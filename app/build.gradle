@@ -17,8 +17,8 @@ android {
         applicationId = "com.mfc.recentaudiobuffer"
         minSdk = 32
         targetSdk = 36
-        versionCode = 32
-        versionName = "1.0.32"
+        versionCode = 34
+        versionName = "1.0.34"
 
         testInstrumentationRunner = "com.mfc.recentaudiobuffer.HiltTestRunner"
         vectorDrawables {
