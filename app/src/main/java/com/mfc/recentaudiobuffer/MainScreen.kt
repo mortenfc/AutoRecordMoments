@@ -63,6 +63,7 @@ import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -107,76 +108,92 @@ private data class LayoutSizing(
 
 /**
  * STATEFUL WRAPPER: The live app calls this composable.
- * It is responsible for connecting to ViewModels.
+ * It is responsible for connecting to the ViewModel.
  */
 @OptIn(UnstableApi::class)
 @Composable
 fun MainScreen(
+    viewModel: MainViewModel,
     widthSizeClass: WindowWidthSizeClass,
     heightSizeClass: WindowHeightSizeClass,
-    isRecordingFromService: Boolean,
+    // System actions that the ViewModel can't/shouldn't handle
+    openLockScreenSettings: () -> Unit,
+    openBatteryOptimizationSettings: () -> Unit,
+    // Actions that need access to the service
     onStartBufferingClick: () -> Unit,
     onStopBufferingClick: () -> Unit,
     onResetBufferClick: () -> Unit,
     onSaveBufferClick: () -> Unit,
-    onPickAndPlayFileClick: () -> Unit,
-    showRecentFilesDialog: Boolean,
-    onFileSelected: (Uri) -> Unit,
     onDonateClick: () -> Unit,
-    hasDonated: Boolean,
-    isRewardActive: Boolean,
-    rewardExpiryTimestamp: Long,
     onSettingsClick: () -> Unit,
-    showDirectoryPermissionDialog: Boolean,
-    onDirectoryAlertDismiss: () -> Unit,
-    onTrimFileClick: () -> Unit,
-    showTrimFileDialog: Boolean,
-    onTrimFileSelected: (Uri) -> Unit,
-    mediaPlayerManager: MediaPlayerManager,
-    playerUiState: PlayerUiState,
-    onPlayerClose: () -> Unit,
-    isLoading: Boolean,
-    showSaveDialog: Boolean,
-    showLockscreenInfoDialog: MutableState<Boolean>,
-    openLockScreenSettings: () -> Unit,
-    openBatteryOptimizationSettings: () -> Unit,
-    suggestedFileName: String,
-    onConfirmSave: (fileName: String) -> Unit,
-    onDismissSaveDialog: () -> Unit
+    onConfirmSave: (String) -> Unit,
 ) {
+    // Collect all states from the ViewModel
+    val playerUiState by viewModel.playerUiState.collectAsState()
+    val saveDialogState by viewModel.saveDialogState.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val isRecording by viewModel.isRecording.collectAsState()
+    val showRecentFilesDialog by viewModel.showRecentFilesDialog.collectAsState()
+    val hasDonated by viewModel.hasDonated.collectAsState()
+    val isRewardActive by viewModel.isRewardActive.collectAsState()
+    val rewardExpiryTimestamp by viewModel.rewardExpiryTimestamp.collectAsState()
+    val showTrimFileDialog by viewModel.showTrimFileDialog.collectAsState()
+    val showDirectoryPermissionDialog by viewModel.showDirectoryPermissionDialog.collectAsState()
+    val showPrivacyInfoDialog by viewModel.showPrivacyInfoDialog.collectAsState()
+    val showLockscreenInfoDialog by viewModel.showLockscreenInfoDialog.collectAsState()
+    val showBatteryInfoDialog by viewModel.showBatteryInfoDialog.collectAsState()
+
+    // The stateful composable passes all state and events down to the stateless one
     MainScreenContent(
         widthSizeClass = widthSizeClass,
         heightSizeClass = heightSizeClass,
-        isRecordingFromService = isRecordingFromService,
+        isRecordingFromService = isRecording,
         onStartBufferingClick = onStartBufferingClick,
         onStopBufferingClick = onStopBufferingClick,
         onResetBufferClick = onResetBufferClick,
         onSaveBufferClick = onSaveBufferClick,
-        onPickAndPlayFileClick = onPickAndPlayFileClick,
+        onPickAndPlayFileClick = { viewModel.setShowRecentFilesDialog(true) },
         showRecentFilesDialog = showRecentFilesDialog,
-        onFileSelected = onFileSelected,
+        onFileSelected = { uri ->
+            viewModel.setShowRecentFilesDialog(false)
+            if (uri != Uri.EMPTY) viewModel.setUpMediaPlayer(uri)
+        },
         onDonateClick = onDonateClick,
         hasDonated = hasDonated,
         isRewardActive = isRewardActive,
         rewardExpiryTimestamp = rewardExpiryTimestamp,
         onSettingsClick = onSettingsClick,
         showDirectoryPermissionDialog = showDirectoryPermissionDialog,
-        onDirectoryAlertDismiss = onDirectoryAlertDismiss,
-        onTrimFileClick = onTrimFileClick,
+        onDirectoryAlertDismiss = {
+            viewModel.setShowDirectoryPermissionDialog(false)
+            viewModel.requestDirectoryPicker()
+        },
+        onTrimFileClick = { viewModel.setShowTrimFileDialog(true) },
         showTrimFileDialog = showTrimFileDialog,
-        onTrimFileSelected = onTrimFileSelected,
-        mediaPlayerManager = mediaPlayerManager,
+        onTrimFileSelected = { uri ->
+            viewModel.setShowTrimFileDialog(false)
+            if (uri != Uri.EMPTY) {
+                viewModel.processAndPrepareToSaveFile(uri)
+            }
+        },
+        mediaPlayerManager = viewModel.mediaPlayerManager,
         playerUiState = playerUiState,
-        onPlayerClose = onPlayerClose,
+        onPlayerClose = { viewModel.onPlayerClose() },
         isLoading = isLoading,
-        showSaveDialog = showSaveDialog,
-        showLockscreenInfoDialog = showLockscreenInfoDialog,
-        openLockScreenSettings = openLockScreenSettings,
-        openBatteryOptimizationSettings = openBatteryOptimizationSettings,
-        suggestedFileName = suggestedFileName,
+        showSaveDialog = saveDialogState != null,
+        suggestedFileName = saveDialogState?.suggestedFileName ?: "",
         onConfirmSave = onConfirmSave,
-        onDismissSaveDialog = onDismissSaveDialog,
-        useLiveViewModel = true
+        onDismissSaveDialog = { viewModel.onDismissSaveDialog() },
+        useLiveViewModel = true,
+        showPrivacyInfoDialog = showPrivacyInfoDialog,
+        onShowPrivacyInfoDialog = { viewModel.setShowPrivacyInfoDialog(true) },
+        onDismissPrivacyInfoDialog = { viewModel.onPrivacyDialogDismissed() },
+        showLockscreenInfoDialog = showLockscreenInfoDialog,
+        onDismissLockscreenInfoDialog = { viewModel.onLockscreenDialogDismissed() },
+        showBatteryInfoDialog = showBatteryInfoDialog,
+        onDismissBatteryInfoDialog = { viewModel.setShowBatteryInfoDialog(false) },
+        openLockScreenSettings = openLockScreenSettings,
+        openBatteryOptimizationSettings = openBatteryOptimizationSettings
     )
 }
 
@@ -208,18 +225,20 @@ private fun MainScreenContent(
     onPlayerClose: () -> Unit,
     isLoading: Boolean,
     showSaveDialog: Boolean,
-    showLockscreenInfoDialog: MutableState<Boolean>,
-    openLockScreenSettings: () -> Unit,
-    openBatteryOptimizationSettings: () -> Unit,
     suggestedFileName: String,
     onConfirmSave: (fileName: String) -> Unit,
     onDismissSaveDialog: () -> Unit,
-    useLiveViewModel: Boolean
+    useLiveViewModel: Boolean,
+    showPrivacyInfoDialog: Boolean,
+    onShowPrivacyInfoDialog: () -> Unit,
+    onDismissPrivacyInfoDialog: () -> Unit,
+    showLockscreenInfoDialog: Boolean,
+    onDismissLockscreenInfoDialog: () -> Unit,
+    showBatteryInfoDialog: Boolean,
+    onDismissBatteryInfoDialog: () -> Unit,
+    openLockScreenSettings: () -> Unit,
+    openBatteryOptimizationSettings: () -> Unit
 ) {
-    var showBatteryInfoDialog by remember { mutableStateOf(false) }
-
-    var showPrivacyInfoDialog by remember { mutableStateOf(false) }
-
     val recordingButtonBackgroundColor by animateColorAsState(
         targetValue = if (isRecordingFromService) colorResource(id = R.color.red_pause).copy(
             alpha = 1f, red = 0.65f, blue = 0.3f
@@ -325,60 +344,53 @@ private fun MainScreenContent(
 
         val currentSizing = if (isTablet) tabletSizing else phoneSizing
 
-
         Box(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
                 .background(colorResource(id = R.color.teal_100))
         ) {
-            when (isLandscape) {
-                true -> {
-                    // --- DEDICATED LANDSCAPE LAYOUT ---
-                    LandscapeLayout(
-                        isTablet = isTablet,
-                        sizing = currentSizing,
-                        isRecordingFromService = isRecordingFromService,
-                        recordingButtonBackgroundColor = recordingButtonBackgroundColor,
-                        recordingButtonElementsColor = recordingButtonElementsColor,
-                        onToggleRecordingClick = { if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick() },
-                        onPrivacyInfoClick = { showPrivacyInfoDialog = true },
-                        onSaveBufferClick = onSaveBufferClick,
-                        onTrimFileClick = onTrimFileClick,
-                        onPickAndPlayFileClick = onPickAndPlayFileClick,
-                        onResetBufferClick = onResetBufferClick,
-                        hasDonated = hasDonated,
-                        onDonateClick = onDonateClick,
-                        mediaPlayerManager = mediaPlayerManager,
-                        playerUiState = playerUiState,
-                        onPlayerClose = onPlayerClose,
-                        useLiveViewModel = useLiveViewModel
-                    )
-                }
-
-                false -> {
-                    // --- PORTRAIT / COMPACT LAYOUT ---
-                    PortraitLayout(
-                        sizing = currentSizing,
-                        useLiveViewModel = useLiveViewModel,
-                        hasDonated = hasDonated,
-                        isRewardActive = isRewardActive,
-                        rewardExpiryTimestamp = rewardExpiryTimestamp,
-                        isRecordingFromService = isRecordingFromService,
-                        recordingButtonBackgroundColor = recordingButtonBackgroundColor,
-                        recordingButtonElementsColor = recordingButtonElementsColor,
-                        onToggleRecordingClick = { if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick() },
-                        onPrivacyInfoClick = { showPrivacyInfoDialog = true },
-                        onSaveBufferClick = onSaveBufferClick,
-                        onTrimFileClick = onTrimFileClick,
-                        onPickAndPlayFileClick = onPickAndPlayFileClick,
-                        onResetBufferClick = onResetBufferClick,
-                        onDonateClick = onDonateClick,
-                        mediaPlayerManager = mediaPlayerManager,
-                        playerUiState = playerUiState,
-                        onPlayerClose = onPlayerClose
-                    )
-                }
+            if (isLandscape) {
+                LandscapeLayout(
+                    isTablet = isTablet,
+                    sizing = currentSizing,
+                    isRecordingFromService = isRecordingFromService,
+                    recordingButtonBackgroundColor = recordingButtonBackgroundColor,
+                    recordingButtonElementsColor = recordingButtonElementsColor,
+                    onToggleRecordingClick = { if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick() },
+                    onPrivacyInfoClick = onShowPrivacyInfoDialog,
+                    onSaveBufferClick = onSaveBufferClick,
+                    onTrimFileClick = onTrimFileClick,
+                    onPickAndPlayFileClick = onPickAndPlayFileClick,
+                    onResetBufferClick = onResetBufferClick,
+                    hasDonated = hasDonated,
+                    onDonateClick = onDonateClick,
+                    mediaPlayerManager = mediaPlayerManager,
+                    playerUiState = playerUiState,
+                    onPlayerClose = onPlayerClose,
+                    useLiveViewModel = useLiveViewModel
+                )
+            } else {
+                PortraitLayout(
+                    sizing = currentSizing,
+                    useLiveViewModel = useLiveViewModel,
+                    hasDonated = hasDonated,
+                    isRewardActive = isRewardActive,
+                    rewardExpiryTimestamp = rewardExpiryTimestamp,
+                    isRecordingFromService = isRecordingFromService,
+                    recordingButtonBackgroundColor = recordingButtonBackgroundColor,
+                    recordingButtonElementsColor = recordingButtonElementsColor,
+                    onToggleRecordingClick = { if (isRecordingFromService) onStopBufferingClick() else onStartBufferingClick() },
+                    onPrivacyInfoClick = onShowPrivacyInfoDialog,
+                    onSaveBufferClick = onSaveBufferClick,
+                    onTrimFileClick = onTrimFileClick,
+                    onPickAndPlayFileClick = onPickAndPlayFileClick,
+                    onResetBufferClick = onResetBufferClick,
+                    onDonateClick = onDonateClick,
+                    mediaPlayerManager = mediaPlayerManager,
+                    playerUiState = playerUiState,
+                    onPlayerClose = onPlayerClose
+                )
             }
         }
     }
@@ -401,37 +413,25 @@ private fun MainScreenContent(
     }
 
     if (showPrivacyInfoDialog) {
-        PrivacyInfoDialog(onDismissRequest = {
-            showPrivacyInfoDialog = false
-            showLockscreenInfoDialog.value = true
-        })
+        PrivacyInfoDialog(onDismissRequest = onDismissPrivacyInfoDialog)
     }
 
-    if (showLockscreenInfoDialog.value) {
+    if (showLockscreenInfoDialog) {
         LockScreenInfoDialog(
-            onDismissRequest = {
-                showLockscreenInfoDialog.value = false
-                showBatteryInfoDialog = true
-            },
-            onConfirm = {
-                showLockscreenInfoDialog.value = false
+            onDismissRequest = onDismissLockscreenInfoDialog, onConfirm = {
+                onDismissLockscreenInfoDialog()
                 openLockScreenSettings()
-                showBatteryInfoDialog = true
-            },
-            onDismiss = {
-                showLockscreenInfoDialog.value = false
-                showBatteryInfoDialog = true
-            })
+            }, onDismiss = onDismissLockscreenInfoDialog
+        )
     }
 
     if (showBatteryInfoDialog) {
         BatteryOptimizationDialog(
-            onDismissRequest = { showBatteryInfoDialog = false },
-            onConfirm = {
-                showBatteryInfoDialog = false
+            onDismissRequest = onDismissBatteryInfoDialog, onConfirm = {
+                onDismissBatteryInfoDialog()
                 openBatteryOptimizationSettings()
-            },
-            onDismiss = { showBatteryInfoDialog = false })
+            }, onDismiss = onDismissBatteryInfoDialog
+        )
     }
 
     if (showDirectoryPermissionDialog) {
@@ -1184,21 +1184,24 @@ fun MainScreen9x16PhonePortraitPreview() {
             onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
-            showLockscreenInfoDialog = remember { mutableStateOf(false) },
-            openLockScreenSettings = {},
-            openBatteryOptimizationSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
-            useLiveViewModel = false
-        )
+            useLiveViewModel = false,
+            showPrivacyInfoDialog = false,
+            onShowPrivacyInfoDialog = {},
+            onDismissPrivacyInfoDialog = {},
+            showLockscreenInfoDialog = false,
+            onDismissLockscreenInfoDialog = {},
+            showBatteryInfoDialog = false,
+            onDismissBatteryInfoDialog = {},
+            openLockScreenSettings = {},
+            openBatteryOptimizationSettings = {})
     }
 }
 
 @OptIn(UnstableApi::class)
-@Preview(
-    showBackground = true
-)
+@Preview(showBackground = true, name = "Phone Portrait (Typical)")
 @Composable
 fun MainScreenTypicalPhonePortraitPreview() {
     MaterialTheme {
@@ -1228,23 +1231,23 @@ fun MainScreenTypicalPhonePortraitPreview() {
             onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
-            showLockscreenInfoDialog = remember { mutableStateOf(false) },
-            openLockScreenSettings = {},
-            openBatteryOptimizationSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
-            useLiveViewModel = false
-        )
+            useLiveViewModel = false,
+            showPrivacyInfoDialog = false,
+            onShowPrivacyInfoDialog = {},
+            onDismissPrivacyInfoDialog = {},
+            showLockscreenInfoDialog = false,
+            onDismissLockscreenInfoDialog = {},
+            showBatteryInfoDialog = false,
+            onDismissBatteryInfoDialog = {},
+            openLockScreenSettings = {},
+            openBatteryOptimizationSettings = {})
     }
 }
-
 @OptIn(UnstableApi::class)
-@Preview(
-    showBackground = true,
-    name = "Phone Landscape (Compact Height)",
-    device = "spec:width=640dp,height=335dp,dpi=480"
-)
+@Preview(showBackground = true, name = "Phone Landscape (Compact Height)", device = "spec:width=640dp,height=335dp,dpi=480")
 @Composable
 fun MainScreenPhoneLandscapePreview() {
     MaterialTheme {
@@ -1274,23 +1277,25 @@ fun MainScreenPhoneLandscapePreview() {
             onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
-            showLockscreenInfoDialog = remember { mutableStateOf(false) },
-            openLockScreenSettings = {},
-            openBatteryOptimizationSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
-            useLiveViewModel = false
+            useLiveViewModel = false,
+            showPrivacyInfoDialog = false,
+            onShowPrivacyInfoDialog = {},
+            onDismissPrivacyInfoDialog = {},
+            showLockscreenInfoDialog = false,
+            onDismissLockscreenInfoDialog = {},
+            showBatteryInfoDialog = false,
+            onDismissBatteryInfoDialog = {},
+            openLockScreenSettings = {},
+            openBatteryOptimizationSettings = {}
         )
     }
 }
 
 @OptIn(UnstableApi::class)
-@Preview(
-    showBackground = true,
-    name = "Tablet Portrait (Medium Width)",
-    device = "spec:width=800dp,height=1280dp,dpi=240"
-)
+@Preview(showBackground = true, name = "Tablet Portrait (Medium Width)", device = "spec:width=800dp,height=1280dp,dpi=240")
 @Composable
 fun MainScreenTabletPortraitPreview() {
     MaterialTheme {
@@ -1320,24 +1325,25 @@ fun MainScreenTabletPortraitPreview() {
             onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
-            showLockscreenInfoDialog = remember { mutableStateOf(false) },
-            openLockScreenSettings = {},
-            openBatteryOptimizationSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
-            useLiveViewModel = false
+            useLiveViewModel = false,
+            showPrivacyInfoDialog = false,
+            onShowPrivacyInfoDialog = {},
+            onDismissPrivacyInfoDialog = {},
+            showLockscreenInfoDialog = false,
+            onDismissLockscreenInfoDialog = {},
+            showBatteryInfoDialog = false,
+            onDismissBatteryInfoDialog = {},
+            openLockScreenSettings = {},
+            openBatteryOptimizationSettings = {}
         )
     }
 }
 
-
 @OptIn(UnstableApi::class)
-@Preview(
-    showBackground = true,
-    name = "Tablet Landscape (Expanded Width)",
-    device = "spec:width=1280dp,height=800dp,dpi=240"
-)
+@Preview(showBackground = true, name = "Tablet Landscape (Expanded Width)", device = "spec:width=1280dp,height=800dp,dpi=240")
 @Composable
 fun MainScreenTabletLandscapePreview() {
     MaterialTheme {
@@ -1367,13 +1373,19 @@ fun MainScreenTabletLandscapePreview() {
             onPlayerClose = {},
             isLoading = false,
             showSaveDialog = false,
-            showLockscreenInfoDialog = remember { mutableStateOf(false) },
-            openLockScreenSettings = {},
-            openBatteryOptimizationSettings = {},
             suggestedFileName = "preview_file.wav",
             onConfirmSave = {},
             onDismissSaveDialog = {},
-            useLiveViewModel = false
+            useLiveViewModel = false,
+            showPrivacyInfoDialog = false,
+            onShowPrivacyInfoDialog = {},
+            onDismissPrivacyInfoDialog = {},
+            showLockscreenInfoDialog = false,
+            onDismissLockscreenInfoDialog = {},
+            showBatteryInfoDialog = false,
+            onDismissBatteryInfoDialog = {},
+            openLockScreenSettings = {},
+            openBatteryOptimizationSettings = {}
         )
     }
 }

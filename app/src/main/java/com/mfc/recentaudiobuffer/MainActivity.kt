@@ -20,7 +20,6 @@ package com.mfc.recentaudiobuffer
 
 import android.Manifest
 import android.app.AlertDialog
-import android.app.Application
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -43,252 +42,21 @@ import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
 import com.google.android.ump.ConsentInformation
 import com.google.android.ump.ConsentRequestParameters
 import com.google.android.ump.UserMessagingPlatform
 import dagger.hilt.android.AndroidEntryPoint
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.nio.ByteBuffer
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import javax.inject.Inject
 import kotlin.getValue
-
-
-// --- ViewModel and State classes to manage player state across configuration changes ---
-
-/**
- * Data class representing the UI state of the media player.
- * It's kept separate from the Activity/Composable to survive configuration changes.
- */
-data class PlayerUiState(
-    val isVisible: Boolean = false, val currentUri: Uri? = null, val currentFileName: String = ""
-)
-
-data class SaveDialogState(
-    val processedAudioData: ByteArray, val audioConfig: AudioConfig, val suggestedFileName: String
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (javaClass != other?.javaClass) return false
-
-        other as SaveDialogState
-
-        if (!processedAudioData.contentEquals(other.processedAudioData)) return false
-        if (audioConfig != other.audioConfig) return false
-        if (suggestedFileName != other.suggestedFileName) return false
-
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = processedAudioData.contentHashCode()
-        result = 31 * result + audioConfig.hashCode()
-        result = 31 * result + suggestedFileName.hashCode()
-        return result
-    }
-}
-
-// Helper sealed class for one-time events
-sealed class UiEvent {
-    data class ShowToast(val message: String) : UiEvent()
-    object RequestDirectoryPicker : UiEvent()
-}
-
-/**
- * ViewModel to hold the MediaPlayerManager and its UI state.
- * This ensures the player survives screen rotations and other configuration changes.
- */
-@HiltViewModel
-class MainViewModel @Inject constructor(
-    private val application: Application,
-    private val vadProcessor: VADProcessor,
-    private val settingsRepository: SettingsRepository
-) : ViewModel() {
-
-    private val _playerUiState = MutableStateFlow(PlayerUiState())
-    val playerUiState: StateFlow<PlayerUiState> = _playerUiState.asStateFlow()
-
-    // The MediaPlayerManager is now owned by the ViewModel.
-    val mediaPlayerManager: MediaPlayerManager = MediaPlayerManager(application) { uri, fileName ->
-        viewModelScope.launch {
-            _playerUiState.update {
-                it.copy(
-                    isVisible = true, currentUri = uri, currentFileName = fileName
-                )
-            }
-        }
-    }
-
-    private val _saveDialogState = MutableStateFlow<SaveDialogState?>(null)
-    val saveDialogState: StateFlow<SaveDialogState?> = _saveDialogState.asStateFlow()
-
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    // Provide a public function to update the state
-    fun setLoading(loading: Boolean) {
-        _isLoading.value = loading
-    }
-
-    fun prepareForSave(buffer: ByteArray, config: AudioConfig, suggestedName: String) {
-        _saveDialogState.value = SaveDialogState(buffer, config, suggestedName)
-    }
-
-    fun onDismissSaveDialog() {
-        _saveDialogState.value = null
-    }
-
-    /**
-     * Handles the user closing the media player UI.
-     */
-    fun onPlayerClose() {
-        mediaPlayerManager.closeMediaPlayer()
-        _playerUiState.update { it.copy(isVisible = false) }
-    }
-
-    /**
-     * Sets up the media player with a new URI.
-     */
-    fun setUpMediaPlayer(uri: Uri) {
-        mediaPlayerManager.setUpMediaPlayer(uri)
-    }
-
-    /**
-     * This is called when the ViewModel is about to be destroyed.
-     * It's the correct place to release the player resources.
-     */
-    override fun onCleared() {
-        super.onCleared()
-        mediaPlayerManager.closeMediaPlayer()
-        Timber.d("MainViewModel cleared, player released.")
-    }
-
-    // We need a way to tell the UI to do things like show a Toast or pick a directory
-    private val _uiEvents = MutableStateFlow<UiEvent?>(null)
-    val uiEvents: StateFlow<UiEvent?> = _uiEvents.asStateFlow()
-
-    fun processAndPrepareToSaveFile(fileUri: Uri) {
-        viewModelScope.launch {
-
-            _isLoading.value = true
-
-            try {
-                application.contentResolver.openInputStream(fileUri)?.use { inputStream ->
-                    val originalBytes = withContext(Dispatchers.IO) { inputStream.readBytes() }
-                    val config = WavUtils.readWavHeader(originalBytes)
-
-                    val audioDataBuffer = ByteBuffer.wrap(
-                        originalBytes,
-                        WavUtils.WAV_HEADER_SIZE,
-                        originalBytes.size - WavUtils.WAV_HEADER_SIZE
-                    )
-
-                    val processedBytes = withContext(Dispatchers.Default) {
-                        vadProcessor.process(audioDataBuffer, config)
-                    }
-
-                    val originalFileName =
-                        DocumentFile.fromSingleUri(application, fileUri)?.name ?: "processed.wav"
-                    val suggestedName =
-                        originalFileName.replace(".wav", "_clipped.wav", ignoreCase = true)
-
-                    // Call the existing function to update the state
-                    prepareForSave(processedBytes, config, suggestedName)
-                } ?: run {
-                    _uiEvents.value = UiEvent.ShowToast("Failed to open file")
-                }
-
-                val destDirUri = FileSavingUtils.getCachedGrantedUri(application)
-                if (!FileSavingUtils.isUriValidAndAccessible(application, destDirUri)) {
-                    _uiEvents.value = UiEvent.RequestDirectoryPicker
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to process file")
-                _uiEvents.value = UiEvent.ShowToast("Error: ${e.message}")
-            } finally {
-                _isLoading.value = false
-            }
-        }
-    }
-
-    fun onEventHandled() {
-        _uiEvents.value = null
-    }
-
-    fun saveBufferFromService(bufferService: MyBufferServiceInterface?) {
-        if (bufferService == null) {
-            _uiEvents.value = UiEvent.ShowToast("ERROR: Buffer service is not running.")
-            return
-        }
-
-        viewModelScope.launch {
-            setLoading(true)
-            try {
-                // Switch to a background thread for the entire operation
-                val saveData = withContext(Dispatchers.IO) {
-                    val settings = settingsRepository.getSettingsConfig()
-                    // This is a suspend function now
-                    val originalBuffer = bufferService.pauseSortAndGetBuffer()
-
-                    val bufferToSave = if (settings.isAiAutoClipEnabled) {
-                        withContext(Dispatchers.Default) {
-                            vadProcessor.process(originalBuffer, settings.toAudioConfig())
-                        }
-                    } else {
-                        originalBuffer.rewind()
-                        val bytes = ByteArray(originalBuffer.remaining())
-                        originalBuffer.get(bytes)
-                        bytes
-                    }
-                    val audioConfig = settings.toAudioConfig()
-                    val timestamp =
-                        SimpleDateFormat("yy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
-                    val suggestedFileName = "recording_${timestamp}.wav"
-
-                    // Return all the data we need
-                    Triple(bufferToSave, audioConfig, suggestedFileName)
-                }
-
-                // Update the state on the main thread
-                prepareForSave(saveData.first, saveData.second, saveData.third)
-
-                val destDirUri = FileSavingUtils.getCachedGrantedUri(application)
-                if (!FileSavingUtils.isUriValidAndAccessible(application, destDirUri)) {
-                    _uiEvents.value = UiEvent.RequestDirectoryPicker
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Error during save buffer preparation")
-                _uiEvents.value = UiEvent.ShowToast("Error: ${e.message}")
-            } finally {
-                // Ensure the service is told to start recording again
-                withContext(Dispatchers.IO) {
-                    bufferService.startRecording()
-                }
-                setLoading(false)
-            }
-        }
-    }
-}
-
 
 @AndroidEntryPoint
 @UnstableApi
@@ -313,18 +81,6 @@ class MainActivity : AppCompatActivity() {
     private val viewModel: MainViewModel by viewModels()
     private var myBufferService: MyBufferServiceInterface? = null
 
-    // --- UI State Management ---
-    private var serviceError by mutableStateOf<String?>(null)
-    private var isRecording by mutableStateOf(false)
-    private var showRecentFilesDialog by mutableStateOf(false)
-    private var showTrimFileDialog by mutableStateOf(false)
-    private var showDirectoryPermissionDialog by mutableStateOf(false)
-    private var showLockscreenInfoDialog = mutableStateOf(false)
-    private var hasDonated by mutableStateOf(false)
-    private var wasStartRecordingButtonPress = false
-    private var isRewardActive by mutableStateOf(false)
-    private var rewardExpiryTimestamp by mutableLongStateOf(0L)
-
     private val requiredPermissions = buildList {
         add(Manifest.permission.RECORD_AUDIO)
         add(Manifest.permission.FOREGROUND_SERVICE)
@@ -335,7 +91,6 @@ class MainActivity : AppCompatActivity() {
             add(Manifest.permission.FOREGROUND_SERVICE_MICROPHONE)
         }
     }
-
     private lateinit var foregroundServiceAudioBuffer: Intent
     private lateinit var consentInformation: ConsentInformation
 
@@ -345,12 +100,12 @@ class MainActivity : AppCompatActivity() {
             val binder = ibinder as MyBufferService.MyBinder
             myBufferService = binder.getService()
             isBound = true
-            if (wasStartRecordingButtonPress) {
+            if (viewModel.wasStartRecordingButtonPress.value) {
                 myBufferService?.startRecording()
-                wasStartRecordingButtonPress = false
+                viewModel.setWasStartRecordingButtonPress(false)
             }
             lifecycleScope.launch {
-                myBufferService?.isRecording?.collect { isRecording = it }
+                myBufferService?.isRecording?.collect { viewModel.setIsRecording(it) }
             }
             lifecycleScope.launch {
                 myBufferService?.isLoading?.collect { viewModel.setLoading(it) }
@@ -358,7 +113,7 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 (myBufferService as? MyBufferService)?.serviceError?.collect { error ->
                     if (error != null) {
-                        serviceError = error
+                        viewModel.setServiceError(error)
                         (myBufferService as? MyBufferService)?.clearServiceError()
                     }
                 }
@@ -369,7 +124,7 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceDisconnected(arg0: ComponentName) {
             Timber.e("onServiceDisconnected")
             myBufferService = null
-            isRecording = false
+            viewModel.setIsRecording(false)
             isBound = false
         }
     }
@@ -419,35 +174,31 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateRewardState() {
-        rewardExpiryTimestamp = interstitialAdManager.getRewardExpiryTimestamp()
-        isRewardActive = System.currentTimeMillis() < rewardExpiryTimestamp
-    }
-
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
 
-        updateRewardState()
+        viewModel.updateRewardState(interstitialAdManager)
 
         // Listen for reward state changes from the AdManager
         lifecycleScope.launch {
             interstitialAdManager.rewardStateChanged.collect {
-                updateRewardState()
+                viewModel.updateRewardState(interstitialAdManager)
             }
         }
 
         setContent {
             val windowSizeClass = calculateWindowSizeClass(this)
-            val playerUiState by viewModel.playerUiState.collectAsState()
-            val saveDialogState by viewModel.saveDialogState.collectAsState()
-            val isLoading by viewModel.isLoading.collectAsState()
             val uiEvent by viewModel.uiEvents.collectAsState()
+            val serviceError by viewModel.serviceError.collectAsState()
+
+            // This effect block handles one-time events from the ViewModel
             LaunchedEffect(uiEvent) {
                 when (val event = uiEvent) {
                     is UiEvent.ShowToast -> {
-                        Toast.makeText(this@MainActivity, event.message, Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@MainActivity, event.message, Toast.LENGTH_LONG)
+                            .show()
                         viewModel.onEventHandled()
                     }
 
@@ -460,65 +211,38 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+
+            // The main UI is now just this single composable call
             MainScreen(
+                viewModel = viewModel,
                 widthSizeClass = windowSizeClass.widthSizeClass,
                 heightSizeClass = windowSizeClass.heightSizeClass,
-                isRecordingFromService = isRecording,
-                onStartBufferingClick = { onClickStartRecording() },
-                onStopBufferingClick = { onClickStopRecording() },
-                onResetBufferClick = { onClickResetBuffer() },
-                onSaveBufferClick = { onClickSaveBuffer() },
-                onPickAndPlayFileClick = { showRecentFilesDialog = true },
-                showRecentFilesDialog = showRecentFilesDialog,
-                onFileSelected = { uri ->
-                    showRecentFilesDialog = false
-                    if (uri != Uri.EMPTY) viewModel.setUpMediaPlayer(uri)
-                },
-                onDonateClick = { onClickDonate() },
-                hasDonated = hasDonated,
-                isRewardActive = isRewardActive,
-                rewardExpiryTimestamp = rewardExpiryTimestamp,
-                onSettingsClick = { onClickSettings() },
-                onTrimFileClick = { showTrimFileDialog = true },
-                showTrimFileDialog = showTrimFileDialog,
-                onTrimFileSelected = { uri ->
-                    showTrimFileDialog = false
-                    if (uri != Uri.EMPTY) {
-                        // The new, simple call
-                        viewModel.processAndPrepareToSaveFile(uri)
-                    }
-                },
-                showDirectoryPermissionDialog = showDirectoryPermissionDialog,
-                onDirectoryAlertDismiss = {
-                    showDirectoryPermissionDialog = false
-                    pickDirectory()
-                },
-                mediaPlayerManager = viewModel.mediaPlayerManager,
-                playerUiState = playerUiState,
-                onPlayerClose = { viewModel.onPlayerClose() },
-                isLoading = isLoading,
-                showSaveDialog = saveDialogState != null,
-                showLockscreenInfoDialog = showLockscreenInfoDialog,
-                openLockScreenSettings = { openLockScreenSettings() },
-                openBatteryOptimizationSettings = { openBatteryOptimizationSettings() },
-                suggestedFileName = saveDialogState?.suggestedFileName ?: "",
+                // System actions that only the Activity can perform
+                openLockScreenSettings = ::openLockScreenSettings,
+                openBatteryOptimizationSettings = ::openBatteryOptimizationSettings,
+                // Actions that need access to the Activity/Service
+                onStartBufferingClick = ::onClickStartRecording,
+                onStopBufferingClick = ::onClickStopRecording,
+                onResetBufferClick = ::onClickResetBuffer,
+                onSaveBufferClick = { viewModel.saveBufferFromService(myBufferService) },
+                onDonateClick = ::onClickDonate,
+                onSettingsClick = ::onClickSettings,
                 onConfirmSave = { fileName ->
-                    saveDialogState?.let { state ->
+                    viewModel.saveDialogState.value?.let { state ->
                         handleConfirmSave(fileName, state.processedAudioData, state.audioConfig)
                     }
                     viewModel.onDismissSaveDialog()
-                },
-                onDismissSaveDialog = {
-                    viewModel.onDismissSaveDialog()
                 })
+
+            // The error dialog is an overlay managed by the Activity
             serviceError?.let { message ->
                 RecordingErrorDialog(
-                    message = message, onDismiss = { serviceError = null })
+                    message = message, onDismiss = { viewModel.setServiceError(null) })
             }
         }
 
         if (FileSavingUtils.getCachedGrantedUri(this) == null) {
-            showDirectoryPermissionDialog = true
+            viewModel.setShowDirectoryPermissionDialog(true)
         }
         handleIntent(intent)
     }
@@ -555,7 +279,7 @@ class MainActivity : AppCompatActivity() {
         // Refresh donation status when the activity (re)starts
         lifecycleScope.launch {
             // hasDonated is true if ads are disabled
-            hasDonated = !settingsRepository.getSettingsConfig().areAdsEnabled
+            viewModel.setHasDonated(!settingsRepository.getSettingsConfig().areAdsEnabled)
         }
         if (MyBufferService.isServiceRunning.get() && !foregroundBufferServiceConn.isBound) {
             bindService(
@@ -597,7 +321,9 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
                 putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
                 // Use the constant from your service
-                putExtra(Settings.EXTRA_CHANNEL_ID, MyBufferService.CHRONIC_NOTIFICATION_CHANNEL_ID)
+                putExtra(
+                    Settings.EXTRA_CHANNEL_ID, MyBufferService.CHRONIC_NOTIFICATION_CHANNEL_ID
+                )
             }
             startActivity(intent)
         } catch (e: Exception) {
@@ -628,14 +354,14 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 val settings = settingsRepository.getSettingsConfig()
                 if (!settings.hasShownLockscreenInfo) {
-                    showLockscreenInfoDialog.value = true
+                    viewModel.setShowLockscreenInfoDialog(true)
                     // Persist the change so the dialog doesn't show again
                     settingsRepository.updateHasShownLockscreenInfo(true)
                 }
             }
 
             if (!foregroundBufferServiceConn.isBound) {
-                wasStartRecordingButtonPress = true
+                viewModel.setWasStartRecordingButtonPress(true)
                 startForegroundService(foregroundServiceAudioBuffer)
                 bindService(
                     Intent(this, MyBufferService::class.java),
@@ -664,7 +390,9 @@ class MainActivity : AppCompatActivity() {
         startActivity(Intent(this, DonationActivity::class.java))
     }
 
-    private fun handleConfirmSave(fileName: String, buffer: ByteArray, audioConfig: AudioConfig) {
+    private fun handleConfirmSave(
+        fileName: String, buffer: ByteArray, audioConfig: AudioConfig
+    ) {
         val destDirUri = FileSavingUtils.getCachedGrantedUri(this)
         if (destDirUri == null) {
             Toast.makeText(this, "Internal error: Missing data for save.", Toast.LENGTH_SHORT)
@@ -694,12 +422,13 @@ class MainActivity : AppCompatActivity() {
                 FileSavingUtils.saveBufferToTempFile(this@MainActivity, ByteBuffer.wrap(buffer))
             }
             if (tempFileUri != null) {
-                val saveIntent = Intent(this@MainActivity, FileSavingService::class.java).apply {
-                    putExtra(FileSavingService.EXTRA_TEMP_FILE_URI, tempFileUri)
-                    putExtra(FileSavingService.EXTRA_DEST_DIR_URI, destDirUri)
-                    putExtra(FileSavingService.EXTRA_DEST_FILENAME, fileName)
-                    putExtra(FileSavingService.EXTRA_AUDIO_CONFIG, config)
-                }
+                val saveIntent =
+                    Intent(this@MainActivity, FileSavingService::class.java).apply {
+                        putExtra(FileSavingService.EXTRA_TEMP_FILE_URI, tempFileUri)
+                        putExtra(FileSavingService.EXTRA_DEST_DIR_URI, destDirUri)
+                        putExtra(FileSavingService.EXTRA_DEST_FILENAME, fileName)
+                        putExtra(FileSavingService.EXTRA_AUDIO_CONFIG, config)
+                    }
                 startService(saveIntent)
                 myBufferService?.resetBuffer()
             } else {
@@ -733,7 +462,9 @@ class MainActivity : AppCompatActivity() {
             onPermissionsGrantedCallback = null
         }
 
-    private fun getPermissionsAndThen(permissions: List<String>, onPermissionsGranted: () -> Unit) {
+    private fun getPermissionsAndThen(
+        permissions: List<String>, onPermissionsGranted: () -> Unit
+    ) {
         onPermissionsGrantedCallback = onPermissionsGranted
         val permissionsToRequest = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
