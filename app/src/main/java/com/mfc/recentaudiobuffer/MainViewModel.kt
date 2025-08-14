@@ -109,83 +109,23 @@ class MainViewModel @Inject constructor(
     val isRewardActive = _isRewardActive.asStateFlow()
     private val _rewardExpiryTimestamp = MutableStateFlow(0L)
     val rewardExpiryTimestamp = _rewardExpiryTimestamp.asStateFlow()
-
-    fun setServiceError(error: String?) {
-        _serviceError.value = error
-    }
-
-    fun setIsRecording(recording: Boolean) {
-        _isRecording.value = recording
-    }
-
-    fun setShowRecentFilesDialog(show: Boolean) {
-        _showRecentFilesDialog.value = show
-    }
-
-    fun setShowTrimFileDialog(show: Boolean) {
-        _showTrimFileDialog.value = show
-    }
-
-    fun setShowDirectoryPermissionDialog(show: Boolean) {
-        _showDirectoryPermissionDialog.value = show
-    }
-
-    fun setShowLockscreenInfoDialog(show: Boolean) {
-        _showLockscreenInfoDialog.value = show
-    }
-
-    fun setHasDonated(donated: Boolean) {
-        _hasDonated.value = donated
-    }
-
-    fun setWasStartRecordingButtonPress(pressed: Boolean) {
-        _wasStartRecordingButtonPress.value = pressed
-    }
-
-    fun setIsRewardActive(active: Boolean) {
-        _isRewardActive.value = active
-    }
-
-    fun setRewardExpiryTimestamp(timestamp: Long) {
-        _rewardExpiryTimestamp.value = timestamp
-    }
-
-    fun setShowPrivacyInfoDialog(value: Boolean) {
-        _showPrivacyInfoDialog.value = value
-    }
-
-    fun setShowBatteryInfoDialog(value: Boolean) {
-        _showBatteryInfoDialog.value = value
-    }
-
-    fun updateRewardState(interstitialAdManager: InterstitialAdManager) {
-        setRewardExpiryTimestamp(interstitialAdManager.getRewardExpiryTimestamp())
-        setIsRewardActive(System.currentTimeMillis() < rewardExpiryTimestamp.value)
-    }
-
     private val _showPrivacyInfoDialog = MutableStateFlow(false)
     val showPrivacyInfoDialog = _showPrivacyInfoDialog.asStateFlow()
-
     private val _showLockscreenInfoDialog = MutableStateFlow(false)
     val showLockscreenInfoDialog = _showLockscreenInfoDialog.asStateFlow()
-
     private val _showBatteryInfoDialog = MutableStateFlow(false)
     val showBatteryInfoDialog = _showBatteryInfoDialog.asStateFlow()
-
-    fun onPrivacyDialogDismissed() {
-        _showPrivacyInfoDialog.value = false
-        _showLockscreenInfoDialog.value = true // Immediately show the next dialog
-    }
-
-    fun onLockscreenDialogDismissed() {
-        _showLockscreenInfoDialog.value = false
-        _showBatteryInfoDialog.value = true // Chain to the next dialog
-    }
-
     private val _playerUiState = MutableStateFlow(PlayerUiState())
     val playerUiState: StateFlow<PlayerUiState> = _playerUiState.asStateFlow()
+    private val _saveDialogState = MutableStateFlow<SaveDialogState?>(null)
+    val saveDialogState: StateFlow<SaveDialogState?> = _saveDialogState.asStateFlow()
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    private val _uiEvents = MutableStateFlow<UiEvent?>(null)
+    val uiEvents: StateFlow<UiEvent?> = _uiEvents.asStateFlow()
+    private val _pendingQuickSave = MutableStateFlow(false)
+    val pendingQuickSave = _pendingQuickSave.asStateFlow()
 
-    // The MediaPlayerManager is now owned by the ViewModel.
     val mediaPlayerManager: MediaPlayerManager = MediaPlayerManager(application) { uri, fileName ->
         viewModelScope.launch {
             _playerUiState.update {
@@ -196,105 +136,39 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun requestDirectoryPicker()
-    {
-        _uiEvents.value = UiEvent.RequestDirectoryPicker
-    }
-
-    private val _saveDialogState = MutableStateFlow<SaveDialogState?>(null)
-    val saveDialogState: StateFlow<SaveDialogState?> = _saveDialogState.asStateFlow()
-
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    // Provide a public function to update the state
-    fun setLoading(loading: Boolean) {
-        _isLoading.value = loading
-    }
-
-    fun prepareForSave(buffer: ByteArray, config: AudioConfig, suggestedName: String) {
-        _saveDialogState.value = SaveDialogState(buffer, config, suggestedName)
-    }
-
-    fun onDismissSaveDialog() {
-        _saveDialogState.value = null
-    }
-
-    /**
-     * Handles the user closing the media player UI.
-     */
+    // --- Setters for UI State ---
+    fun setServiceError(error: String?) { _serviceError.value = error }
+    fun setIsRecording(recording: Boolean) { _isRecording.value = recording }
+    fun setShowRecentFilesDialog(show: Boolean) { _showRecentFilesDialog.value = show }
+    fun setShowTrimFileDialog(show: Boolean) { _showTrimFileDialog.value = show }
+    fun setShowDirectoryPermissionDialog(show: Boolean) { _showDirectoryPermissionDialog.value = show }
+    fun setShowLockscreenInfoDialog(show: Boolean) { _showLockscreenInfoDialog.value = show }
+    fun setHasDonated(donated: Boolean) { _hasDonated.value = donated }
+    fun setWasStartRecordingButtonPress(pressed: Boolean) { _wasStartRecordingButtonPress.value = pressed }
+    fun setIsRewardActive(active: Boolean) { _isRewardActive.value = active }
+    fun setRewardExpiryTimestamp(timestamp: Long) { _rewardExpiryTimestamp.value = timestamp }
+    fun setShowPrivacyInfoDialog(value: Boolean) { _showPrivacyInfoDialog.value = value }
+    fun setShowBatteryInfoDialog(value: Boolean) { _showBatteryInfoDialog.value = value }
+    fun setLoading(loading: Boolean) { _isLoading.value = loading }
+    fun onDismissSaveDialog() { _saveDialogState.value = null }
     fun onPlayerClose() {
         mediaPlayerManager.closeMediaPlayer()
         _playerUiState.update { it.copy(isVisible = false) }
     }
+    fun setUpMediaPlayer(uri: Uri) { mediaPlayerManager.setUpMediaPlayer(uri) }
+    fun onEventHandled() { _uiEvents.value = null }
+    fun requestDirectoryPicker() { _uiEvents.value = UiEvent.RequestDirectoryPicker }
+    fun setPendingQuickSave(pending: Boolean) { _pendingQuickSave.value = pending }
 
-    /**
-     * Sets up the media player with a new URI.
-     */
-    fun setUpMediaPlayer(uri: Uri) {
-        mediaPlayerManager.setUpMediaPlayer(uri)
+    // --- Business Logic ---
+    fun onPrivacyDialogDismissed() {
+        _showPrivacyInfoDialog.value = false
+        _showLockscreenInfoDialog.value = true
     }
 
-    /**
-     * This is called when the ViewModel is about to be destroyed.
-     * It's the correct place to release the player resources.
-     */
-    override fun onCleared() {
-        super.onCleared()
-        mediaPlayerManager.closeMediaPlayer()
-        Timber.d("MainViewModel cleared, player released.")
-    }
-
-    // We need a way to tell the UI to do things like show a Toast or pick a directory
-    private val _uiEvents = MutableStateFlow<UiEvent?>(null)
-    val uiEvents: StateFlow<UiEvent?> = _uiEvents.asStateFlow()
-
-    fun processAndPrepareToSaveFile(fileUri: Uri) {
-        viewModelScope.launch {
-
-            _isLoading.value = true
-
-            try {
-                application.contentResolver.openInputStream(fileUri)?.use { inputStream ->
-                    val originalBytes = withContext(Dispatchers.IO) { inputStream.readBytes() }
-                    val config = WavUtils.readWavHeader(originalBytes)
-
-                    val audioDataBuffer = ByteBuffer.wrap(
-                        originalBytes,
-                        WavUtils.WAV_HEADER_SIZE,
-                        originalBytes.size - WavUtils.WAV_HEADER_SIZE
-                    )
-
-                    val processedBytes = withContext(Dispatchers.Default) {
-                        vadProcessor.process(audioDataBuffer, config)
-                    }
-
-                    val originalFileName =
-                        DocumentFile.fromSingleUri(application, fileUri)?.name ?: "processed.wav"
-                    val suggestedName =
-                        originalFileName.replace(".wav", "_clipped.wav", ignoreCase = true)
-
-                    // Call the existing function to update the state
-                    prepareForSave(processedBytes, config, suggestedName)
-                } ?: run {
-                    _uiEvents.value = UiEvent.ShowToast("Failed to open file")
-                }
-
-                val destDirUri = FileSavingUtils.getCachedGrantedUri(application)
-                if (!FileSavingUtils.isUriValidAndAccessible(application, destDirUri)) {
-                    _uiEvents.value = UiEvent.RequestDirectoryPicker
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to process file")
-                _uiEvents.value = UiEvent.ShowToast("Error: ${e.message}")
-            } finally {
-                _isLoading.value = false
-            }
-        }
-    }
-
-    fun onEventHandled() {
-        _uiEvents.value = null
+    fun onLockscreenDialogDismissed() {
+        _showLockscreenInfoDialog.value = false
+        _showBatteryInfoDialog.value = true
     }
 
     fun saveBufferFromService(bufferService: MyBufferServiceInterface?) {
@@ -302,17 +176,13 @@ class MainViewModel @Inject constructor(
             _uiEvents.value = UiEvent.ShowToast("ERROR: Buffer service is not running.")
             return
         }
-
         viewModelScope.launch {
             setLoading(true)
             try {
-                // Switch to a background thread for the entire operation
                 val saveData = withContext(Dispatchers.IO) {
                     val settings = settingsRepository.getSettingsConfig()
-                    // This is a suspend function now
                     val originalBuffer = bufferService.pauseSortAndGetBuffer()
-
-                    val bufferToSave = if (settings.isAiAutoClipEnabled) {
+                    val bufferToSave = if (settings.isAiAutoClipEnabled && originalBuffer.hasRemaining()) {
                         withContext(Dispatchers.Default) {
                             vadProcessor.process(originalBuffer, settings.toAudioConfig())
                         }
@@ -323,17 +193,11 @@ class MainViewModel @Inject constructor(
                         bytes
                     }
                     val audioConfig = settings.toAudioConfig()
-                    val timestamp =
-                        SimpleDateFormat("yy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
+                    val timestamp = SimpleDateFormat("yy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
                     val suggestedFileName = "recording_${timestamp}.wav"
-
-                    // Return all the data we need
                     Triple(bufferToSave, audioConfig, suggestedFileName)
                 }
-
-                // Update the state on the main thread
-                prepareForSave(saveData.first, saveData.second, saveData.third)
-
+                _saveDialogState.value = SaveDialogState(saveData.first, saveData.second, saveData.third)
                 val destDirUri = FileSavingUtils.getCachedGrantedUri(application)
                 if (!FileSavingUtils.isUriValidAndAccessible(application, destDirUri)) {
                     _uiEvents.value = UiEvent.RequestDirectoryPicker
@@ -342,12 +206,49 @@ class MainViewModel @Inject constructor(
                 Timber.e(e, "Error during save buffer preparation")
                 _uiEvents.value = UiEvent.ShowToast("Error: ${e.message}")
             } finally {
-                // Ensure the service is told to start recording again
-                withContext(Dispatchers.IO) {
-                    bufferService.startRecording()
-                }
+                bufferService.startRecording()
                 setLoading(false)
             }
         }
+    }
+
+    fun processAndPrepareToSaveFile(fileUri: Uri) {
+        viewModelScope.launch {
+            setLoading(true)
+            try {
+                application.contentResolver.openInputStream(fileUri)?.use { inputStream ->
+                    val originalBytes = withContext(Dispatchers.IO) { inputStream.readBytes() }
+                    val config = WavUtils.readWavHeader(originalBytes)
+                    val audioDataBuffer = ByteBuffer.wrap(
+                        originalBytes,
+                        WavUtils.WAV_HEADER_SIZE,
+                        originalBytes.size - WavUtils.WAV_HEADER_SIZE
+                    )
+                    val processedBytes = withContext(Dispatchers.Default) {
+                        vadProcessor.process(audioDataBuffer, config)
+                    }
+                    val originalFileName = DocumentFile.fromSingleUri(application, fileUri)?.name ?: "processed.wav"
+                    val suggestedName = originalFileName.replace(".wav", "_clipped.wav", ignoreCase = true)
+                    _saveDialogState.value = SaveDialogState(processedBytes, config, suggestedName)
+                } ?: run {
+                    _uiEvents.value = UiEvent.ShowToast("Failed to open file")
+                }
+                val destDirUri = FileSavingUtils.getCachedGrantedUri(application)
+                if (!FileSavingUtils.isUriValidAndAccessible(application, destDirUri)) {
+                    _uiEvents.value = UiEvent.RequestDirectoryPicker
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to process file")
+                _uiEvents.value = UiEvent.ShowToast("Error: ${e.message}")
+            } finally {
+                setLoading(false)
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        mediaPlayerManager.closeMediaPlayer()
+        Timber.d("MainViewModel cleared, player released.")
     }
 }

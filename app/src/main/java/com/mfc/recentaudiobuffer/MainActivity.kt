@@ -137,7 +137,22 @@ class MainActivity : AppCompatActivity() {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
                 FileSavingUtils.cacheGrantedUri(this, it)
-                // The UI will show the dialog automatically if viewModel.saveDialogState is not null.
+                //  Check if a quick save was pending and execute it
+                if (viewModel.pendingQuickSave.value) {
+                    Timber.d("Directory permission granted, executing pending quick save.")
+                    onClickSaveBuffer()
+                    viewModel.setPendingQuickSave(false)
+                }
+            } ?: run {
+                //  Handle case where user cancels the picker
+                if (viewModel.pendingQuickSave.value) {
+                    Toast.makeText(
+                        this,
+                        "Save cancelled: Directory permission is required.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    viewModel.setPendingQuickSave(false)
+                }
             }
         }
 
@@ -174,17 +189,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateRewardState() {
+        val timestamp = interstitialAdManager.getRewardExpiryTimestamp()
+        viewModel.setRewardExpiryTimestamp(timestamp)
+        viewModel.setIsRewardActive(System.currentTimeMillis() < timestamp)
+    }
+
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         foregroundServiceAudioBuffer = Intent(this, MyBufferService::class.java)
 
-        viewModel.updateRewardState(interstitialAdManager)
-
         // Listen for reward state changes from the AdManager
         lifecycleScope.launch {
             interstitialAdManager.rewardStateChanged.collect {
-                viewModel.updateRewardState(interstitialAdManager)
+                updateRewardState()
             }
         }
 
@@ -197,8 +216,7 @@ class MainActivity : AppCompatActivity() {
             LaunchedEffect(uiEvent) {
                 when (val event = uiEvent) {
                     is UiEvent.ShowToast -> {
-                        Toast.makeText(this@MainActivity, event.message, Toast.LENGTH_LONG)
-                            .show()
+                        Toast.makeText(this@MainActivity, event.message, Toast.LENGTH_LONG).show()
                         viewModel.onEventHandled()
                     }
 
@@ -241,9 +259,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        if (FileSavingUtils.getCachedGrantedUri(this) == null) {
-            viewModel.setShowDirectoryPermissionDialog(true)
-        }
         handleIntent(intent)
     }
 
@@ -276,6 +291,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        updateRewardState()
         // Refresh donation status when the activity (re)starts
         lifecycleScope.launch {
             // hasDonated is true if ads are disabled
@@ -287,6 +303,14 @@ class MainActivity : AppCompatActivity() {
                 foregroundBufferServiceConn,
                 BIND_AUTO_CREATE
             )
+        }
+
+        val grantedUrlMaybe = FileSavingUtils.getCachedGrantedUri(this)
+        if (grantedUrlMaybe == null || !FileSavingUtils.isUriValidAndAccessible(
+                this, grantedUrlMaybe
+            )
+        ) {
+            viewModel.setShowDirectoryPermissionDialog(true)
         }
     }
 
@@ -310,6 +334,7 @@ class MainActivity : AppCompatActivity() {
             savedFileUri?.let { viewModel.setUpMediaPlayer(it) }
         }
         if (intent.action == ACTION_REQUEST_DIRECTORY_PERMISSION) {
+            viewModel.setPendingQuickSave(true)
             pickDirectory()
             setIntent(Intent(this, MainActivity::class.java))
         }
@@ -422,13 +447,12 @@ class MainActivity : AppCompatActivity() {
                 FileSavingUtils.saveBufferToTempFile(this@MainActivity, ByteBuffer.wrap(buffer))
             }
             if (tempFileUri != null) {
-                val saveIntent =
-                    Intent(this@MainActivity, FileSavingService::class.java).apply {
-                        putExtra(FileSavingService.EXTRA_TEMP_FILE_URI, tempFileUri)
-                        putExtra(FileSavingService.EXTRA_DEST_DIR_URI, destDirUri)
-                        putExtra(FileSavingService.EXTRA_DEST_FILENAME, fileName)
-                        putExtra(FileSavingService.EXTRA_AUDIO_CONFIG, config)
-                    }
+                val saveIntent = Intent(this@MainActivity, FileSavingService::class.java).apply {
+                    putExtra(FileSavingService.EXTRA_TEMP_FILE_URI, tempFileUri)
+                    putExtra(FileSavingService.EXTRA_DEST_DIR_URI, destDirUri)
+                    putExtra(FileSavingService.EXTRA_DEST_FILENAME, fileName)
+                    putExtra(FileSavingService.EXTRA_AUDIO_CONFIG, config)
+                }
                 startService(saveIntent)
                 myBufferService?.resetBuffer()
             } else {
