@@ -67,9 +67,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     @Inject
-    lateinit var authenticationManager: AuthenticationManager
-
-    @Inject
     lateinit var settingsRepository: SettingsRepository
 
     @Inject
@@ -259,6 +256,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val grantedUrlMaybe = FileSavingUtils.getCachedGrantedUri(this)
+        if (grantedUrlMaybe == null || !FileSavingUtils.isUriValidAndAccessible(
+                this, grantedUrlMaybe
+            )
+        ) {
+            viewModel.setShowDirectoryPermissionDialog(true)
+        }
+
         handleIntent(intent)
     }
 
@@ -303,14 +308,6 @@ class MainActivity : AppCompatActivity() {
                 foregroundBufferServiceConn,
                 BIND_AUTO_CREATE
             )
-        }
-
-        val grantedUrlMaybe = FileSavingUtils.getCachedGrantedUri(this)
-        if (grantedUrlMaybe == null || !FileSavingUtils.isUriValidAndAccessible(
-                this, grantedUrlMaybe
-            )
-        ) {
-            viewModel.setShowDirectoryPermissionDialog(true)
         }
     }
 

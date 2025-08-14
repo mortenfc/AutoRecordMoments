@@ -46,12 +46,14 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
+import javax.inject.Singleton
 
 sealed class AuthError {
     data class Generic(val message: String) : AuthError()
     object NoAccountsFound : AuthError()
 }
 
+@Singleton
 class AuthenticationManager @Inject constructor(
     @ApplicationContext private val applicationContext: Context,
     private val auth: FirebaseAuth,
@@ -125,6 +127,7 @@ class AuthenticationManager @Inject constructor(
     }
 
     private suspend fun signIn(activity: Activity) {
+        clearAuthError()
         // Prevent multiple sign-in attempts
         if (_isSigningIn.value) return
 

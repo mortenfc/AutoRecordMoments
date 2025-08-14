@@ -119,21 +119,13 @@ fun TopAppBarContent(
 
     when (authError) {
         is AuthError.NoAccountsFound -> {
-            CustomAlertDialog(
-                onDismissRequest = onDismissErrorDialog,
-                title = { Text("No Accounts Found") },
-                text = { Text("To sign in, please add a Google account to this device first.") },
-                dismissButton = { TextButton(onClick = onDismissErrorDialog) { Text("CANCEL") } },
-                confirmButton = {
-                    TextButton(onClick = {
-                        context.startActivity(Intent(Settings.ACTION_ADD_ACCOUNT))
-                        onDismissErrorDialog()
-                    }) { Text("ADD ACCOUNT") }
-                })
+            NoAccountsFoundDialog(onDismissErrorDialog = onDismissErrorDialog)
         }
+
         is AuthError.Generic -> {
             SignInErrorDialog(errorMessage = authError.message, onDismiss = onDismissErrorDialog)
         }
+
         null -> {}
     }
 
@@ -155,12 +147,18 @@ fun TopAppBarContent(
                         painter = painterResource(id = R.drawable.very_teal_fancy_simple_smiley_wave),
                         contentDescription = "Home",
                         tint = Color.Unspecified,
-                        modifier = Modifier.border(1.dp, colorResource(R.color.purple_accent), CircleShape)
+                        modifier = Modifier.border(
+                            1.dp, colorResource(R.color.purple_accent), CircleShape
+                        )
                     )
                 }
             }
         },
-        modifier = Modifier.drawBehind { drawToolbarBackground(toolbarOutlineColor, toolbarBackgroundColor) },
+        modifier = Modifier.drawBehind {
+            drawToolbarBackground(
+                toolbarOutlineColor, toolbarBackgroundColor
+            )
+        },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         actions = {
             GoogleSignInButton(
@@ -175,16 +173,17 @@ fun TopAppBarContent(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = ripple(bounded = true, radius = 24.dp),
-                            onClick = { onSettingsClick() }
-                        )
+                            onClick = { onSettingsClick() })
                         .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(painterResource(id = R.drawable.baseline_settings_24), "Settings", tint = Color.White)
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painterResource(id = R.drawable.baseline_settings_24),
+                        "Settings",
+                        tint = Color.White
+                    )
                 }
             }
-        }
-    )
+        })
 }
 
 // GoogleSignInButton now takes a simple String and Boolean
@@ -197,18 +196,25 @@ fun GoogleSignInButton(onClick: () -> Unit, signInButtonText: String, isEnabled:
             .wrapContentWidth()
             .height(48.dp)
             .shadow(elevation = 2.dp, shape = RoundedCornerShape(4.dp)),
-        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black, disabledContainerColor = colorResource(id = R.color.light_grey)),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.White,
+            contentColor = Color.Black,
+            disabledContainerColor = colorResource(id = R.color.light_grey)
+        ),
         shape = RoundedCornerShape(4.dp),
         contentPadding = PaddingValues(horizontal = 8.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(id = R.drawable.ic_google_logo), "Google logo", modifier = Modifier.size(24.dp))
+            Image(
+                painterResource(id = R.drawable.ic_google_logo),
+                "Google logo",
+                modifier = Modifier.size(24.dp)
+            )
             Spacer(modifier = Modifier.width(5.dp))
             Text(
-                text = if (signInButtonText == "Sign In") stringResource(id = R.string.sign_in) else stringResource(id = R.string.sign_out),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.Black
+                text = if (signInButtonText == "Sign In") stringResource(id = R.string.sign_in) else stringResource(
+                    id = R.string.sign_out
+                ), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.Black
             )
         }
     }
@@ -250,8 +256,7 @@ fun TopAppBarContentPreview() {
         onDismissErrorDialog = {},
         onBackButtonClicked = {},
         onIconClick = {},
-        onSettingsClick = {}
-    )
+        onSettingsClick = {})
 }
 
 @Preview(showBackground = true)

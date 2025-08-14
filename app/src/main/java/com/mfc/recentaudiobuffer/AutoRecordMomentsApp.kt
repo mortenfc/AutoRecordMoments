@@ -18,16 +18,20 @@
 
 package com.mfc.recentaudiobuffer
 
+import CrashReportingTree
+import InfoLogTree
 import android.app.Activity
 import android.app.Application
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Bundle
+import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
@@ -59,11 +63,29 @@ class AutoRecordMomentsApp : Application(), Application.ActivityLifecycleCallbac
             }
         }
 
-        if (BuildConfig.DEBUG) {
-            Timber.plant(Timber.DebugTree())
-            Timber.d("Timber logging is enabled for debug build.")
-        }
+        plantTimberTrees()
         createNotificationChannels()
+    }
+
+     private fun plantTimberTrees() {
+        when (BuildConfig.BUILD_TYPE_NAME) {
+            "debug" -> {
+                // In debug, log everything to Logcat AND report warnings/errors to Crashlytics.
+                Timber.plant(Timber.DebugTree())
+                Timber.plant(CrashReportingTree())
+                Timber.d("Timber: Full debug logging + Crashlytics reporting enabled.")
+            }
+            "staging" -> {
+                // In staging, log INFO+ to Logcat AND report warnings/errors to Crashlytics.
+                Timber.plant(InfoLogTree())
+                Timber.plant(CrashReportingTree())
+                Timber.i("Timber: Info logging + Crashlytics reporting enabled for staging.")
+            }
+            "release" -> {
+                // In release, ONLY report warnings/errors to Crashlytics. Nothing in Logcat.
+                Timber.plant(CrashReportingTree())
+            }
+        }
     }
 
     /**

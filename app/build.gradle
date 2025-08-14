@@ -17,8 +17,8 @@ android {
         applicationId = "com.mfc.recentaudiobuffer"
         minSdk = 32
         targetSdk = 36
-        versionCode = 34
-        versionName = "1.0.34"
+        versionCode = 40
+        versionName = "1.0.40"
 
         testInstrumentationRunner = "com.mfc.recentaudiobuffer.HiltTestRunner"
         vectorDrawables {
@@ -55,6 +55,7 @@ android {
             buildConfigField("String", "REWARDED_INTERSTITIAL_AD_ID", "\"ca-app-pub-5330230981165217/4603016372\"")
             buildConfigField("String", "BANNER_AD_ID", "\"ca-app-pub-5330230981165217/6883566605\"")
             manifestPlaceholders["admob_app_id"] = "ca-app-pub-5330230981165217~5808556024"
+            buildConfigField "String", "BUILD_TYPE_NAME", "\"release\""
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -66,6 +67,7 @@ android {
             buildConfigField("String", "REWARDED_INTERSTITIAL_AD_ID", "\"ca-app-pub-3940256099942544/5354046379\"")
             buildConfigField("String", "BANNER_AD_ID", "\"ca-app-pub-3940256099942544/9214589741\"")
             manifestPlaceholders["admob_app_id"] = "ca-app-pub-3940256099942544~3347511713"
+            buildConfigField "String", "BUILD_TYPE_NAME", "\"debug\""
         }
         // Release but with test ads, for play console testing
         create("staging") {
@@ -76,6 +78,7 @@ android {
             buildConfigField("String", "REWARDED_INTERSTITIAL_AD_ID", "\"ca-app-pub-3940256099942544/5354046379\"")
             buildConfigField("String", "BANNER_AD_ID", "\"ca-app-pub-3940256099942544/9214589741\"")
             manifestPlaceholders["admob_app_id"] = "ca-app-pub-3940256099942544~3347511713"
+            buildConfigField "String", "BUILD_TYPE_NAME", "\"staging\""
         }
     }
 
