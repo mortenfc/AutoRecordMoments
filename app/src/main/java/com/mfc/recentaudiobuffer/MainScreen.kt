@@ -328,7 +328,7 @@ private fun MainScreenContent(
                 lineHeight = 16.sp
             ),
             recordingButtonSize = if (!isLandscape) 180.dp else 160.dp,
-            recordingInfoIconSize = 28.dp,
+            recordingInfoIconSize = 30.dp,
             recordingMainIconSize = 64.dp,
             secondaryActionButtonSize = 72.dp,
             secondaryActionColumnWidth = 102.dp,

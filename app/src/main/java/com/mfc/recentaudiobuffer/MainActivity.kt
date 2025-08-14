@@ -404,6 +404,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onClickResetBuffer() {
+        myBufferService?.stopRecording()
         myBufferService?.resetBuffer()
     }
 
