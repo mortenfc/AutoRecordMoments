@@ -156,7 +156,9 @@ fun MainScreen(
         showRecentFilesDialog = showRecentFilesDialog,
         onFileSelected = { uri ->
             viewModel.setShowRecentFilesDialog(false)
-            if (uri != Uri.EMPTY) viewModel.setUpMediaPlayer(uri)
+            if (uri != Uri.EMPTY) {
+                viewModel.setUpMediaPlayer(uri)
+            }
         },
         onDonateClick = onDonateClick,
         hasDonated = hasDonated,
@@ -1246,8 +1248,13 @@ fun MainScreenTypicalPhonePortraitPreview() {
             openBatteryOptimizationSettings = {})
     }
 }
+
 @OptIn(UnstableApi::class)
-@Preview(showBackground = true, name = "Phone Landscape (Compact Height)", device = "spec:width=640dp,height=335dp,dpi=480")
+@Preview(
+    showBackground = true,
+    name = "Phone Landscape (Compact Height)",
+    device = "spec:width=640dp,height=335dp,dpi=480"
+)
 @Composable
 fun MainScreenPhoneLandscapePreview() {
     MaterialTheme {
@@ -1295,7 +1302,11 @@ fun MainScreenPhoneLandscapePreview() {
 }
 
 @OptIn(UnstableApi::class)
-@Preview(showBackground = true, name = "Tablet Portrait (Medium Width)", device = "spec:width=800dp,height=1280dp,dpi=240")
+@Preview(
+    showBackground = true,
+    name = "Tablet Portrait (Medium Width)",
+    device = "spec:width=800dp,height=1280dp,dpi=240"
+)
 @Composable
 fun MainScreenTabletPortraitPreview() {
     MaterialTheme {
@@ -1343,7 +1354,11 @@ fun MainScreenTabletPortraitPreview() {
 }
 
 @OptIn(UnstableApi::class)
-@Preview(showBackground = true, name = "Tablet Landscape (Expanded Width)", device = "spec:width=1280dp,height=800dp,dpi=240")
+@Preview(
+    showBackground = true,
+    name = "Tablet Landscape (Expanded Width)",
+    device = "spec:width=1280dp,height=800dp,dpi=240"
+)
 @Composable
 fun MainScreenTabletLandscapePreview() {
     MaterialTheme {

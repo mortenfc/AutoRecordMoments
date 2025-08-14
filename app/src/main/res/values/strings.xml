@@ -49,7 +49,6 @@
     <string name="buffer_length_seconds">Buffer length in Seconds</string>
     <string name="submit">Apply, Save, and\nRestart Recording</string>
     <string name="back">Return</string>
-    <string name="select_directory">You will be prompted to select a default saving directory for quick saves through the persistent notification, that\'s created when you start recording to buffer.</string>
     <string name="close_media_player">Close Media Player</string>
 
 </resources>

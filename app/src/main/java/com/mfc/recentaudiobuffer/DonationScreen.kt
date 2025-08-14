@@ -73,7 +73,6 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -483,22 +482,6 @@ private fun DonationInput(
 
     var isDropdownExpanded by remember { mutableStateOf(false) }
 
-    val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = colorResource(R.color.purple_accent),
-        unfocusedBorderColor = colorResource(R.color.purple_accent),
-        focusedLabelColor = colorResource(R.color.purple_accent),
-        unfocusedLabelColor = colorResource(R.color.teal_900),
-        focusedContainerColor = colorResource(R.color.teal_150).copy(alpha = 0.9f),
-        unfocusedContainerColor = Color.White.copy(alpha = 0.35f),
-        focusedTextColor = colorResource(R.color.teal_900),
-        unfocusedTextColor = colorResource(R.color.teal_900),
-        focusedTrailingIconColor = colorResource(R.color.purple_accent),
-        unfocusedTrailingIconColor = colorResource(R.color.purple_accent),
-        errorBorderColor =colorResource(id = R.color.red),
-        errorSupportingTextColor =colorResource(id = R.color.red),
-        errorContainerColor = colorResource(id = R.color.teal_150)
-    )
-
     Column(modifier = modifier) {
         ExposedDropdownMenuBox(
             expanded = isDropdownExpanded,
@@ -515,7 +498,7 @@ private fun DonationInput(
                 },
                 isError = isAmountError,
                 singleLine = true,
-                colors = fieldColors,
+                colors = appTextFieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 trailingIcon = {
                     Row(

@@ -57,6 +57,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.MenuItemColors
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -415,7 +416,10 @@ private fun AudioSettingsGroup(
             textStyle = sizing.audioSettingsTextStyle
         )
         DropdownMenu(
-            expanded = showSampleRateMenu, onDismissRequest = { showSampleRateMenu = false }) {
+            expanded = showSampleRateMenu,
+            onDismissRequest = { showSampleRateMenu = false },
+            containerColor = colorResource(id = R.color.teal_100)
+        ) {
             sampleRates.forEach { (label, value) ->
                 StyledDropdownMenuItem(text = "$label Hz", onClick = {
                     onSampleRateChanged(value)
@@ -609,7 +613,7 @@ fun SettingsButton(
                 2.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(8.dp)
             )
             .background(
-                colorResource(id = R.color.teal_100), RoundedCornerShape(8.dp)
+                Color.White.copy(alpha = 0.35f), RoundedCornerShape(8.dp)
             )
     ) {
         Text(
@@ -702,14 +706,7 @@ fun MyOutlinedBufferInputField(
                     enabled = true,
                     isError = isNull.value || isMaxExceeded.value,
                     interactionSource = interactionSource,
-                    colors = TextFieldDefaults.colors(
-                        unfocusedIndicatorColor = colorResource(id = R.color.purple_accent),
-                        focusedIndicatorColor = colorResource(id = R.color.purple_accent),
-                        unfocusedContainerColor = colorResource(id = R.color.teal_100),
-                        focusedContainerColor = colorResource(id = R.color.teal_150),
-                        errorContainerColor = colorResource(id = R.color.teal_150),
-                        errorIndicatorColor = colorResource(id = R.color.red)
-                    ),
+                    colors = appTextFieldColors(),
                     shape = RoundedCornerShape(8.dp),
                     focusedBorderThickness = 4.dp,
                     unfocusedBorderThickness = 2.dp
@@ -731,13 +728,19 @@ fun StyledDropdownMenuItem(
                 color = colorResource(id = R.color.teal_900),
                 style = MaterialTheme.typography.bodyLarge
             )
-        },
-        onClick = onClick,
-        colors = MenuDefaults.itemColors(
-            textColor = colorResource(id = R.color.teal_900),
-        ),
+        }, onClick = onClick, colors = appMenuItemColors()
     )
 }
+
+@Composable
+fun appMenuItemColors(): MenuItemColors = MenuDefaults.itemColors(
+    textColor = colorResource(id = R.color.teal_900),
+    trailingIconColor = colorResource(id = R.color.teal_900),
+    leadingIconColor = colorResource(id = R.color.purple_accent),
+    disabledTextColor = colorResource(id = R.color.teal_900).copy(alpha = 0.35f),
+    disabledTrailingIconColor = colorResource(id = R.color.teal_900).copy(alpha = 0.35f),
+    disabledLeadingIconColor = colorResource(id = R.color.purple_accent).copy(alpha = 0.35f)
+)
 
 // Data class for the final combined estimate
 data class ImpactEstimate(
@@ -1261,4 +1264,15 @@ fun SettingsScreenPhoneLandscapePreview() {
             onSubmit = {},
             justExit = {})
     }
+}
+
+@SuppressLint("UnrememberedMutableState")
+@Preview(
+    showBackground = true,
+    device = "spec:width=340dp,height=4360dp,dpi=480" // 16:9 aspect ratio for a phone
+)
+@Composable
+fun ComprehensiveHelpDialogPreview() {
+    ComprehensiveHelpDialog(
+        22050, bitDepths["8"]!!, 2000, true, {})
 }
