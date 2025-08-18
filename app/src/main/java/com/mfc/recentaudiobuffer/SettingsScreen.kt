@@ -19,10 +19,10 @@
 package com.mfc.recentaudiobuffer
 
 import android.annotation.SuppressLint
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -350,7 +350,6 @@ private fun SettingsScreenContent(
             bufferTimeLength = state.value.bufferTimeLengthTemp.intValue,
             isAiAutoClipEnabled = state.value.isAiAutoClipEnabled.value,
             onDismissRequest = { showHelpDialog = false },
-            // --- CHANGE: Pass the callbacks for presets ---
             onPresetClick = { preset ->
                 onSampleRateChanged(preset.sampleRate)
                 onBitDepthChanged(preset.bitDepth)
@@ -948,7 +947,16 @@ private fun ComprehensiveHelpDialog(
 
                 // Loop through presets and display them as clickable cards
                 commonPresets.forEach { preset ->
-                    PresetItem(preset = preset, onClick = { onPresetClick(preset) })
+                    val isSelected = preset.sampleRate == sampleRate &&
+                            preset.bitDepth == bitDepth &&
+                            preset.bufferLength == bufferTimeLength &&
+                            preset.aiEnabled == isAiAutoClipEnabled
+
+                    PresetItem(
+                        preset = preset,
+                        isSelected = isSelected,
+                        onClick = { onPresetClick(preset) }
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
@@ -1039,14 +1047,37 @@ private fun ComprehensiveHelpDialog(
 
 // A composable for a single, clickable preset item
 @Composable
-private fun PresetItem(preset: Preset, onClick: () -> Unit) {
+private fun PresetItem(preset: Preset, isSelected: Boolean, onClick: () -> Unit) {
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(targetValue = if (isPressed) 0.97f else 1f, label = "PresetScaleAnimation")
+
+    val selectedBorderColor = Color(0xFF388E3C) // A nice, complimentary green
+    val defaultBorderColor = colorResource(id = R.color.purple_accent)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .scale(scale)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        try {
+                            awaitRelease()
+                        } finally {
+                            // This always runs, ensuring the button returns to its normal state
+                            isPressed = false
+                        }
+                    },
+                    onTap = { onClick() }
+                )
+            },
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.teal_150)),
-        border = BorderStroke(1.dp, colorResource(id = R.color.purple_accent))
+        border = BorderStroke(
+            width = if (isSelected) 2.5.dp else 1.dp,
+            color = if (isSelected) selectedBorderColor else defaultBorderColor
+        )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(

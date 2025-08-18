@@ -85,7 +85,7 @@ data class BitDepth(val bits: Int, val encodingEnum: Int) : Parcelable {
 
 const val DEFAULT_BIT_DEPTH_KEY = "16"
 const val DEFAULT_SAMPLE_RATE = 16000
-const val DEFAULT_BUFFER_TIME_LENGTH_S = 300
+const val DEFAULT_BUFFER_TIME_LENGTH_S = 1800
 
 val bitDepths = mapOf(
     "8" to BitDepth(8, AudioFormat.ENCODING_PCM_8BIT),
