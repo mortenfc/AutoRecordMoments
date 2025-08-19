@@ -1,7 +1,7 @@
 {
   "name": "functions",
   "scripts": {
-    "lint": "eslint .",
+    "lint": "eslint . --fix",
     "build": "tsc",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
@@ -16,8 +16,10 @@
   "main": "lib/index.js",
   "type": "module",
   "dependencies": {
+    "@googleapis/playintegrity": "^19.1.0",
     "firebase-admin": "^12.6.0",
     "firebase-functions": "^6.3.2",
+    "google-auth-library": "^10.2.1",
     "stripe": "^18.4.0"
   },
   "devDependencies": {

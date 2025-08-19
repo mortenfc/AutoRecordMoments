@@ -92,12 +92,7 @@ class DonationViewModel : ViewModel() {
                         return
                     }
 
-                    val body = response.body?.string()
-                    if (body == null) {
-                        uiState =
-                            uiState.copy(isLoading = false, error = "Empty response from server.")
-                        return
-                    }
+                    val body = response.body.string()
 
                     try {
                         val json = JSONObject(body)

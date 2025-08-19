@@ -30,6 +30,9 @@ import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSiz
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
+import com.google.android.play.core.integrity.IntegrityManager
+import com.google.android.play.core.integrity.IntegrityManagerFactory
+import com.google.android.play.core.integrity.IntegrityTokenRequest
 import com.stripe.android.PaymentConfiguration
 import com.stripe.android.googlepaylauncher.GooglePayEnvironment
 import com.stripe.android.googlepaylauncher.GooglePayLauncher
@@ -56,6 +59,7 @@ class DonationActivity : AppCompatActivity() {
     @Inject
     lateinit var authenticationManager: AuthenticationManager
     private val httpClient = OkHttpClient()
+    private lateinit var integrityManager: IntegrityManager
     private val donationViewModel: DonationViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
 
@@ -93,6 +97,7 @@ class DonationActivity : AppCompatActivity() {
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        integrityManager = IntegrityManagerFactory.create(applicationContext)
         setupPaymentMethods()
 
         setContent {
@@ -137,6 +142,26 @@ class DonationActivity : AppCompatActivity() {
         }
     }
 
+    private fun fetchClientSecret(amount: Int, currency: CurrencyUnit) {
+        // A nonce is a one-time-use value that your server should also verify to prevent replay attacks.
+        // For simplicity, we'll just generate it here. For higher security, your server should generate it
+        // and send it to the client first.
+        val nonce = (System.currentTimeMillis().toString() + amount.toString() + currency.code)
+
+        // Request an integrity token first
+        integrityManager.requestIntegrityToken(
+            IntegrityTokenRequest.builder().setNonce(nonce).build()
+        ).addOnSuccessListener { tokenResponse ->
+                val integrityToken = tokenResponse.token()
+                sendPaymentRequestToServer(amount, currency, integrityToken)
+            }.addOnFailureListener { e ->
+                Timber.e(e, "Play Integrity token request failed")
+                runOnUiThread {
+                    showPaymentError("Device integrity check failed")
+                }
+            }
+    }
+
     private fun setupPaymentMethods() {
         PaymentConfiguration.init(this, DonationConstants.STRIPE_API_KEY)
         stripePaymentSheet = Builder(::onPaymentSheetResult).build(this)
@@ -155,7 +180,9 @@ class DonationActivity : AppCompatActivity() {
         )
     }
 
-    private fun fetchClientSecret(amount: Int, currency: CurrencyUnit) {
+    private fun sendPaymentRequestToServer(
+        amount: Int, currency: CurrencyUnit, integrityToken: String
+    ) {
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val environment = if (BuildConfig.DEBUG) "debug" else "production"
 
@@ -163,6 +190,8 @@ class DonationActivity : AppCompatActivity() {
             put("amount", amount)
             put("environment", environment)
             put("currency", currency.code)
+            put("integrityToken", integrityToken)
+            put("packageName", BuildConfig.APPLICATION_ID)
         }
         val requestBody = jsonBody.toString().toRequestBody(mediaType)
         val request = Request.Builder().url("${DonationConstants.SERVER_URL}/createPaymentIntent")
@@ -178,7 +207,7 @@ class DonationActivity : AppCompatActivity() {
                     logServerError(response.code)
                     return
                 }
-                val responseBody = response.body?.string() ?: return
+                val responseBody = response.body.string()
                 donationViewModel.clientSecret = JSONObject(responseBody).getString("clientSecret")
 
                 runOnUiThread {
@@ -235,7 +264,7 @@ class DonationActivity : AppCompatActivity() {
     }
 
     private fun showPaymentError(message: String, error: Throwable? = null) {
-        error?.let { Timber.e("Payment Failed $it") }
+        error?.let { Timber.e("$message : $it") }
         Toast.makeText(this, "Payment failed: ${error?.localizedMessage}", Toast.LENGTH_SHORT)
             .show()
     }
