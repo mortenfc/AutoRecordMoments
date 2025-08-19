@@ -18,19 +18,26 @@
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Enable support for devices with unknown specs. VAD processor will just fall back to CPU -->
+    <!-- Enable support for devices with unknown specs. VAD processor can fall back to CPU -->
     <uses-feature
-            android:name="android.hardware.microphone"
-            android:required="true" />
+        android:name="android.hardware.microphone"
+        android:required="true" />
+
     <uses-feature
-            android:name="android.hardware.opengles.aep"
-            android:required="false" />
+        android:name="android.hardware.faketouch"
+        android:required="false" />
+
     <uses-feature
-            android:name="android.hardware.vulkan.level"
-            android:required="false" />
+        android:name="android.hardware.opengles.aep"
+        android:required="false" />
+
     <uses-feature
-            android:name="android.hardware.vulkan.version"
-            android:required="false" />
+        android:name="android.hardware.vulkan.level"
+        android:required="false" />
+
+    <uses-feature
+        android:name="android.hardware.vulkan.version"
+        android:required="false" />
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
