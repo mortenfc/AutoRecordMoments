@@ -22,6 +22,7 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtException
 import ai.onnxruntime.OrtSession
+import ai.onnxruntime.providers.NNAPIFlags
 import android.annotation.SuppressLint
 import android.content.Context
 import be.tarsos.dsp.AudioEvent
@@ -32,6 +33,7 @@ import timber.log.Timber
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.EnumSet
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -52,16 +54,53 @@ class VADProcessor @Inject constructor(
 
     data class SpeechTimestamp(val start: Int, var end: Int)
 
-    // --- State variables modeled after the Java example ---
     private var state: Array<Array<FloatArray>>? = null
     private var vadContext: FloatArray? = null
     private var lastSr: Int = 0
     private var lastBatchSize: Int = 0
-
     private val ortEnvironment = OrtEnvironment.getEnvironment()
+
     private val session: OrtSession by lazy {
+        createONNXSession()
+    }
+
+    /**
+     * Creates an ONNX session, attempting to use the NNAPI provider for hardware
+     * acceleration. If it fails for any reason (e.g., device not supported),
+     * it gracefully falls back to the default CPU provider.
+     */
+    private fun createONNXSession(): OrtSession {
         val modelBytes = context.assets.open("silero_vad.onnx").readBytes()
-        ortEnvironment.createSession(modelBytes)
+
+        // First, try to create a session with the NNAPI provider
+        try {
+            val sessionOptions = OrtSession.SessionOptions()
+
+            // USE_FP16 flag for performance. If that fails, fall back to the default NNAPI setup.
+            try {
+                Timber.d("Attempting to configure NNAPI with USE_FP16 flag.")
+                val nnapiFlags = EnumSet.of(NNAPIFlags.USE_FP16)
+                sessionOptions.addNnapi(nnapiFlags)
+            } catch (e: Exception) {
+                Timber.w(
+                    e,
+                    "Failed to configure NNAPI with FP16, falling back to default NNAPI with no flags."
+                )
+                sessionOptions.addNnapi()
+            }
+
+            Timber.d("Attempting to create ONNX session with NNAPI provider.")
+            // If this line succeeds, the device supports NNAPI for this model.
+            return ortEnvironment.createSession(modelBytes, sessionOptions)
+
+        } catch (e: Exception) {
+            // This will catch any error during NNAPI initialization.
+            Timber.w(e, "Failed to create ONNX session with NNAPI. Falling back to CPU provider.")
+        }
+
+        // If the try block failed, create a default session that is guaranteed to work (using CPU).
+        Timber.d("Creating ONNX session with default CPU provider.")
+        return ortEnvironment.createSession(modelBytes)
     }
 
     /**
@@ -303,7 +342,6 @@ class VADProcessor @Inject constructor(
         if (value !is Array<*> || value.any { it !is Array<*> }) {
             return null
         }
-        // At this point, we have manually checked the structure is Array<Array<*>>.
         // The final cast is as safe as it can be.
         return value as? Array<Array<FloatArray>>
     }

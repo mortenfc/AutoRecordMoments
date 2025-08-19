@@ -16,8 +16,21 @@
   ~ along with this program.  If not, see <https://www.gnu.org/licenses/>.
   -->
 
-<manifest xmlns:tools="http://schemas.android.com/tools"
-        xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Enable support for devices with unknown specs. VAD processor will just fall back to CPU -->
+    <uses-feature
+            android:name="android.hardware.microphone"
+            android:required="true" />
+    <uses-feature
+            android:name="android.hardware.opengles.aep"
+            android:required="false" />
+    <uses-feature
+            android:name="android.hardware.vulkan.level"
+            android:required="false" />
+    <uses-feature
+            android:name="android.hardware.vulkan.version"
+            android:required="false" />
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
