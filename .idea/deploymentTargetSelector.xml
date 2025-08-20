@@ -15,16 +15,19 @@
       </SelectionState>
       <SelectionState runConfigName="VADProcessorInstrumentedTest">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-07-24T07:33:59.180465100Z">
+        <DropdownSelection timestamp="2025-08-20T20:57:34.678485200Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\mfjordchris\.android\avd\Pixel_7_API_34.avd" />
+              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\morte\.android\avd\Pixel_7.avd" />
             </handle>
           </Target>
         </DropdownSelection>
         <DialogSelection />
       </SelectionState>
       <SelectionState runConfigName="processBuffer_withSpeechFile44100Hz_resample_returnsSignificantNonEmptyBuffer()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="processBuffer_benchmark_completesInReasonableTime()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
     </selectionStates>

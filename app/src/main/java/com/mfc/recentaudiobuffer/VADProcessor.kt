@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 package com.mfc.recentaudiobuffer
+
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtException
@@ -36,9 +37,13 @@ import java.nio.FloatBuffer
 import java.util.EnumSet
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.PI
 import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.sin
 import kotlin.system.measureNanoTime
+
 /**
  * Final combined VADProcessor — upgraded:
  * - Replaced RateTransposer with a fast, low-allocation linear resampler (resampleLinear)
@@ -52,17 +57,43 @@ import kotlin.system.measureNanoTime
 @Singleton
 class VADProcessor @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : AutoCloseable {
     companion object {
         private const val VAD_MAX_SAMPLE_RATE = 16000
         private const val VAD_MIN_SAMPLE_RATE = 8000
+
         // TUNINGS:
         const val DEFAULT_PADDING_MS = 1300
         private const val SPEECH_THRESHOLD = 0.4f
         private const val DEFAULT_CHUNK_SIZE_B = 4096
+
         // Toggle parallel pipeline
         const val USE_PARALLEL_PIPELINE = true
+
+        // Lower means use linear resampler more often for bigger downsampling
+        const val LINEAR_VS_SINC_RATIO = 0.6
+
+        /**
+         * MERGE_GAP_MS — gap threshold (milliseconds) used when merging detected speech segments.
+         *
+         * Explanation:
+         * - The VAD produces many short speech segments (start/end in samples).
+         * - If two detected speech segments are separated by less than MERGE_GAP_MS,
+         *   they are considered part of the same utterance and will be merged together.
+         *
+         * Effect:
+         * - Small MERGE_GAP_MS (e.g. 100-300 ms) => results in many short clips, merges only breaths/very short pauses.
+         * - Medium MERGE_GAP_MS (e.g. 500-1200 ms) => merges natural short phrase pauses; common default for conversational audio.
+         * - Large MERGE_GAP_MS (e.g. 2000-5000 ms) => merges longer pauses; produces fewer, longer clips but risks joining separate turns/speakers.
+         *
+         * Implementation note:
+         * - MERGE_GAP_MS is in milliseconds; convert to samples with:
+         *     mergeGapSamples = (sampleRate * MERGE_GAP_MS / 1000)
+         * - We use sample-rate-aware threshold to keep behaviour consistent across 8k/16k/48k audio.
+         */
+        private const val MERGE_GAP_MS = 1000
     }
+
     private fun calculateDefaultPoolSize(): Int {
         val cores = Runtime.getRuntime().availableProcessors()
         return when {
@@ -71,25 +102,39 @@ class VADProcessor @Inject constructor(
             else -> min(cores - 1, 8)
         }
     }
+
     private val poolSize = calculateDefaultPoolSize()
+
     data class SpeechTimestamp(val start: Int, var end: Int)
+
     // Benchmark result container
     data class BenchmarkResult(val avgMs: Double, val avgAllocBytes: Long)
+
     // VAD model state
     private var state: Array<Array<FloatArray>>? = null
     private var vadContext: FloatArray? = null
+
     // ONNX Environment and Session
     private val ortEnvironment = OrtEnvironment.getEnvironment()
     private val session: OrtSession by lazy { createONNXSession() }
+
+    val maxVadInputLen = 64 + 512
+    val onnxByteBuf: ByteBuffer =
+        ByteBuffer.allocateDirect(maxVadInputLen * 4).order(ByteOrder.nativeOrder())
+    val onnxFloatBuf: FloatBuffer = onnxByteBuf.asFloatBuffer()
+
     // --- Reusable buffers to avoid allocation churn ---
     // FIX: Sized for worst-case (8-bit audio), where 1 byte = 1 float.
     private val reusableFloatBuffer = FloatArray(DEFAULT_CHUNK_SIZE_B)
+
     // Conservative size for resampled buffer (upsampling safety margin)
     private val reusableResampledBufferSize =
         ceil(DEFAULT_CHUNK_SIZE_B * (VAD_MAX_SAMPLE_RATE.toDouble() / VAD_MIN_SAMPLE_RATE)).toInt()
     private val reusableResampledBuffer = FloatArray(reusableResampledBufferSize)
+
     // Buffer for VAD model input: max context (64) + max window (512)
     private val reusableVadInputBuffer = FloatArray(64 + 512)
+
     // ---
     private fun createONNXSession(): OrtSession {
         val modelBytes = context.assets.open("silero_vad.onnx").readBytes()
@@ -110,10 +155,12 @@ class VADProcessor @Inject constructor(
         Timber.d("Creating ONNX session with default CPU provider.")
         return ortEnvironment.createSession(modelBytes)
     }
+
     private fun resetStates() {
         state = arrayOf(Array(1) { FloatArray(128) }).plus(arrayOf(Array(1) { FloatArray(128) }))
         vadContext = null
     }
+
     /**
      * Public processing function (unchanged external signature).
      * Internally uses the fast adaptive resampler.
@@ -144,11 +191,6 @@ class VADProcessor @Inject constructor(
         onProgress?.invoke(0f)
         // Pre-create srTensor once for this process call (unchanging)
         val srTensor = OnnxTensor.createTensor(ortEnvironment, longArrayOf(targetVADRate.toLong()))
-        // We'll allocate an off-heap FloatBuffer for ONNX input and reuse it for every window.
-        val maxVadInputLen = 64 + 512
-        val onnxByteBuf =
-            ByteBuffer.allocateDirect(maxVadInputLen * 4).order(ByteOrder.nativeOrder())
-        val onnxFloatBuf = onnxByteBuf.asFloatBuffer()
         // Channels/pool variables for finally-closing if necessary
         var availableIndices: Channel<Int>? = null
         var dataChannel: Channel<Pair<Int, Int>>? = null
@@ -168,10 +210,7 @@ class VADProcessor @Inject constructor(
                                 fullAudioBuffer.get(readBuffer, 0, toRead)
                                 // Convert bytes -> floats (reusable buffer)
                                 val floatCount = bytesToFloats(
-                                    readBuffer,
-                                    toRead,
-                                    config.bitDepth.bits,
-                                    reusableFloatBuffer
+                                    readBuffer, toRead, config.bitDepth.bits, reusableFloatBuffer
                                 )
                                 // Fast adaptive resample INTO pool slot
                                 val idx = availableIndices.receive()
@@ -205,11 +244,7 @@ class VADProcessor @Inject constructor(
                             val bufferSlot = pool[idx]
                             // Process sequentially with ONNX while preserving state
                             val timestampsInChunk = getSpeechTimestampsFromBuffer(
-                                bufferSlot,
-                                count,
-                                targetVADRate,
-                                onnxFloatBuf,
-                                srTensor
+                                bufferSlot, count, targetVADRate, srTensor
                             )
                             timestampsInChunk.forEach {
                                 allTimestamps.add(
@@ -221,7 +256,7 @@ class VADProcessor @Inject constructor(
                             }
                             processedResampledSamples += count
                             // Return slot to pool
-                            availableIndices!!.send(idx)
+                            availableIndices.send(idx)
                         }
                         totalResampledSamples = processedResampledSamples
                     }
@@ -249,11 +284,7 @@ class VADProcessor @Inject constructor(
                         ratio = ratio
                     )
                     val timestampsInChunk = getSpeechTimestampsFromBuffer(
-                        reusableResampledBuffer,
-                        resampledCount,
-                        targetVADRate,
-                        onnxFloatBuf,
-                        srTensor
+                        reusableResampledBuffer, resampledCount, targetVADRate, srTensor
                     )
                     timestampsInChunk.forEach {
                         allTimestamps.add(
@@ -295,23 +326,17 @@ class VADProcessor @Inject constructor(
             stitchAudio(bufferForStitching, mergedTimestamps, config, targetVADRate.toFloat())
         debugFileBaseName?.let {
             FileSavingUtils.saveDebugFile(
-                context,
-                "${it}_03_final_result.wav",
-                ByteBuffer.wrap(finalResultBytes),
-                config
+                context, "${it}_03_final_result.wav", ByteBuffer.wrap(finalResultBytes), config
             )
         }
         return finalResultBytes
     }
+
     /**
      * Very fast linear resampler.
      */
     private fun resampleLinear(
-        src: FloatArray,
-        srcLen: Int,
-        dst: FloatArray,
-        dstCapacity: Int,
-        ratio: Double
+        src: FloatArray, srcLen: Int, dst: FloatArray, dstCapacity: Int, ratio: Double
     ): Int {
         if (srcLen <= 0 || ratio <= 0.0) return 0
 
@@ -333,6 +358,7 @@ class VADProcessor @Inject constructor(
         }
         return outIdx
     }
+
     /**
      * High-quality sinc resampler for downsampling.
      */
@@ -368,11 +394,11 @@ class VADProcessor @Inject constructor(
                     weightSum += 1.0f
                     continue
                 }
-                val piX = (Math.PI * x).toFloat()
+                val piX = (PI * x).toFloat()
                 // Sinc function: sin(pi*x*2*fc) / (pi*x)
-                val sinc = (kotlin.math.sin(piX * 2.0f * fc.toFloat()) / piX)
+                val sinc = (sin(piX * 2.0f * fc.toFloat()) / piX)
                 // Hann window
-                val window = (0.5f + 0.5f * kotlin.math.cos(piX / halfTaps.toFloat()))
+                val window = (0.5f + 0.5f * cos(piX / halfTaps.toFloat()))
                 val coeff = sinc * window
                 sum += coeff * src[i]
                 weightSum += coeff
@@ -384,31 +410,26 @@ class VADProcessor @Inject constructor(
         }
         return outIdx
     }
+
     /**
      * Chooses the best resampler. Linear is fast for upsampling, but sinc is needed
      * for downsampling to prevent aliasing artifacts that can confuse the VAD.
      */
     private fun resampleAdaptive(
-        src: FloatArray,
-        srcLen: Int,
-        dst: FloatArray,
-        dstCapacity: Int,
-        ratio: Double
+        src: FloatArray, srcLen: Int, dst: FloatArray, dstCapacity: Int, ratio: Double
     ): Int {
-        return if (ratio >= 0.7) { // Use linear for upsampling or mild downsampling
+        return if (ratio >= LINEAR_VS_SINC_RATIO) { // Use linear for upsampling or mild downsampling
             resampleLinear(src, srcLen, dst, dstCapacity, ratio)
         } else { // Use sinc for significant downsampling to prevent aliasing
             resampleSinc(src, srcLen, dst, dstCapacity, ratio, taps = 24)
         }
     }
+
     /**
      * Simple micro-benchmark to measure processing time and approximate allocation delta.
      */
     fun measureProcessingMsForBuffer(
-        inputBuffer: ByteBuffer,
-        config: AudioConfig,
-        runs: Int = 3,
-        warmup: Int = 1
+        inputBuffer: ByteBuffer, config: AudioConfig, runs: Int = 3, warmup: Int = 1
     ): BenchmarkResult {
         if (runs <= 0) throw IllegalArgumentException("runs must be > 0")
         val copy = ByteArray(inputBuffer.limit())
@@ -420,7 +441,8 @@ class VADProcessor @Inject constructor(
             try {
                 // small warmup run, do not collect timings
                 process(wrapper.duplicate().asReadOnlyBuffer(), config, onProgress = null)
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
         // Try to reduce GC noise
         System.gc()
@@ -445,15 +467,14 @@ class VADProcessor @Inject constructor(
         val avgAlloc = allocs.average().toLong()
         return BenchmarkResult(avgMs, avgAlloc)
     }
+
     private fun usedMemory(): Long {
         val rt = Runtime.getRuntime()
         return rt.totalMemory() - rt.freeMemory()
     }
+
     private fun bytesToFloats(
-        source: ByteArray,
-        bytesToRead: Int,
-        bitsPerSample: Int,
-        dest: FloatArray
+        source: ByteArray, bytesToRead: Int, bitsPerSample: Int, dest: FloatArray
     ): Int {
         val byteBuffer = ByteBuffer.wrap(source, 0, bytesToRead).order(ByteOrder.LITTLE_ENDIAN)
         return when (bitsPerSample) {
@@ -466,6 +487,7 @@ class VADProcessor @Inject constructor(
                 }
                 count
             }
+
             8 -> {
                 val count = byteBuffer.remaining()
                 for (i in 0 until count) {
@@ -473,15 +495,13 @@ class VADProcessor @Inject constructor(
                 }
                 count
             }
+
             else -> throw IllegalArgumentException("Unsupported bit depth: $bitsPerSample")
         }
     }
+
     private fun getSpeechTimestampsFromBuffer(
-        audioFloats: FloatArray,
-        audioFloatCount: Int,
-        sampleRate: Int,
-        onnxFloatBuf: FloatBuffer,
-        srTensor: OnnxTensor
+        audioFloats: FloatArray, audioFloatCount: Int, sampleRate: Int, srTensor: OnnxTensor
     ): List<SpeechTimestamp> {
         val windowSize = if (sampleRate == 16000) 512 else 256
         val contextSize = if (sampleRate == 16000) 64 else 32
@@ -501,9 +521,7 @@ class VADProcessor @Inject constructor(
             try {
                 val stateTensor = OnnxTensor.createTensor(ortEnvironment, state)
                 OnnxTensor.createTensor(
-                    ortEnvironment,
-                    onnxFloatBuf,
-                    longArrayOf(1, vadInputLen.toLong())
+                    ortEnvironment, onnxFloatBuf, longArrayOf(1, vadInputLen.toLong())
                 ).use { inputTensor ->
                     try {
                         val inputs =
@@ -511,17 +529,16 @@ class VADProcessor @Inject constructor(
                         session.run(inputs).use { result ->
                             val score =
                                 ((result[0].value as? Array<*>)?.firstOrNull() as? FloatArray)?.firstOrNull()
-                                    ?: ((result[0].value as? FloatArray)?.firstOrNull())
-                                    ?: 0.0f
+                                    ?: ((result[0].value as? FloatArray)?.firstOrNull()) ?: 0.0f
                             val newState = castToStateArray(result[1].value)
-                            this.state = newState
+                            if (newState != null) {
+                                this.state = newState
+                            } else {
+                                Timber.e("ONNX returned unexpected state shape; keeping previous state.")
+                            }
                             val startIdx = i + windowSize - contextSize
                             if (startIdx >= 0) System.arraycopy(
-                                audioFloats,
-                                startIdx,
-                                vadContext!!,
-                                0,
-                                contextSize
+                                audioFloats, startIdx, vadContext!!, 0, contextSize
                             )
                             val currentSamplePosition = i
                             if (score >= SPEECH_THRESHOLD && currentSpeechStart == null) {
@@ -529,8 +546,7 @@ class VADProcessor @Inject constructor(
                             } else if (currentSpeechStart != null && score < SPEECH_THRESHOLD) {
                                 speechSegments.add(
                                     SpeechTimestamp(
-                                        start = currentSpeechStart!!,
-                                        end = currentSamplePosition
+                                        start = currentSpeechStart!!, end = currentSamplePosition
                                     )
                                 )
                                 currentSpeechStart = null
@@ -554,12 +570,14 @@ class VADProcessor @Inject constructor(
         }
         return speechSegments
     }
+
     private fun mergeTimestamps(
         timestamps: List<SpeechTimestamp>, paddingMs: Int, sampleRate: Int, totalSamples: Int
     ): List<SpeechTimestamp> {
         if (timestamps.isEmpty()) return emptyList()
-        val paddingSamples = (paddingMs / 1000f * sampleRate).toInt()
-        val mergeGapSamples = sampleRate * 2
+        val clampedPaddingMs = paddingMs.coerceAtLeast(0)
+        val paddingSamples = (clampedPaddingMs / 1000f * sampleRate).toInt()
+        val mergeGapSamples = (sampleRate.toLong() * MERGE_GAP_MS / 1000L).toInt()
         val merged = mutableListOf<SpeechTimestamp>()
         var currentSegment = timestamps.first().copy()
         for (i in 1 until timestamps.size) {
@@ -579,11 +597,13 @@ class VADProcessor @Inject constructor(
             it.copy(start = start, end = end)
         }
     }
+
     @Suppress("UNCHECKED_CAST")
     private fun castToStateArray(value: Any?): Array<Array<FloatArray>>? {
         if (value !is Array<*> || value.any { it !is Array<*> }) return null
         return value as? Array<Array<FloatArray>>
     }
+
     private fun stitchAudio(
         originalBuffer: ByteBuffer,
         segments: List<SpeechTimestamp>,
@@ -598,7 +618,7 @@ class VADProcessor @Inject constructor(
             val startByte = (segment.start * scaleFactor).toInt() * bytesPerSample
             val endByte = (segment.end * scaleFactor).toInt() * bytesPerSample
             val lengthInBytes = endByte - startByte
-            if (lengthInBytes > 0 && startByte + lengthInBytes <= originalBuffer.capacity()) {
+            if (lengthInBytes > 0 && startByte + lengthInBytes <= originalBuffer.limit()) {
                 val segmentBytes = ByteArray(lengthInBytes)
                 originalBuffer.position(startByte)
                 originalBuffer.get(segmentBytes)
@@ -608,5 +628,18 @@ class VADProcessor @Inject constructor(
             }
         }
         return resultStream.toByteArray()
+    }
+
+    override fun close() {
+        try {
+            session.close()
+        } catch (e: Exception) {
+            Timber.w(e, "Error closing ONNX session")
+        }
+        try {
+            ortEnvironment.close()
+        } catch (e: Exception) {
+            Timber.w(e, "Error closing OrtEnvironment")
+        }
     }
 }
