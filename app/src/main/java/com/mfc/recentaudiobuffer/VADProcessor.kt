@@ -82,12 +82,11 @@ class VADProcessor @Inject constructor(
     private val ortEnvironment = OrtEnvironment.getEnvironment()
     private val session: OrtSession by lazy { createONNXSession() }
     // --- Reusable buffers to avoid allocation churn ---
-    // Max floats for 16-bit samples in DEFAULT_CHUNK_SIZE_B
-    private val maxInputFloats = DEFAULT_CHUNK_SIZE_B / (16 / 8)
-    private val reusableFloatBuffer = FloatArray(maxInputFloats)
+    // FIX: Sized for worst-case (8-bit audio), where 1 byte = 1 float.
+    private val reusableFloatBuffer = FloatArray(DEFAULT_CHUNK_SIZE_B)
     // Conservative size for resampled buffer (upsampling safety margin)
     private val reusableResampledBufferSize =
-        ceil(maxInputFloats * (VAD_MAX_SAMPLE_RATE.toDouble() / VAD_MIN_SAMPLE_RATE)).toInt()
+        ceil(DEFAULT_CHUNK_SIZE_B * (VAD_MAX_SAMPLE_RATE.toDouble() / VAD_MIN_SAMPLE_RATE)).toInt()
     private val reusableResampledBuffer = FloatArray(reusableResampledBufferSize)
     // Buffer for VAD model input: max context (64) + max window (512)
     private val reusableVadInputBuffer = FloatArray(64 + 512)
@@ -117,7 +116,7 @@ class VADProcessor @Inject constructor(
     }
     /**
      * Public processing function (unchanged external signature).
-     * Internally uses the fast linear resampler.
+     * Internally uses the fast adaptive resampler.
      */
     @SuppressLint("VisibleForTests")
     fun process(
@@ -197,7 +196,7 @@ class VADProcessor @Inject constructor(
                                 }
                             }
                         } finally {
-                            dataChannel?.close()
+                            dataChannel.close()
                         }
                     }
                     val consumer = launch(Dispatchers.Default) {
@@ -222,7 +221,7 @@ class VADProcessor @Inject constructor(
                             }
                             processedResampledSamples += count
                             // Return slot to pool
-                            availableIndices.send(idx)
+                            availableIndices!!.send(idx)
                         }
                         totalResampledSamples = processedResampledSamples
                     }
@@ -306,15 +305,6 @@ class VADProcessor @Inject constructor(
     }
     /**
      * Very fast linear resampler.
-     *
-     * - src: input float buffer (length srcLen)
-     * - dst: destination float buffer (capacity dstCapacity)
-     * - ratio: target/sampleRate (i.e. output_rate / input_rate)
-     *
-     * Returns: number of valid floats written to dst.
-     *
-     * This function is intentionally allocation-free and branch-light; it uses a
-     * fractional accumulator to compute interpolated samples.
      */
     private fun resampleLinear(
         src: FloatArray,
@@ -323,73 +313,81 @@ class VADProcessor @Inject constructor(
         dstCapacity: Int,
         ratio: Double
     ): Int {
-        if (srcLen <= 0) return 0
-        if (ratio <= 0.0) return 0
-        // compute expected output length (safe bound)
-        val expected = (srcLen * ratio).toInt()
-        val outLen = min(expected, dstCapacity)
-        val step = 1.0 / ratio // increment in source-space per output sample
+        if (srcLen <= 0 || ratio <= 0.0) return 0
+
+        val outLen = min((srcLen * ratio).toInt(), dstCapacity)
+        if (outLen == 0) return 0
+
+        val step = 1.0 / ratio
         var srcPos = 0.0
         var outIdx = 0
         while (outIdx < outLen) {
             val i0 = srcPos.toInt()
-            val frac = srcPos - i0
+            val i1 = (i0 + 1).coerceAtMost(srcLen - 1)
             val s0 = src[i0.coerceIn(0, srcLen - 1)]
-            val s1 = src[(i0 + 1).coerceAtMost(srcLen - 1)]
-            dst[outIdx] = (1.0f - frac.toFloat()) * s0 + frac.toFloat() * s1
+            val s1 = src[i1]
+            val frac = (srcPos - i0).toFloat()
+            dst[outIdx] = s0 + frac * (s1 - s0)
             outIdx++
             srcPos += step
-            if (i0 >= srcLen - 1) {
-                // we've reached end of source; fill remaining outputs with last sample
-                while (outIdx < outLen) {
-                    dst[outIdx++] = s1
-                }
-                break
-            }
         }
         return outIdx
     }
-    // Call this instead of resampleLinear when you need band-limited resampling.
+    /**
+     * High-quality sinc resampler for downsampling.
+     */
     private fun resampleSinc(
         src: FloatArray,
         srcLen: Int,
         dst: FloatArray,
         dstCapacity: Int,
         ratio: Double,
-        taps: Int = 32 // 16..64 recommended; bigger = better quality, slower
+        taps: Int = 24
     ): Int {
         if (srcLen <= 0 || ratio <= 0.0) return 0
         val outLen = min((srcLen * ratio).toInt(), dstCapacity)
-        val fc = 0.5 * min(1.0, ratio) // normalized cutoff freq, limited to Nyquist of src
-        val half = taps / 2
+        if (outLen == 0) return 0
+
+        val fc = 0.5 * ratio // Normalized cutoff frequency
+        val halfTaps = taps / 2.0
         var outIdx = 0
         var pos = 0.0
+        val step = 1.0 / ratio
+
         while (outIdx < outLen) {
-            val center = pos // source-space fractional center
+            val center = pos
             var sum = 0.0f
             var weightSum = 0.0f
-            val iCenter = center.toInt()
-            for (t in -half until half) {
-                val idx = iCenter + t
-                if (idx < 0 || idx >= srcLen) continue
+            val iStart = (center - halfTaps).toInt().coerceAtLeast(0)
+            val iEnd = (center + halfTaps).toInt().coerceAtMost(srcLen - 1)
 
-                val x = center - idx.toDouble() // distance from interpolation node
-                val sincVal =
-                    if (x == 0.0) 1.0 else Math.sin(Math.PI * fc * x) / (Math.PI * fc * x)
+            for (i in iStart..iEnd) {
+                val x = (center - i)
+                if (x == 0.0) {
+                    sum += src[i]
+                    weightSum += 1.0f
+                    continue
+                }
+                val piX = (Math.PI * x).toFloat()
+                // Sinc function: sin(pi*x*2*fc) / (pi*x)
+                val sinc = (kotlin.math.sin(piX * 2.0f * fc.toFloat()) / piX)
                 // Hann window
-                val w = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * (t + half) / taps))
-                val coeff = (sincVal * w).toFloat()
-                sum += coeff * src[idx]
+                val window = (0.5f + 0.5f * kotlin.math.cos(piX / halfTaps.toFloat()))
+                val coeff = sinc * window
+                sum += coeff * src[i]
                 weightSum += coeff
             }
-            // Normalize to correct DC gain
+
             dst[outIdx] = if (weightSum != 0.0f) sum / weightSum else sum
             outIdx++
-            pos += 1.0 / ratio // step in source-space for next output sample
+            pos += step
         }
         return outIdx
     }
-    // Selector: use linear for upsampling/mild downsampling, otherwise sinc for heavy downsampling.
+    /**
+     * Chooses the best resampler. Linear is fast for upsampling, but sinc is needed
+     * for downsampling to prevent aliasing artifacts that can confuse the VAD.
+     */
     private fun resampleAdaptive(
         src: FloatArray,
         srcLen: Int,
@@ -405,12 +403,6 @@ class VADProcessor @Inject constructor(
     }
     /**
      * Simple micro-benchmark to measure processing time and approximate allocation delta.
-     * - runs: number of timed runs (after warmup)
-     * - warmup: number of warmup runs before timing
-     *
-     * Returns average ms per run and average allocated bytes (approximate).
-     *
-     * Usage: call on-device with a representative ByteBuffer and AudioConfig.
      */
     fun measureProcessingMsForBuffer(
         inputBuffer: ByteBuffer,
@@ -419,7 +411,6 @@ class VADProcessor @Inject constructor(
         warmup: Int = 1
     ): BenchmarkResult {
         if (runs <= 0) throw IllegalArgumentException("runs must be > 0")
-        // Make a copy of the buffer so we can reuse it across runs
         val copy = ByteArray(inputBuffer.limit())
         inputBuffer.rewind()
         inputBuffer.get(copy)
@@ -429,8 +420,7 @@ class VADProcessor @Inject constructor(
             try {
                 // small warmup run, do not collect timings
                 process(wrapper.duplicate().asReadOnlyBuffer(), config, onProgress = null)
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) {}
         }
         // Try to reduce GC noise
         System.gc()

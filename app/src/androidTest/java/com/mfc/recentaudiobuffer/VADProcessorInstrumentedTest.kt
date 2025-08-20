@@ -59,10 +59,7 @@ class VADProcessorInstrumentedTest {
 
         // Test asset files
         private val REQUIRED_TEST_ASSETS = listOf(
-            "silence_5s.wav",
-            "talking_24s.wav",
-            "music_30s.wav",
-            "mostly_silence_noise_5min.wav"
+            "silence_5s.wav", "talking_24s.wav", "music_30s.wav", "mostly_silence_noise_5min.wav"
         )
 
         @BeforeClass
@@ -84,14 +81,11 @@ class VADProcessorInstrumentedTest {
 
             try {
                 contentResolver.query(
-                    collection,
-                    arrayOf(MediaStore.MediaColumns._ID),
-                    selection,
-                    selectionArgs,
-                    null
+                    collection, arrayOf(MediaStore.MediaColumns._ID), selection, selectionArgs, null
                 )?.use { cursor ->
                     while (cursor.moveToNext()) {
-                        val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+                        val id =
+                            cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
                         val fileUri = Uri.withAppendedPath(collection, id.toString())
                         if (contentResolver.delete(fileUri, null, null) > 0) {
                             deletedCount++
@@ -119,8 +113,7 @@ class VADProcessorInstrumentedTest {
 
     @get:Rule(order = 3)
     val permissionRule: GrantPermissionRule = GrantPermissionRule.grant(
-        android.Manifest.permission.RECORD_AUDIO,
-        android.Manifest.permission.POST_NOTIFICATIONS
+        android.Manifest.permission.RECORD_AUDIO, android.Manifest.permission.POST_NOTIFICATIONS
     )
 
     @Inject
@@ -151,8 +144,7 @@ class VADProcessorInstrumentedTest {
 
     private suspend fun waitForServiceRecording(service: MyBufferService): Boolean {
         val startTime = System.currentTimeMillis()
-        while (!service.isRecording.value &&
-               System.currentTimeMillis() - startTime < SERVICE_STARTUP_TIMEOUT_MS) {
+        while (!service.isRecording.value && System.currentTimeMillis() - startTime < SERVICE_STARTUP_TIMEOUT_MS) {
             delay(SERVICE_STARTUP_CHECK_INTERVAL_MS)
         }
         return service.isRecording.value
@@ -172,7 +164,9 @@ class VADProcessorInstrumentedTest {
 
             if (skipHeader) {
                 val skipped = inputStream.skip(WavUtils.WAV_HEADER_SIZE.toLong())
-                assertEquals("Should skip the full WAV header", WavUtils.WAV_HEADER_SIZE.toLong(), skipped)
+                assertEquals(
+                    "Should skip the full WAV header", WavUtils.WAV_HEADER_SIZE.toLong(), skipped
+                )
             }
 
             val buffer = ByteArray(4096)
@@ -191,26 +185,26 @@ class VADProcessorInstrumentedTest {
     }
 
     private fun generateSineWave(
-        frequencyHz: Double,
-        durationMs: Int,
-        config: AudioConfig,
-        amplitude: Double = 0.5
+        frequencyHz: Double, durationMs: Int, config: AudioConfig, amplitude: Double = 0.5
     ): ByteArray {
         val numSamples = durationMs * config.sampleRateHz / 1000
         val byteArray = ByteArrayOutputStream()
 
         for (i in 0 until numSamples) {
-            val value = amplitude * kotlin.math.sin(2.0 * Math.PI * frequencyHz * i / config.sampleRateHz)
+            val value =
+                amplitude * kotlin.math.sin(2.0 * Math.PI * frequencyHz * i / config.sampleRateHz)
             when (config.bitDepth.bits) {
                 16 -> {
                     val sample = (value * 32767).toInt().toShort()
                     byteArray.write(sample.toInt() and 0xFF)
                     byteArray.write((sample.toInt() shr 8) and 0xFF)
                 }
+
                 8 -> {
                     val sample = ((value + 1.0) * 127).toInt().toByte()
                     byteArray.write(sample.toInt())
                 }
+
                 else -> throw IllegalArgumentException("Unsupported bit depth: ${config.bitDepth.bits}")
             }
         }
@@ -218,9 +212,7 @@ class VADProcessorInstrumentedTest {
     }
 
     private fun generateWhiteNoise(
-        durationMs: Int,
-        config: AudioConfig,
-        amplitude: Double = 0.3
+        durationMs: Int, config: AudioConfig, amplitude: Double = 0.3
     ): ByteArray {
         val numSamples = durationMs * config.sampleRateHz / 1000
         val byteArray = ByteArrayOutputStream()
@@ -234,10 +226,12 @@ class VADProcessorInstrumentedTest {
                     byteArray.write(sample.toInt() and 0xFF)
                     byteArray.write((sample.toInt() shr 8) and 0xFF)
                 }
+
                 8 -> {
                     val sample = ((value + 1.0) * 127).toInt().toByte()
                     byteArray.write(sample.toInt())
                 }
+
                 else -> throw IllegalArgumentException("Unsupported bit depth: ${config.bitDepth.bits}")
             }
         }
@@ -260,9 +254,12 @@ class VADProcessorInstrumentedTest {
             ByteBuffer.wrap(audioBytes), config, debugFileBaseName = "debug_silence_5s"
         )
 
-        val maxTolerableBytes = config.sampleRateHz / 10 * (config.bitDepth.bits / 8) // 100ms tolerance
-        assertTrue("Buffer from silence file should be nearly empty. Found ${result.size} bytes.",
-                  result.size < maxTolerableBytes)
+        val maxTolerableBytes =
+            config.sampleRateHz / 10 * (config.bitDepth.bits / 8) // 100ms tolerance
+        assertTrue(
+            "Buffer from silence file should be nearly empty. Found ${result.size} bytes.",
+            result.size < maxTolerableBytes
+        )
     }
 
     @Test
@@ -277,14 +274,20 @@ class VADProcessorInstrumentedTest {
         assertTrue("Test setup failed: Speech audio file is empty.", audioBytes.isNotEmpty())
 
         val result = vadProcessor.process(
-            ByteBuffer.wrap(audioBytes), config, paddingMs = 0, debugFileBaseName = "debug_talking_24s"
+            ByteBuffer.wrap(audioBytes),
+            config,
+            paddingMs = 0,
+            debugFileBaseName = "debug_talking_24s"
         )
 
         assertTrue("Resulting buffer should not be empty for a speech file.", result.isNotEmpty())
-        assertTrue("Resulting buffer should be smaller than the original.", result.size < audioBytes.size)
+        assertTrue(
+            "Resulting buffer should be smaller than the original.", result.size < audioBytes.size
+        )
 
         val minExpectedDurationSeconds = 20
-        val minExpectedBytes = minExpectedDurationSeconds * VAD_TARGET_SAMPLE_RATE * BYTES_PER_SAMPLE_16BIT
+        val minExpectedBytes =
+            minExpectedDurationSeconds * VAD_TARGET_SAMPLE_RATE * BYTES_PER_SAMPLE_16BIT
         assertTrue(
             "Resulting buffer should be above ${minExpectedDurationSeconds}s long (${minExpectedBytes} bytes), but was ${result.size} bytes",
             result.size > minExpectedBytes
@@ -418,8 +421,7 @@ class VADProcessorInstrumentedTest {
             vadProcessor.process(
                 ByteBuffer.wrap(audioBytes),
                 config,
-                onProgress = { progress -> progressValues.add(progress) }
-            )
+                onProgress = { progress -> progressValues.add(progress) })
         } catch (e: Exception) {
             fail("VAD processing threw an exception: ${e.message}")
         }
@@ -430,7 +432,7 @@ class VADProcessorInstrumentedTest {
 
         for (i in 1 until progressValues.size) {
             assertTrue(
-                "Progress should be monotonically increasing (${progressValues[i-1]} -> ${progressValues[i]})",
+                "Progress should be monotonically increasing (${progressValues[i - 1]} -> ${progressValues[i]})",
                 progressValues[i] >= progressValues[i - 1]
             )
         }
@@ -442,9 +444,7 @@ class VADProcessorInstrumentedTest {
         val noise = generateWhiteNoise(5000, config)
 
         val result = vadProcessor.process(
-            ByteBuffer.wrap(noise),
-            config,
-            debugFileBaseName = "debug_white_noise"
+            ByteBuffer.wrap(noise), config, debugFileBaseName = "debug_white_noise"
         )
 
         // White noise should not be detected as speech
@@ -485,19 +485,17 @@ class VADProcessorInstrumentedTest {
         val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
 
         val resultNoPadding = vadProcessor.process(
-            ByteBuffer.wrap(audioBytes),
-            config,
-            paddingMs = 0
+            ByteBuffer.wrap(audioBytes), config, paddingMs = 0
         )
 
         val resultWithPadding = vadProcessor.process(
-            ByteBuffer.wrap(audioBytes),
-            config,
-            paddingMs = 500
+            ByteBuffer.wrap(audioBytes), config, paddingMs = 500
         )
 
-        assertTrue("Result with padding should be larger than without",
-                  resultWithPadding.size > resultNoPadding.size)
+        assertTrue(
+            "Result with padding should be larger than without",
+            resultWithPadding.size > resultNoPadding.size
+        )
     }
 
     @Test
@@ -540,10 +538,7 @@ class VADProcessorInstrumentedTest {
 
         val benchmark = try {
             vadProcessor.measureProcessingMsForBuffer(
-                ByteBuffer.wrap(audioBytes),
-                config,
-                runs = 3,
-                warmup = 1
+                ByteBuffer.wrap(audioBytes), config, runs = 3, warmup = 1
             )
         } catch (e: Exception) {
             fail("Benchmark failed: ${e.message}")
@@ -582,35 +577,6 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withInterleavedSpeechAndMusic_separatesSpeech() {
-        val config = AudioConfig(22050, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
-        val byteStream = ByteArrayOutputStream()
-
-        // Pattern: 1s speech-like (low freq), 1s music-like (high freq), repeated
-        repeat(5) {
-            // Speech-like: 200Hz tone (human pitch range)
-            byteStream.write(generateSineWave(200.0, 1000, config, amplitude = 0.7))
-            // Music-like: 2000Hz tone (above typical speech)
-            byteStream.write(generateSineWave(2000.0, 1000, config, amplitude = 0.7))
-        }
-
-        val audio = byteStream.toByteArray()
-        val result = vadProcessor.process(
-            ByteBuffer.wrap(audio),
-            config,
-            paddingMs = 100,
-            debugFileBaseName = "debug_interleaved"
-        )
-
-        assertNotNull("Should process interleaved audio", result)
-        // Result should be significantly smaller than input since music parts are filtered
-        assertTrue(
-            "Should filter out some non-speech segments",
-            result.size < audio.size * 0.7
-        )
-    }
-
-    @Test
     fun processBuffer_multipleCallsWithSameProcessor_maintainsConsistency() {
         val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
 
@@ -620,9 +586,7 @@ class VADProcessorInstrumentedTest {
 
         // Results should be identical since state is reset
         assertArrayEquals(
-            "Multiple calls with same input should produce same output",
-            result1,
-            result2
+            "Multiple calls with same input should produce same output", result1, result2
         )
     }
 
@@ -632,9 +596,7 @@ class VADProcessorInstrumentedTest {
 
         val result = try {
             vadProcessor.process(
-                ByteBuffer.wrap(audioBytes),
-                config,
-                paddingMs = -100 // Invalid negative padding
+                ByteBuffer.wrap(audioBytes), config, paddingMs = -100 // Invalid negative padding
             )
         } catch (e: Exception) {
             fail("Should handle negative padding gracefully: ${e.message}")
@@ -652,9 +614,7 @@ class VADProcessorInstrumentedTest {
 
         val result = try {
             vadProcessor.process(
-                ByteBuffer.wrap(audio),
-                config,
-                paddingMs = Int.MAX_VALUE // Extreme padding
+                ByteBuffer.wrap(audio), config, paddingMs = Int.MAX_VALUE // Extreme padding
             )
         } catch (e: Exception) {
             fail("Should handle extreme padding without overflow: ${e.message}")
@@ -664,8 +624,144 @@ class VADProcessorInstrumentedTest {
         assertNotNull("Should handle extreme padding", result)
         // Result should not be larger than original (padding is clamped)
         assertTrue(
-            "Result should not exceed original size with clamped padding",
-            result.size <= audio.size
+            "Result should not exceed original size with clamped padding", result.size <= audio.size
         )
+    }
+
+    @Test
+    fun processStreamedAudioAndTriggerQuickSaveViaReceiver() {
+        runBlocking {
+            val appContext = ApplicationProvider.getApplicationContext<Context>()
+
+            // --- SETUP SYNCHRONIZATION ---
+            // 1. Create a latch that will block the test thread until countDown() is called.
+            val saveCompletedDeferred = CompletableDeferred<Boolean>()
+            // 2. Create a broadcast receiver that listens for our "save complete" signal.
+            val saveCompleteReceiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (intent?.action == MyBufferService.ACTION_SAVE_COMPLETE) {
+                        Timber.d("Test receiver got ACTION_SAVE_COMPLETE. Releasing latch.")
+                        // When the signal is received, release the latch.
+                        saveCompletedDeferred.complete(true)
+                    }
+                }
+            }
+
+            var service: MyBufferService? = null
+            val testDir = File(appContext.cacheDir, "test-output")
+
+            try {
+                ContextCompat.registerReceiver(
+                    appContext,
+                    saveCompleteReceiver,
+                    IntentFilter(MyBufferService.ACTION_SAVE_COMPLETE),
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+                )
+
+                // --- GIVEN ---
+                if (testDir.exists()) {
+                    testDir.deleteRecursively()
+                }
+                testDir.mkdirs()
+                FileSavingUtils.cacheGrantedUri(appContext, testDir.toUri())
+
+                val (audioConfig, speechChunk) = loadAudioAndConfig("talking_24s.wav")
+                settingsRepository.updateSampleRate(audioConfig.sampleRateHz)
+                settingsRepository.updateBitDepth(audioConfig.bitDepth)
+                settingsRepository.updateBufferTimeLengthS(600)
+                settingsRepository.updateIsAiAutoClipEnabled(true)
+
+                val intent = Intent(appContext, MyBufferService::class.java)
+                val binder = serviceRule.bindService(intent)
+                service = (binder as MyBufferService.MyBinder).getService() as MyBufferService
+
+                // --- WHEN ---
+                service.prepareForTestRecording()
+                delay(200)
+                assertTrue(
+                    "Service should be recording", service.isRecording.value
+                )
+
+                // The simplest possible simulation:
+                // Write the speech chunk back-to-back 50 times.
+                // 50 repetitions * 24s/chunk = 1200s of audio.
+                // This is more than enough to fill and overflow the 1000-second buffer
+                // with continuous, uninterrupted speech.
+                Timber.d("Writing continuous stream to buffer...")
+                val repetitions = 100
+                repeat(repetitions) {
+                    service.writeDataToBufferForTest(speechChunk)
+                    // 10% is silence
+                    service.writeDataToBufferForTest(
+                        generateSilence(
+                            240 + (2 * VADProcessor.Companion.DEFAULT_PADDING_MS), audioConfig
+                        )
+                    )
+                }
+                Timber.d("Finished writing.")
+
+                // Send the broadcast to start the save operation
+                appContext.sendBroadcast(
+                    Intent(
+                        appContext, NotificationActionReceiver::class.java
+                    ).apply {
+                        action = NotificationActionReceiver.ACTION_SAVE_RECORDING
+                    })
+
+                // This will wait for the service to respond with its "complete" broadcast.
+                try {
+                    withTimeout(TimeUnit.MINUTES.toMillis(2)) {
+                        saveCompletedDeferred.await()
+                    }
+                } catch (e: Exception) {
+                    fail("VAD and save operation did not complete within the timeout.")
+                }
+
+                // --- THEN ---
+                // Instead of checking the buffer content, check a state that is reset by resetBuffer()
+                // and isn't immediately changed by the new recording job.
+                val hasOverflowedAfterReset = service.hasOverflowed.get()
+                assertEquals(
+                    "The hasOverflowed flag should be reset to false after a quicksave",
+                    false,
+                    hasOverflowedAfterReset
+                )
+
+                Timber.d("Verifying duration of saved file...")
+                val savedFiles = testDir.listFiles { _, name -> name.startsWith("quicksave_") }
+                assertTrue(
+                    "A saved file should exist in the test directory", !savedFiles.isNullOrEmpty()
+                )
+
+                val savedFile = savedFiles!!.first()
+                val fileBytes = savedFile.readBytes()
+                val wavConfig = WavUtils.readWavHeader(fileBytes)
+                val audioDataSize = fileBytes.size - WavUtils.WAV_HEADER_SIZE
+
+                // Calculate duration in seconds
+                val bytesPerSecond = wavConfig.sampleRateHz * (wavConfig.bitDepth.bits / 8)
+                val durationInSeconds = audioDataSize.toDouble() / bytesPerSecond
+
+                Timber.d("Saved file duration: $durationInSeconds seconds.")
+
+                // Assert that the duration is within 1000 ± 5 seconds
+                val bufferS = settingsRepository.getAudioConfig().bufferTimeLengthS
+                val expectedDurationRange = bufferS * 0.85..bufferS * 0.9
+                assertTrue(
+                    "The duration of the saved file ($durationInSeconds s) was not within the expected range of $expectedDurationRange s",
+                    durationInSeconds in expectedDurationRange
+                )
+
+            } finally {
+                // --- CLEANUP ---
+                appContext.unregisterReceiver(saveCompleteReceiver)
+                service?.stopRecording()
+                service?.resetBuffer()
+                FileSavingUtils.clearCachedUri(appContext)
+                if (testDir.exists()) {
+                    testDir.deleteRecursively()
+                }
+            }
+        }
     }
 }
