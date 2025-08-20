@@ -15,9 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.mfc.recentaudiobuffer
-
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtException
@@ -25,18 +23,32 @@ import ai.onnxruntime.OrtSession
 import ai.onnxruntime.providers.NNAPIFlags
 import android.annotation.SuppressLint
 import android.content.Context
-import be.tarsos.dsp.AudioEvent
-import be.tarsos.dsp.io.TarsosDSPAudioFormat
-import be.tarsos.dsp.resample.RateTransposer
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.FloatBuffer
 import java.util.EnumSet
 import javax.inject.Inject
 import javax.inject.Singleton
-
+import kotlin.math.ceil
+import kotlin.math.min
+import kotlin.system.measureNanoTime
+/**
+ * Final combined VADProcessor — upgraded:
+ * - Replaced RateTransposer with a fast, low-allocation linear resampler (resampleLinear)
+ * - Added a micro-benchmark helper measureProcessingMsForBuffer(...) to measure time and allocated bytes
+ * - Kept pool-based producer/consumer + reusable buffers
+ *
+ * The linear resampler is intentionally simple and very fast; it's a good tradeoff for VAD where extreme
+ * resampling fidelity is less important than throughput and low allocations. If you want a higher-quality
+ * resampler later (sinc / polyphase), I can plug that in.
+ */
 @Singleton
 class VADProcessor @Inject constructor(
     @ApplicationContext private val context: Context
@@ -44,79 +56,68 @@ class VADProcessor @Inject constructor(
     companion object {
         private const val VAD_MAX_SAMPLE_RATE = 16000
         private const val VAD_MIN_SAMPLE_RATE = 8000
-
         // TUNINGS:
         const val DEFAULT_PADDING_MS = 1300
         private const val SPEECH_THRESHOLD = 0.4f
         private const val DEFAULT_CHUNK_SIZE_B = 4096
-
+        // Toggle parallel pipeline
+        const val USE_PARALLEL_PIPELINE = true
     }
-
+    private fun calculateDefaultPoolSize(): Int {
+        val cores = Runtime.getRuntime().availableProcessors()
+        return when {
+            cores <= 2 -> 2
+            cores <= 4 -> 4
+            else -> min(cores - 1, 8)
+        }
+    }
+    private val poolSize = calculateDefaultPoolSize()
     data class SpeechTimestamp(val start: Int, var end: Int)
-
+    // Benchmark result container
+    data class BenchmarkResult(val avgMs: Double, val avgAllocBytes: Long)
+    // VAD model state
     private var state: Array<Array<FloatArray>>? = null
     private var vadContext: FloatArray? = null
-    private var lastSr: Int = 0
-    private var lastBatchSize: Int = 0
+    // ONNX Environment and Session
     private val ortEnvironment = OrtEnvironment.getEnvironment()
-
-    private val session: OrtSession by lazy {
-        createONNXSession()
-    }
-
-    /**
-     * Creates an ONNX session, attempting to use the NNAPI provider for hardware
-     * acceleration. If it fails for any reason (e.g., device not supported),
-     * it gracefully falls back to the default CPU provider.
-     */
+    private val session: OrtSession by lazy { createONNXSession() }
+    // --- Reusable buffers to avoid allocation churn ---
+    // Max floats for 16-bit samples in DEFAULT_CHUNK_SIZE_B
+    private val maxInputFloats = DEFAULT_CHUNK_SIZE_B / (16 / 8)
+    private val reusableFloatBuffer = FloatArray(maxInputFloats)
+    // Conservative size for resampled buffer (upsampling safety margin)
+    private val reusableResampledBufferSize =
+        ceil(maxInputFloats * (VAD_MAX_SAMPLE_RATE.toDouble() / VAD_MIN_SAMPLE_RATE)).toInt()
+    private val reusableResampledBuffer = FloatArray(reusableResampledBufferSize)
+    // Buffer for VAD model input: max context (64) + max window (512)
+    private val reusableVadInputBuffer = FloatArray(64 + 512)
+    // ---
     private fun createONNXSession(): OrtSession {
         val modelBytes = context.assets.open("silero_vad.onnx").readBytes()
-
-        // First, try to create a session with the NNAPI provider
         try {
             val sessionOptions = OrtSession.SessionOptions()
-
-            // USE_FP16 flag for performance. If that fails, fall back to the default NNAPI setup.
             try {
                 Timber.d("Attempting to configure NNAPI with USE_FP16 flag.")
-                val nnapiFlags = EnumSet.of(NNAPIFlags.USE_FP16)
-                sessionOptions.addNnapi(nnapiFlags)
+                sessionOptions.addNnapi(EnumSet.of(NNAPIFlags.USE_FP16))
             } catch (e: Exception) {
-                Timber.w(
-                    e,
-                    "Failed to configure NNAPI with FP16, falling back to default NNAPI with no flags."
-                )
+                Timber.w(e, "Failed to configure NNAPI with FP16, falling back to default NNAPI.")
                 sessionOptions.addNnapi()
             }
-
             Timber.d("Attempting to create ONNX session with NNAPI provider.")
-            // If this line succeeds, the device supports NNAPI for this model.
             return ortEnvironment.createSession(modelBytes, sessionOptions)
-
         } catch (e: Exception) {
-            // This will catch any error during NNAPI initialization.
             Timber.w(e, "Failed to create ONNX session with NNAPI. Falling back to CPU provider.")
         }
-
-        // If the try block failed, create a default session that is guaranteed to work (using CPU).
         Timber.d("Creating ONNX session with default CPU provider.")
         return ortEnvironment.createSession(modelBytes)
     }
-
-    /**
-     * Resets the VAD internal state.
-     */
     private fun resetStates() {
-        state = arrayOf(Array(1) { FloatArray(128) }) // Shape [1, 1, 128] for h
-            .plus(arrayOf(Array(1) { FloatArray(128) })) // Shape [1, 1, 128] for c -> total [2, 1, 128]
+        state = arrayOf(Array(1) { FloatArray(128) }).plus(arrayOf(Array(1) { FloatArray(128) }))
         vadContext = null
-        lastSr = 0
-        lastBatchSize = 0
     }
-
     /**
-     * Processes a full audio buffer by streaming it through the VAD in small,
-     * memory-efficient pieces to detect speech.
+     * Public processing function (unchanged external signature).
+     * Internally uses the fast linear resampler.
      */
     @SuppressLint("VisibleForTests")
     fun process(
@@ -127,200 +128,454 @@ class VADProcessor @Inject constructor(
         onProgress: ((Float) -> Unit)? = null
     ): ByteArray {
         resetStates()
-
-        if (debugFileBaseName != null) {
-            FileSavingUtils.saveDebugFile(
-                context, "${debugFileBaseName}_01_original.wav", fullAudioBuffer, config
-            )
+        debugFileBaseName?.let {
+            FileSavingUtils.saveDebugFile(context, "${it}_01_original.wav", fullAudioBuffer, config)
         }
-
         val targetVADRate = when {
             config.sampleRateHz >= VAD_MAX_SAMPLE_RATE -> VAD_MAX_SAMPLE_RATE
             config.sampleRateHz >= VAD_MIN_SAMPLE_RATE -> VAD_MIN_SAMPLE_RATE
             else -> config.sampleRateHz
         }
-
         val allTimestamps = mutableListOf<SpeechTimestamp>()
         var totalResampledSamples = 0
-
-        val resampler = RateTransposer((targetVADRate.toDouble() / config.sampleRateHz.toDouble()))
-        val tarsosFormat = TarsosDSPAudioFormat(
-            config.sampleRateHz.toFloat(), config.bitDepth.bits, 1, true, false
-        )
-
         val readBuffer = ByteArray(DEFAULT_CHUNK_SIZE_B)
         fullAudioBuffer.rewind()
-
         val totalBytes = fullAudioBuffer.limit().toFloat()
         var lastReportedProgressPercent = -1
-
-        onProgress?.invoke(0f) // Start timer
-
-        while (fullAudioBuffer.hasRemaining()) {
-            val toRead = minOf(readBuffer.size, fullAudioBuffer.remaining())
-            fullAudioBuffer.get(readBuffer, 0, toRead)
-            val audioChunk =
-                if (toRead < DEFAULT_CHUNK_SIZE_B) readBuffer.copyOfRange(0, toRead) else readBuffer
-
-            val floatChunk = bytesToFloats(ByteBuffer.wrap(audioChunk), config.bitDepth.bits)
-
-            val audioEvent = AudioEvent(tarsosFormat).apply { floatBuffer = floatChunk }
-            resampler.process(audioEvent)
-            val resampledFloats = audioEvent.floatBuffer
-
-            val timestampsInChunk = getSpeechTimestamps(resampledFloats, targetVADRate)
-
-            timestampsInChunk.forEach {
-                allTimestamps.add(
-                    SpeechTimestamp(
-                        start = it.start + totalResampledSamples,
-                        end = it.end + totalResampledSamples
+        onProgress?.invoke(0f)
+        // Pre-create srTensor once for this process call (unchanging)
+        val srTensor = OnnxTensor.createTensor(ortEnvironment, longArrayOf(targetVADRate.toLong()))
+        // We'll allocate an off-heap FloatBuffer for ONNX input and reuse it for every window.
+        val maxVadInputLen = 64 + 512
+        val onnxByteBuf =
+            ByteBuffer.allocateDirect(maxVadInputLen * 4).order(ByteOrder.nativeOrder())
+        val onnxFloatBuf = onnxByteBuf.asFloatBuffer()
+        // Channels/pool variables for finally-closing if necessary
+        var availableIndices: Channel<Int>? = null
+        var dataChannel: Channel<Pair<Int, Int>>? = null
+        try {
+            if (USE_PARALLEL_PIPELINE) {
+                // Pool-based pipeline
+                val pool = Array(poolSize) { FloatArray(reusableResampledBufferSize) }
+                availableIndices = Channel(capacity = poolSize)
+                dataChannel = Channel(capacity = poolSize) // Pair(index, validCount)
+                runBlocking {
+                    // Fill available indices
+                    for (i in 0 until poolSize) availableIndices.send(i)
+                    val producer = launch(Dispatchers.Default) {
+                        try {
+                            while (fullAudioBuffer.hasRemaining()) {
+                                val toRead = minOf(readBuffer.size, fullAudioBuffer.remaining())
+                                fullAudioBuffer.get(readBuffer, 0, toRead)
+                                // Convert bytes -> floats (reusable buffer)
+                                val floatCount = bytesToFloats(
+                                    readBuffer,
+                                    toRead,
+                                    config.bitDepth.bits,
+                                    reusableFloatBuffer
+                                )
+                                // Fast adaptive resample INTO pool slot
+                                val idx = availableIndices.receive()
+                                val slot = pool[idx]
+                                val ratio =
+                                    targetVADRate.toDouble() / config.sampleRateHz.toDouble()
+                                val resampledCount = resampleAdaptive(
+                                    src = reusableFloatBuffer,
+                                    srcLen = floatCount,
+                                    dst = slot,
+                                    dstCapacity = slot.size,
+                                    ratio = ratio
+                                )
+                                // Send index + length to consumer
+                                dataChannel.send(Pair(idx, resampledCount))
+                                // Progress reporting
+                                val currentProgress = fullAudioBuffer.position() / totalBytes
+                                val currentProgressPercent = (currentProgress * 100).toInt()
+                                if (currentProgressPercent > lastReportedProgressPercent) {
+                                    onProgress?.invoke(currentProgress)
+                                    lastReportedProgressPercent = currentProgressPercent
+                                }
+                            }
+                        } finally {
+                            dataChannel?.close()
+                        }
+                    }
+                    val consumer = launch(Dispatchers.Default) {
+                        var processedResampledSamples = 0
+                        for ((idx, count) in dataChannel) {
+                            val bufferSlot = pool[idx]
+                            // Process sequentially with ONNX while preserving state
+                            val timestampsInChunk = getSpeechTimestampsFromBuffer(
+                                bufferSlot,
+                                count,
+                                targetVADRate,
+                                onnxFloatBuf,
+                                srTensor
+                            )
+                            timestampsInChunk.forEach {
+                                allTimestamps.add(
+                                    SpeechTimestamp(
+                                        start = it.start + processedResampledSamples,
+                                        end = it.end + processedResampledSamples
+                                    )
+                                )
+                            }
+                            processedResampledSamples += count
+                            // Return slot to pool
+                            availableIndices.send(idx)
+                        }
+                        totalResampledSamples = processedResampledSamples
+                    }
+                    producer.join()
+                    consumer.join()
+                }
+                // Close availableIndices after all slots returned
+                try {
+                    availableIndices.close()
+                } catch (_: Exception) {
+                }
+            } else {
+                // Single-threaded path (also uses adaptive resampler)
+                while (fullAudioBuffer.hasRemaining()) {
+                    val toRead = minOf(readBuffer.size, fullAudioBuffer.remaining())
+                    fullAudioBuffer.get(readBuffer, 0, toRead)
+                    val floatCount =
+                        bytesToFloats(readBuffer, toRead, config.bitDepth.bits, reusableFloatBuffer)
+                    val ratio = targetVADRate.toDouble() / config.sampleRateHz.toDouble()
+                    val resampledCount = resampleAdaptive(
+                        src = reusableFloatBuffer,
+                        srcLen = floatCount,
+                        dst = reusableResampledBuffer,
+                        dstCapacity = reusableResampledBuffer.size,
+                        ratio = ratio
                     )
-                )
+                    val timestampsInChunk = getSpeechTimestampsFromBuffer(
+                        reusableResampledBuffer,
+                        resampledCount,
+                        targetVADRate,
+                        onnxFloatBuf,
+                        srTensor
+                    )
+                    timestampsInChunk.forEach {
+                        allTimestamps.add(
+                            SpeechTimestamp(
+                                start = it.start + totalResampledSamples,
+                                end = it.end + totalResampledSamples
+                            )
+                        )
+                    }
+                    totalResampledSamples += resampledCount
+                    val currentProgress = fullAudioBuffer.position() / totalBytes
+                    val currentProgressPercent = (currentProgress * 100).toInt()
+                    if (currentProgressPercent > lastReportedProgressPercent) {
+                        onProgress?.invoke(currentProgress)
+                        lastReportedProgressPercent = currentProgressPercent
+                    }
+                }
             }
-            totalResampledSamples += resampledFloats.size
-
-            val currentProgress = fullAudioBuffer.position() / totalBytes
-            val currentProgressPercent = (currentProgress * 100).toInt()
-            // Only report on whole percentage changes to avoid spamming updates.
-            if (currentProgressPercent > lastReportedProgressPercent) {
-                onProgress?.invoke(currentProgress)
-                lastReportedProgressPercent = currentProgressPercent
+        } finally {
+            // Ensure srTensor closed under all conditions
+            try {
+                srTensor.close()
+            } catch (_: Exception) {
+            }
+            // Ensure channels closed if something went wrong
+            try {
+                dataChannel?.close()
+            } catch (_: Exception) {
+            }
+            try {
+                availableIndices?.close()
+            } catch (_: Exception) {
             }
         }
-
         val mergedTimestamps =
             mergeTimestamps(allTimestamps, paddingMs, targetVADRate, totalResampledSamples)
-
         val bufferForStitching = fullAudioBuffer.asReadOnlyBuffer()
         val finalResultBytes =
             stitchAudio(bufferForStitching, mergedTimestamps, config, targetVADRate.toFloat())
-
-        if (debugFileBaseName != null) {
+        debugFileBaseName?.let {
             FileSavingUtils.saveDebugFile(
                 context,
-                "${debugFileBaseName}_03_final_result.wav",
+                "${it}_03_final_result.wav",
                 ByteBuffer.wrap(finalResultBytes),
                 config
             )
         }
-
         return finalResultBytes
     }
-
-    private fun bytesToFloats(buffer: ByteBuffer, bitsPerSample: Int): FloatArray {
-        buffer.rewind()
-
-        return when (bitsPerSample) {
-            16 -> {
-                val shortBuffer = buffer.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
-                val shortArray = ShortArray(shortBuffer.remaining())
-                shortBuffer.get(shortArray)
-                FloatArray(shortArray.size) { i ->
-                    shortArray[i] / 32768.0f
+    /**
+     * Very fast linear resampler.
+     *
+     * - src: input float buffer (length srcLen)
+     * - dst: destination float buffer (capacity dstCapacity)
+     * - ratio: target/sampleRate (i.e. output_rate / input_rate)
+     *
+     * Returns: number of valid floats written to dst.
+     *
+     * This function is intentionally allocation-free and branch-light; it uses a
+     * fractional accumulator to compute interpolated samples.
+     */
+    private fun resampleLinear(
+        src: FloatArray,
+        srcLen: Int,
+        dst: FloatArray,
+        dstCapacity: Int,
+        ratio: Double
+    ): Int {
+        if (srcLen <= 0) return 0
+        if (ratio <= 0.0) return 0
+        // compute expected output length (safe bound)
+        val expected = (srcLen * ratio).toInt()
+        val outLen = min(expected, dstCapacity)
+        val step = 1.0 / ratio // increment in source-space per output sample
+        var srcPos = 0.0
+        var outIdx = 0
+        while (outIdx < outLen) {
+            val i0 = srcPos.toInt()
+            val frac = srcPos - i0
+            val s0 = src[i0.coerceIn(0, srcLen - 1)]
+            val s1 = src[(i0 + 1).coerceAtMost(srcLen - 1)]
+            dst[outIdx] = (1.0f - frac.toFloat()) * s0 + frac.toFloat() * s1
+            outIdx++
+            srcPos += step
+            if (i0 >= srcLen - 1) {
+                // we've reached end of source; fill remaining outputs with last sample
+                while (outIdx < outLen) {
+                    dst[outIdx++] = s1
                 }
-            }
-
-            8 -> {
-                val byteArray = ByteArray(buffer.remaining())
-                buffer.get(byteArray)
-                FloatArray(byteArray.size) { i ->
-                    // Convert unsigned 8-bit int to signed float in [-1.0, 1.0]
-                    (byteArray[i].toUByte().toInt() - 128) / 128.0f
-                }
-            }
-
-            else -> {
-                Timber.e("Unsupported bit depth for VAD processing: $bitsPerSample")
-                throw IllegalArgumentException("Unsupported bit depth: $bitsPerSample")
+                break
             }
         }
+        return outIdx
     }
+    // Call this instead of resampleLinear when you need band-limited resampling.
+    private fun resampleSinc(
+        src: FloatArray,
+        srcLen: Int,
+        dst: FloatArray,
+        dstCapacity: Int,
+        ratio: Double,
+        taps: Int = 32 // 16..64 recommended; bigger = better quality, slower
+    ): Int {
+        if (srcLen <= 0 || ratio <= 0.0) return 0
+        val outLen = min((srcLen * ratio).toInt(), dstCapacity)
+        val fc = 0.5 * min(1.0, ratio) // normalized cutoff freq, limited to Nyquist of src
+        val half = taps / 2
+        var outIdx = 0
+        var pos = 0.0
+        while (outIdx < outLen) {
+            val center = pos // source-space fractional center
+            var sum = 0.0f
+            var weightSum = 0.0f
+            val iCenter = center.toInt()
+            for (t in -half until half) {
+                val idx = iCenter + t
+                if (idx < 0 || idx >= srcLen) continue
 
-    private fun getSpeechTimestamps(
-        audioFloats: FloatArray, sampleRate: Int
+                val x = center - idx.toDouble() // distance from interpolation node
+                val sincVal =
+                    if (x == 0.0) 1.0 else Math.sin(Math.PI * fc * x) / (Math.PI * fc * x)
+                // Hann window
+                val w = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * (t + half) / taps))
+                val coeff = (sincVal * w).toFloat()
+                sum += coeff * src[idx]
+                weightSum += coeff
+            }
+            // Normalize to correct DC gain
+            dst[outIdx] = if (weightSum != 0.0f) sum / weightSum else sum
+            outIdx++
+            pos += 1.0 / ratio // step in source-space for next output sample
+        }
+        return outIdx
+    }
+    // Selector: use linear for upsampling/mild downsampling, otherwise sinc for heavy downsampling.
+    private fun resampleAdaptive(
+        src: FloatArray,
+        srcLen: Int,
+        dst: FloatArray,
+        dstCapacity: Int,
+        ratio: Double
+    ): Int {
+        return if (ratio >= 0.7) { // Use linear for upsampling or mild downsampling
+            resampleLinear(src, srcLen, dst, dstCapacity, ratio)
+        } else { // Use sinc for significant downsampling to prevent aliasing
+            resampleSinc(src, srcLen, dst, dstCapacity, ratio, taps = 24)
+        }
+    }
+    /**
+     * Simple micro-benchmark to measure processing time and approximate allocation delta.
+     * - runs: number of timed runs (after warmup)
+     * - warmup: number of warmup runs before timing
+     *
+     * Returns average ms per run and average allocated bytes (approximate).
+     *
+     * Usage: call on-device with a representative ByteBuffer and AudioConfig.
+     */
+    fun measureProcessingMsForBuffer(
+        inputBuffer: ByteBuffer,
+        config: AudioConfig,
+        runs: Int = 3,
+        warmup: Int = 1
+    ): BenchmarkResult {
+        if (runs <= 0) throw IllegalArgumentException("runs must be > 0")
+        // Make a copy of the buffer so we can reuse it across runs
+        val copy = ByteArray(inputBuffer.limit())
+        inputBuffer.rewind()
+        inputBuffer.get(copy)
+        val wrapper = ByteBuffer.wrap(copy)
+        // Warmup
+        repeat(warmup) {
+            try {
+                // small warmup run, do not collect timings
+                process(wrapper.duplicate().asReadOnlyBuffer(), config, onProgress = null)
+            } catch (_: Exception) {
+            }
+        }
+        // Try to reduce GC noise
+        System.gc()
+        val runtimes = LongArray(runs)
+        val allocs = LongArray(runs)
+        for (i in 0 until runs) {
+            val memBefore = usedMemory()
+            val t = measureNanoTime {
+                try {
+                    process(wrapper.duplicate().asReadOnlyBuffer(), config, onProgress = null)
+                } catch (e: Exception) {
+                    Timber.w(e, "Benchmark run failed")
+                }
+            }
+            val memAfter = usedMemory()
+            runtimes[i] = t
+            allocs[i] = (memAfter - memBefore).coerceAtLeast(0L)
+            // small delay to allow system to settle
+            Thread.sleep(50)
+        }
+        val avgMs = runtimes.average() / 1_000_000.0
+        val avgAlloc = allocs.average().toLong()
+        return BenchmarkResult(avgMs, avgAlloc)
+    }
+    private fun usedMemory(): Long {
+        val rt = Runtime.getRuntime()
+        return rt.totalMemory() - rt.freeMemory()
+    }
+    private fun bytesToFloats(
+        source: ByteArray,
+        bytesToRead: Int,
+        bitsPerSample: Int,
+        dest: FloatArray
+    ): Int {
+        val byteBuffer = ByteBuffer.wrap(source, 0, bytesToRead).order(ByteOrder.LITTLE_ENDIAN)
+        return when (bitsPerSample) {
+            16 -> {
+                val shortBuffer = byteBuffer.asShortBuffer()
+                val count = shortBuffer.remaining()
+                // manual get is a little faster than creating an intermediate ShortArray
+                for (i in 0 until count) {
+                    dest[i] = shortBuffer.get(i) / 32768.0f
+                }
+                count
+            }
+            8 -> {
+                val count = byteBuffer.remaining()
+                for (i in 0 until count) {
+                    dest[i] = (byteBuffer.get(i).toUByte().toInt() - 128) / 128.0f
+                }
+                count
+            }
+            else -> throw IllegalArgumentException("Unsupported bit depth: $bitsPerSample")
+        }
+    }
+    private fun getSpeechTimestampsFromBuffer(
+        audioFloats: FloatArray,
+        audioFloatCount: Int,
+        sampleRate: Int,
+        onnxFloatBuf: FloatBuffer,
+        srTensor: OnnxTensor
     ): List<SpeechTimestamp> {
         val windowSize = if (sampleRate == 16000) 512 else 256
         val contextSize = if (sampleRate == 16000) 64 else 32
-
         val speechSegments = mutableListOf<SpeechTimestamp>()
         var currentSpeechStart: Int? = null
-
-        if (vadContext == null) {
-            vadContext = FloatArray(contextSize)
-        }
-
-        audioFloats.toList().chunked(windowSize).forEachIndexed { i, chunk ->
-            if (chunk.size < windowSize) return@forEachIndexed
-
-            val chunkArray = chunk.toFloatArray()
-            val concatenatedInput = vadContext!! + chunkArray
-
+        if (vadContext == null) vadContext = FloatArray(contextSize)
+        val vadInputLen = contextSize + windowSize
+        var i = 0
+        while (i + windowSize <= audioFloatCount) {
+            // fill reusableVadInputBuffer: context + window
+            System.arraycopy(vadContext!!, 0, reusableVadInputBuffer, 0, contextSize)
+            System.arraycopy(audioFloats, i, reusableVadInputBuffer, contextSize, windowSize)
+            // Fill direct FloatBuffer (onnxFloatBuf) with only the active length
+            onnxFloatBuf.rewind()
+            onnxFloatBuf.put(reusableVadInputBuffer, 0, vadInputLen)
+            onnxFloatBuf.rewind()
             try {
-                val inputTensor =
-                    OnnxTensor.createTensor(ortEnvironment, arrayOf(concatenatedInput))
-                val srTensor =
-                    OnnxTensor.createTensor(ortEnvironment, longArrayOf(sampleRate.toLong()))
                 val stateTensor = OnnxTensor.createTensor(ortEnvironment, state)
-
-                val inputs = mapOf("input" to inputTensor, "sr" to srTensor, "state" to stateTensor)
-
-                session.run(inputs).use { result ->
-                    val score =
-                        ((result[0].value as? Array<*>)?.firstOrNull() as? FloatArray)?.firstOrNull()
-                            ?: 0.0f
-                    val newState = castToStateArray(result[1].value)
-
-                    this.state = newState
-                    this.vadContext = chunkArray.takeLast(contextSize).toFloatArray()
-
-                    val currentSamplePosition = i * windowSize
-                    if (score >= SPEECH_THRESHOLD && currentSpeechStart == null) {
-                        currentSpeechStart = currentSamplePosition
-                    } else if ((currentSpeechStart != null) && (score < SPEECH_THRESHOLD)) {
-                        speechSegments.add(
-                            SpeechTimestamp(
-                                start = currentSpeechStart!!, end = currentSamplePosition
+                OnnxTensor.createTensor(
+                    ortEnvironment,
+                    onnxFloatBuf,
+                    longArrayOf(1, vadInputLen.toLong())
+                ).use { inputTensor ->
+                    try {
+                        val inputs =
+                            mapOf("input" to inputTensor, "sr" to srTensor, "state" to stateTensor)
+                        session.run(inputs).use { result ->
+                            val score =
+                                ((result[0].value as? Array<*>)?.firstOrNull() as? FloatArray)?.firstOrNull()
+                                    ?: ((result[0].value as? FloatArray)?.firstOrNull())
+                                    ?: 0.0f
+                            val newState = castToStateArray(result[1].value)
+                            this.state = newState
+                            val startIdx = i + windowSize - contextSize
+                            if (startIdx >= 0) System.arraycopy(
+                                audioFloats,
+                                startIdx,
+                                vadContext!!,
+                                0,
+                                contextSize
                             )
-                        )
-                        currentSpeechStart = null
+                            val currentSamplePosition = i
+                            if (score >= SPEECH_THRESHOLD && currentSpeechStart == null) {
+                                currentSpeechStart = currentSamplePosition
+                            } else if (currentSpeechStart != null && score < SPEECH_THRESHOLD) {
+                                speechSegments.add(
+                                    SpeechTimestamp(
+                                        start = currentSpeechStart!!,
+                                        end = currentSamplePosition
+                                    )
+                                )
+                                currentSpeechStart = null
+                            }
+                        }
+                    } finally {
+                        try {
+                            stateTensor.close()
+                        } catch (_: Exception) {
+                        }
                     }
                 }
-
-                inputTensor.close()
-                srTensor.close()
-                stateTensor.close()
-
             } catch (e: OrtException) {
                 Timber.e(e, "Error during ONNX session run")
                 return emptyList()
             }
+            i += windowSize
         }
-
         if (currentSpeechStart != null) {
-            speechSegments.add(SpeechTimestamp(start = currentSpeechStart, end = audioFloats.size))
+            speechSegments.add(SpeechTimestamp(start = currentSpeechStart, end = audioFloatCount))
         }
-
         return speechSegments
     }
-
     private fun mergeTimestamps(
         timestamps: List<SpeechTimestamp>, paddingMs: Int, sampleRate: Int, totalSamples: Int
     ): List<SpeechTimestamp> {
         if (timestamps.isEmpty()) return emptyList()
-
         val paddingSamples = (paddingMs / 1000f * sampleRate).toInt()
-        val mergeGapSamples = sampleRate * 2 // Merge segments closer than 2 seconds
-
+        val mergeGapSamples = sampleRate * 2
         val merged = mutableListOf<SpeechTimestamp>()
-        var currentSegment =
-            timestamps.first().copy() // Use copy to avoid modifying the original list item
-
+        var currentSegment = timestamps.first().copy()
         for (i in 1 until timestamps.size) {
             val nextTimestamp = timestamps[i]
             val gap = nextTimestamp.start - currentSegment.end
             if (gap < mergeGapSamples) {
-                // Merge segments by extending the end of the current one
                 currentSegment.end = nextTimestamp.end
             } else {
                 merged.add(currentSegment)
@@ -328,25 +583,17 @@ class VADProcessor @Inject constructor(
             }
         }
         merged.add(currentSegment)
-
-        // Apply padding to the final merged segments
         return merged.map {
             val start = (it.start - paddingSamples).coerceAtLeast(0)
             val end = (it.end + paddingSamples).coerceAtMost(totalSamples)
             it.copy(start = start, end = end)
         }
     }
-
     @Suppress("UNCHECKED_CAST")
     private fun castToStateArray(value: Any?): Array<Array<FloatArray>>? {
-        if (value !is Array<*> || value.any { it !is Array<*> }) {
-            return null
-        }
-        // The final cast is as safe as it can be.
+        if (value !is Array<*> || value.any { it !is Array<*> }) return null
         return value as? Array<Array<FloatArray>>
     }
-
-
     private fun stitchAudio(
         originalBuffer: ByteBuffer,
         segments: List<SpeechTimestamp>,
@@ -356,19 +603,15 @@ class VADProcessor @Inject constructor(
         val bytesPerSample = config.bitDepth.bits / 8
         val originalSampleRate = config.sampleRateHz
         val scaleFactor = originalSampleRate.toDouble() / vadSampleRate
-
-        // Use a stream to build the final byte array efficiently
         val resultStream = ByteArrayOutputStream()
-
         segments.forEach { segment ->
             val startByte = (segment.start * scaleFactor).toInt() * bytesPerSample
             val endByte = (segment.end * scaleFactor).toInt() * bytesPerSample
             val lengthInBytes = endByte - startByte
-
             if (lengthInBytes > 0 && startByte + lengthInBytes <= originalBuffer.capacity()) {
                 val segmentBytes = ByteArray(lengthInBytes)
-                originalBuffer.position(startByte) // Move the buffer's "read head"
-                originalBuffer.get(segmentBytes)      // Read the data into our temp array
+                originalBuffer.position(startByte)
+                originalBuffer.get(segmentBytes)
                 resultStream.write(segmentBytes)
             } else if (lengthInBytes < 0) {
                 Timber.e("Stitch error: calculated segment has negative length.")
