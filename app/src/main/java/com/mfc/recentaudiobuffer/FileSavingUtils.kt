@@ -18,11 +18,9 @@
 
 package com.mfc.recentaudiobuffer
 
-import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
-import android.provider.MediaStore
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.edit
 import androidx.core.net.toUri
@@ -33,7 +31,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
-import java.nio.channels.Channels
 
 /**
  * A collection of stateless utility functions for file and Uri operations.
@@ -112,39 +109,32 @@ object FileSavingUtils {
 
     @VisibleForTesting
     fun saveDebugFile(context: Context, fileName: String, data: ByteBuffer, config: AudioConfig) {
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-        }
-
-        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-
-        val contentResolver = context.contentResolver
-        var fileUri: Uri? = null
-
         try {
-            fileUri = contentResolver.insert(collection, values)
-                ?: throw IOException("Failed to create new MediaStore record for $fileName")
+            // Create debug directory in app's external files
+            // Path: /storage/emulated/0/Android/data/com.mfc.recentaudiobuffer/files/debug/
+            val debugDir = File(context.getExternalFilesDir(null), "debug")
+            if (!debugDir.exists()) {
+                debugDir.mkdirs()
+            }
 
-            contentResolver.openOutputStream(fileUri)?.use { stream ->
-                // First, write the WAV header to the stream as before.
-                // data.remaining() correctly gives the size of the audio data.
-                writeWavHeader(stream, data.remaining(), config)
+            val debugFile = File(debugDir, fileName)
 
-                // Create a channel from the stream to write the ByteBuffer.
-                Channels.newChannel(stream).use { channel ->
-                    // Ensure we write from the start of the buffer.
+            FileOutputStream(debugFile).use { fileOutputStream ->
+                // Write WAV header
+                writeWavHeader(fileOutputStream, data.remaining(), config)
+
+                // Write audio data
+                fileOutputStream.channel.use { channel ->
                     data.rewind()
                     channel.write(data)
                 }
-                stream.flush()
-                Timber.d("DEBUG file saved successfully to URI: $fileUri")
-            } ?: throw IOException("Failed to open output stream for $fileUri")
+            }
+
+            Timber.d("DEBUG file saved to: ${debugFile.absolutePath}")
+            Timber.d("Access via: Android/data/${context.packageName}/files/debug/$fileName")
 
         } catch (e: Exception) {
-            Timber.e(e, "Error writing debug file with MediaStore: $fileName")
-            fileUri?.let { contentResolver.delete(it, null, null) }
+            Timber.e(e, "Error writing debug file: $fileName")
         }
     }
 

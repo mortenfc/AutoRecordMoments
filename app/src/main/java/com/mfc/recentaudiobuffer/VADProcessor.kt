@@ -63,7 +63,7 @@ class VADProcessor @Inject constructor(
         private const val VAD_MIN_SAMPLE_RATE = 8000
 
         // TUNINGS:
-        const val DEFAULT_PADDING_MS = 1300
+        const val DEFAULT_PADDING_MS = 0
         private const val SPEECH_THRESHOLD = 0.4f
         private const val DEFAULT_CHUNK_SIZE_B = 4096
 
@@ -91,7 +91,7 @@ class VADProcessor @Inject constructor(
          *     mergeGapSamples = (sampleRate * MERGE_GAP_MS / 1000)
          * - We use sample-rate-aware threshold to keep behaviour consistent across 8k/16k/48k audio.
          */
-        private const val MERGE_GAP_MS = 1000
+        private const val MERGE_GAP_MS = 2000
     }
 
     private fun calculateDefaultPoolSize(): Int {
@@ -575,27 +575,50 @@ class VADProcessor @Inject constructor(
         timestamps: List<SpeechTimestamp>, paddingMs: Int, sampleRate: Int, totalSamples: Int
     ): List<SpeechTimestamp> {
         if (timestamps.isEmpty()) return emptyList()
+
         val clampedPaddingMs = paddingMs.coerceAtLeast(0)
         val paddingSamples = (clampedPaddingMs / 1000f * sampleRate).toInt()
+
+        // First, do the original merging based on MERGE_GAP_MS
         val mergeGapSamples = (sampleRate.toLong() * MERGE_GAP_MS / 1000L).toInt()
-        val merged = mutableListOf<SpeechTimestamp>()
-        var currentSegment = timestamps.first().copy()
+        val prelimMerged = mutableListOf<SpeechTimestamp>()
+        var current = timestamps.first().copy()
         for (i in 1 until timestamps.size) {
-            val nextTimestamp = timestamps[i]
-            val gap = nextTimestamp.start - currentSegment.end
+            val next = timestamps[i]
+            val gap = next.start - current.end
             if (gap < mergeGapSamples) {
-                currentSegment.end = nextTimestamp.end
+                // merge
+                current.end = next.end
             } else {
-                merged.add(currentSegment)
-                currentSegment = nextTimestamp.copy()
+                prelimMerged.add(current)
+                current = next.copy()
             }
         }
-        merged.add(currentSegment)
-        return merged.map {
+        prelimMerged.add(current)
+
+        // Now apply padding to each merged segment
+        val padded = prelimMerged.map {
             val start = (it.start - paddingSamples).coerceAtLeast(0)
             val end = (it.end + paddingSamples).coerceAtMost(totalSamples)
-            it.copy(start = start, end = end)
+            SpeechTimestamp(start = start, end = end)
+        }.sortedBy { it.start }
+
+        // Finally, merge any overlapping or touching padded intervals (to avoid duplication)
+        val finalMerged = mutableListOf<SpeechTimestamp>()
+        var cur = padded.first().copy()
+        for (i in 1 until padded.size) {
+            val nxt = padded[i]
+            if (nxt.start <= cur.end) {
+                // overlap or touch -> extend
+                cur.end = maxOf(cur.end, nxt.end)
+            } else {
+                finalMerged.add(cur)
+                cur = nxt.copy()
+            }
         }
+        finalMerged.add(cur)
+
+        return finalMerged
     }
 
     @Suppress("UNCHECKED_CAST")

@@ -28,6 +28,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.firebase.auth.FirebaseAuth
@@ -118,6 +119,8 @@ data class SettingsConfig(
     var areAdsEnabled: Boolean = true,
     var isAiAutoClipEnabled: Boolean = true,
     var hasShownLockscreenInfo: Boolean = false,
+    var wasBufferingActive: Boolean = false,
+    var lastActiveTimestamp: Long = 0L,
 )
 
 fun SettingsConfig.toAudioConfig(): AudioConfig {
@@ -148,6 +151,9 @@ class SettingsRepository @Inject constructor(
         val ARE_ADS_ENABLED = booleanPreferencesKey("are_ads_enabled")
         val IS_AI_AUTO_CLIP_ENABLED = booleanPreferencesKey("is_ai_auto_clip_enabled")
         val HAS_SHOWN_LOCKSCREEN_INFO = booleanPreferencesKey("has_shown_lockscreen_info")
+        // New keys for boot notification logic
+        val WAS_BUFFERING_ACTIVE = booleanPreferencesKey("was_buffering_active")
+        val LAST_ACTIVE_TIMESTAMP = longPreferencesKey("last_active_timestamp")
     }
 
     // Helper function to get the current user ID or null if not logged in
@@ -207,6 +213,15 @@ class SettingsRepository @Inject constructor(
         updateSetting(PreferencesKeys.HAS_SHOWN_LOCKSCREEN_INFO, shown, "hasShownLockscreenInfo")
     }
 
+    // New functions for boot notification logic
+    suspend fun updateWasBufferingActive(isActive: Boolean) {
+        updateSetting(PreferencesKeys.WAS_BUFFERING_ACTIVE, isActive, "wasBufferingActive")
+    }
+
+    suspend fun updateLastActiveTimestamp(timestamp: Long) {
+        updateSetting(PreferencesKeys.LAST_ACTIVE_TIMESTAMP, timestamp, "lastActiveTimestamp")
+    }
+
     private fun getBitDepth(key: String): BitDepth {
         return BitDepth.fromString(key) ?: BitDepth(8, AudioFormat.ENCODING_PCM_8BIT)
     }
@@ -228,13 +243,17 @@ class SettingsRepository @Inject constructor(
         val areAdsEnabled = getBoolean("areAdsEnabled") ?: true
         val isAiAutoClipEnabled = getBoolean("isAiAutoClipEnabled") ?: true
         val hasShownLockscreenInfo = getBoolean("hasShownLockscreenInfo") ?: false
+        val wasBufferingActive = getBoolean("wasBufferingActive") ?: false
+        val lastActiveTimestamp = getLong("lastActiveTimestamp") ?: 0L
         return SettingsConfig(
             sampleRateHz = audioConfig.sampleRateHz,
             bufferTimeLengthS = audioConfig.bufferTimeLengthS,
             bitDepth = audioConfig.bitDepth,
             areAdsEnabled = areAdsEnabled,
             isAiAutoClipEnabled = isAiAutoClipEnabled,
-            hasShownLockscreenInfo = hasShownLockscreenInfo
+            hasShownLockscreenInfo = hasShownLockscreenInfo,
+            wasBufferingActive = wasBufferingActive,
+            lastActiveTimestamp = lastActiveTimestamp
         )
     }
 
@@ -249,7 +268,9 @@ class SettingsRepository @Inject constructor(
             ) ?: bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
             areAdsEnabled = prefs[PreferencesKeys.ARE_ADS_ENABLED] ?: true,
             isAiAutoClipEnabled = prefs[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] ?: true,
-            hasShownLockscreenInfo = prefs[PreferencesKeys.HAS_SHOWN_LOCKSCREEN_INFO] ?: false
+            hasShownLockscreenInfo = prefs[PreferencesKeys.HAS_SHOWN_LOCKSCREEN_INFO] ?: false,
+            wasBufferingActive = prefs[PreferencesKeys.WAS_BUFFERING_ACTIVE] ?: false,
+            lastActiveTimestamp = prefs[PreferencesKeys.LAST_ACTIVE_TIMESTAMP] ?: 0L
         )
     }
 
@@ -285,6 +306,10 @@ class SettingsRepository @Inject constructor(
                         settingsToCache.isAiAutoClipEnabled
                     preferences[PreferencesKeys.HAS_SHOWN_LOCKSCREEN_INFO] =
                         settingsToCache.hasShownLockscreenInfo
+                    preferences[PreferencesKeys.WAS_BUFFERING_ACTIVE] =
+                        settingsToCache.wasBufferingActive
+                    preferences[PreferencesKeys.LAST_ACTIVE_TIMESTAMP] =
+                        settingsToCache.lastActiveTimestamp
                 }
             }
         }

@@ -389,6 +389,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         if (!_isRecording.value) return
         _isRecording.value = false
 
+        // Persist that the service is no longer active
+        serviceScope.launch { settingsRepository.updateWasBufferingActive(false) }
+
         // Stop both loops async
         recordingJob?.cancel()
         notificationJob?.cancel()
@@ -590,6 +593,9 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         if (_isRecording.value) return
         _isRecording.value = true
 
+        // Persist that the service is now active for boot receiver logic
+        serviceScope.launch { settingsRepository.updateWasBufferingActive(true) }
+
         requestAudioFocus()
 
         // Start the audio recording loop
@@ -647,7 +653,7 @@ class MyBufferService : Service(), MyBufferServiceInterface {
                                 )
                                 recorderIndex.set(readResult - bytesToEnd)
                             } else {
-                                // Typical operation, just copy entire read data to current index
+                                // Just copy entire read data to current index
                                 System.arraycopy(
                                     readDataChunk,
                                     0,
@@ -702,6 +708,8 @@ class MyBufferService : Service(), MyBufferServiceInterface {
         notificationJob = serviceScope.launch {
             val tickerChannel = ticker(delayMillis = 1000)
             while (isActive && _isRecording.value) {
+                // Keep the timestamp fresh as a "heartbeat" for the boot receiver
+                settingsRepository.updateLastActiveTimestamp(System.currentTimeMillis())
                 updateDurationToDisplay()
                 updateNotification()
                 tickerChannel.receive()

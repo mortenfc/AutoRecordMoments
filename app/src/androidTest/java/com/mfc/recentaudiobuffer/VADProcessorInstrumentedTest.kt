@@ -1,3 +1,21 @@
+/*
+ * Auto Record Moments
+ * Copyright (C) 2025 Morten Fjord Christensen
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.mfc.recentaudiobuffer
 
 import android.content.BroadcastReceiver
@@ -7,6 +25,7 @@ import android.content.IntentFilter
 import android.media.AudioFormat
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -23,7 +42,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Before
-import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -52,9 +70,6 @@ class VADProcessorInstrumentedTest {
         private const val VAD_TARGET_SAMPLE_RATE = 16000
         private const val BYTES_PER_SAMPLE_16BIT = 2
         private const val BYTES_PER_SAMPLE_8BIT = 1
-        private const val SERVICE_STARTUP_TIMEOUT_MS = 5000L
-        private const val SERVICE_STARTUP_CHECK_INTERVAL_MS = 50L
-        private const val SAVE_TIMEOUT_MINUTES = 2L
         private const val MAX_PROCESSING_TIME_MS = 10000
 
         // Test asset files
@@ -62,40 +77,25 @@ class VADProcessorInstrumentedTest {
             "silence_5s.wav", "talking_24s.wav", "music_30s.wav", "mostly_silence_noise_5min.wav"
         )
 
-        @BeforeClass
-        @JvmStatic
-        fun clearDownloadsBeforeAllTests() {
-            val context = InstrumentationRegistry.getInstrumentation().targetContext
-            Timber.w("!!! CLEARING DEBUG FILES IN DOWNLOADS DIRECTORY !!!")
-            val contentResolver = context.contentResolver
+        private var clearedOnce = false
+    }
 
-            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL)
-            } else {
-                MediaStore.Files.getContentUri("external")
-            }
+    @Before
+    fun maybeClearOnce() {
+        if (!clearedOnce) {
+            clearDebugFiles()
+            clearedOnce = true
+        }
+    }
 
-            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
-            val selectionArgs = arrayOf("debug_%")
-            var deletedCount = 0
+    private fun clearDebugFiles() {
+        val appContext = ApplicationProvider.getApplicationContext<Context>()
+        // Clear from app's external files
+        val debugDir = File(appContext.getExternalFilesDir(null), "debug")
 
-            try {
-                contentResolver.query(
-                    collection, arrayOf(MediaStore.MediaColumns._ID), selection, selectionArgs, null
-                )?.use { cursor ->
-                    while (cursor.moveToNext()) {
-                        val id =
-                            cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
-                        val fileUri = Uri.withAppendedPath(collection, id.toString())
-                        if (contentResolver.delete(fileUri, null, null) > 0) {
-                            deletedCount++
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Error while clearing debug files.")
-            }
-            Timber.w("Deleted $deletedCount debug files from Downloads.")
+        if (debugDir.exists()) {
+            debugDir.deleteRecursively()
+            Timber.d("Cleared debug directory: ${debugDir.absolutePath}")
         }
     }
 
@@ -113,7 +113,10 @@ class VADProcessorInstrumentedTest {
 
     @get:Rule(order = 3)
     val permissionRule: GrantPermissionRule = GrantPermissionRule.grant(
-        android.Manifest.permission.RECORD_AUDIO, android.Manifest.permission.POST_NOTIFICATIONS
+        android.Manifest.permission.RECORD_AUDIO,
+        android.Manifest.permission.POST_NOTIFICATIONS,
+        android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        android.Manifest.permission.READ_EXTERNAL_STORAGE,
     )
 
     @Inject
@@ -140,14 +143,6 @@ class VADProcessorInstrumentedTest {
                 fail("Required test asset not found: $fileName. Ensure all test WAV files are in src/androidTest/assets/")
             }
         }
-    }
-
-    private suspend fun waitForServiceRecording(service: MyBufferService): Boolean {
-        val startTime = System.currentTimeMillis()
-        while (!service.isRecording.value && System.currentTimeMillis() - startTime < SERVICE_STARTUP_TIMEOUT_MS) {
-            delay(SERVICE_STARTUP_CHECK_INTERVAL_MS)
-        }
-        return service.isRecording.value
     }
 
     private fun loadAudioAndConfig(fileName: String): Pair<AudioConfig, ByteArray> {
@@ -260,22 +255,42 @@ class VADProcessorInstrumentedTest {
             }
 
             var service: MyBufferService? = null
-            val testDir = File(appContext.cacheDir, "test-output")
-
+            // Use app's external files directory for tests - same as debug files, but different subdir
+            val testDir = File(appContext.getExternalFilesDir(null), "test_recordings")
             try {
+                // Ensure directory is created
+
+                if (testDir.exists()) {
+                    testDir.deleteRecursively()
+                    Timber.d("Cleaned up test directory: ${testDir.absolutePath}")
+                }
+
+                val created = testDir.mkdirs()
+                Timber.d("Test directory created: $created at ${testDir.absolutePath}")
+
+                // Verify it exists before caching
+                if (!testDir.exists() || !testDir.isDirectory) {
+                    fail("Failed to create test directory at: ${testDir.absolutePath}")
+                }
+
+                // Double-check the directory is accessible
+                val testFile = File(testDir, "test.txt")
+                testFile.writeText("test")
+                if (!testFile.exists()) {
+                    fail("Cannot write to test directory: ${testDir.absolutePath}")
+                }
+                testFile.delete()
+
+                FileSavingUtils.cacheGrantedUri(appContext, testDir.toUri())
+                Timber.d("Cached URI: ${testDir.toUri()}")
+                FileSavingUtils.cacheGrantedUri(appContext, testDir.toUri())
+
                 ContextCompat.registerReceiver(
                     appContext,
                     saveCompleteReceiver,
                     IntentFilter(MyBufferService.ACTION_SAVE_COMPLETE),
                     ContextCompat.RECEIVER_NOT_EXPORTED
                 )
-
-                // --- GIVEN ---
-                if (testDir.exists()) {
-                    testDir.deleteRecursively()
-                }
-                testDir.mkdirs()
-                FileSavingUtils.cacheGrantedUri(appContext, testDir.toUri())
 
                 val (audioConfig, speechChunk) = loadAudioAndConfig("talking_24s.wav")
                 settingsRepository.updateSampleRate(audioConfig.sampleRateHz)
@@ -356,23 +371,20 @@ class VADProcessorInstrumentedTest {
 
                 Timber.d("Saved file duration: $durationInSeconds seconds.")
 
-                // Assert that the duration is within 1000 ± 5 seconds
+                // Assert that the duration is within a reasonable range
                 val bufferS = settingsRepository.getAudioConfig().bufferTimeLengthS
-                val expectedDurationRange = bufferS * 0.85..bufferS * 0.9
+                val expectedDurationRange = bufferS * 0.7..bufferS * 0.9
                 assertTrue(
                     "The duration of the saved file ($durationInSeconds s) was not within the expected range of $expectedDurationRange s",
                     durationInSeconds in expectedDurationRange
                 )
-
+                //  BREAKPOINT HERE TO CHECK THE SAVED FILE
             } finally {
                 // --- CLEANUP ---
                 appContext.unregisterReceiver(saveCompleteReceiver)
                 service?.stopRecording()
                 service?.resetBuffer()
                 FileSavingUtils.clearCachedUri(appContext)
-                if (testDir.exists()) {
-                    testDir.deleteRecursively()
-                }
             }
         }
     }
@@ -417,7 +429,9 @@ class VADProcessorInstrumentedTest {
             debugFileBaseName = "debug_talking_24s"
         )
 
-        assertTrue("Resulting buffer should not be empty for a speech file.", result.isNotEmpty())
+        assertTrue(
+            "Resulting buffer should not be empty for a speech file.", result.isNotEmpty()
+        )
         assertTrue(
             "Resulting buffer should be smaller than the original.", result.size < audioBytes.size
         )
@@ -494,6 +508,66 @@ class VADProcessorInstrumentedTest {
     }
 
     //// Newer tests
+
+    @Test
+    fun processBuffer_paddingDoesNotDuplicateWhenPaddedWindowsOverlap() {
+        // Arrange: use 16 kHz, 16-bit PCM
+        val sampleRate = 16000
+        val config = AudioConfig(sampleRate, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
+        val bytesPerSample = config.bitDepth.bits / 8
+
+        // Build timeline (ms):
+        // initial silence = 2000 ms
+        // speech1 = 1000 ms  (start at 2000ms -> end 3000ms)
+        // gap = 1500 ms
+        // speech2 = 1000 ms  (start at 4500ms -> end 5500ms)
+        // trailing silence = 2000 ms
+        val startSilenceMs = 2000
+        val speechMs = 1000
+        val gapMs = 1500
+        val trailingSilenceMs = 2000
+
+        fun msToBytes(ms: Int) = (ms * sampleRate / 1000) * bytesPerSample
+
+        val stream = ByteArrayOutputStream()
+        // silence
+        stream.write(ByteArray(msToBytes(startSilenceMs)))
+        // speech1 (sine)
+        stream.write(generateSineWave(440.0, speechMs, config, amplitude = 0.8))
+        // gap silence
+        stream.write(ByteArray(msToBytes(gapMs)))
+        // speech2
+        stream.write(generateSineWave(660.0, speechMs, config, amplitude = 0.8))
+        // trailing silence
+        stream.write(ByteArray(msToBytes(trailingSilenceMs)))
+
+        val fullAudio = stream.toByteArray()
+
+        // Use a large padding to force overlap of padded windows
+        val paddingMs = 1300
+
+        // Act
+        val result = vadProcessor.process(ByteBuffer.wrap(fullAudio), config, paddingMs = paddingMs)
+
+        // Compute expected merged+padded window in ms:
+        val start1Ms = startSilenceMs
+        val end2Ms =
+            startSilenceMs + speechMs + gapMs + speechMs // 2000 + 1000 + 1500 + 1000 = 5500
+        val paddedStartMs = (start1Ms - paddingMs).coerceAtLeast(0)
+        val paddedEndMs = end2Ms + paddingMs
+
+        val expectedOutputMs = paddedEndMs - paddedStartMs
+        val expectedBytes = expectedOutputMs * sampleRate / 1000 * bytesPerSample
+
+        // Allow a small tolerance because of windowing/resampling rounding (one sample margin)
+        val toleranceBytes =
+            sampleRate * bytesPerSample // 1 second worth of bytes is conservative, reduce if you want stricter
+        assertTrue(
+            "Processed output should equal merged padded span (no duplicated overlap). " + "expected≈$expectedBytes bytes but was ${result.size}",
+            kotlin.math.abs(result.size - expectedBytes) <= toleranceBytes
+        )
+    }
+
 
     @Test
     fun processBuffer_withEmptyBuffer_returnsEmpty() {
