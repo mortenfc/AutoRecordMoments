@@ -21,7 +21,7 @@ android {
         versionName = "1.0.47"
 
         testInstrumentationRunner = "com.mfc.recentaudiobuffer.HiltTestRunner"
-        testInstrumentationRunnerArguments 'clearPackageData', 'false'
+        testInstrumentationRunnerArguments.put('clearPackageData', 'false')
         vectorDrawables {
             useSupportLibrary = true
         }

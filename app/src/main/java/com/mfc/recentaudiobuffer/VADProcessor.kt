@@ -45,14 +45,13 @@ import kotlin.math.sin
 import kotlin.system.measureNanoTime
 
 /**
- * Final combined VADProcessor — upgraded:
- * - Replaced RateTransposer with a fast, low-allocation linear resampler (resampleLinear)
- * - Added a micro-benchmark helper measureProcessingMsForBuffer(...) to measure time and allocated bytes
- * - Kept pool-based producer/consumer + reusable buffers
+ * VADProcessor — single-stitch parameter version
  *
- * The linear resampler is intentionally simple and very fast; it's a good tradeoff for VAD where extreme
- * resampling fidelity is less important than throughput and low allocations. If you want a higher-quality
- * resampler later (sinc / polyphase), I can plug that in.
+ * New behaviour summary:
+ * - Single tuning parameter: `stitchMs` (exposed via the existing `paddingMs` argument)
+ *   controls both merge threshold (gap) and padding size, and also the crossfade/trim
+ *   length used when joining segments. This avoids duplicate silent padding and produces
+ *   pleasant short crossfades between clips.
  */
 @Singleton
 class VADProcessor @Inject constructor(
@@ -63,7 +62,10 @@ class VADProcessor @Inject constructor(
         private const val VAD_MIN_SAMPLE_RATE = 8000
 
         // TUNINGS:
-        const val DEFAULT_PADDING_MS = 0
+        // Single tuning parameter: default stitch length (ms). Used for merge-gap, padding,
+        // and for the crossfade/trim length when stitching audio segments together.
+        const val DEFAULT_PADDING_MS = 1600
+
         private const val SPEECH_THRESHOLD = 0.4f
         private const val DEFAULT_CHUNK_SIZE_B = 4096
 
@@ -72,26 +74,6 @@ class VADProcessor @Inject constructor(
 
         // Lower means use linear resampler more often for bigger downsampling
         const val LINEAR_VS_SINC_RATIO = 0.6
-
-        /**
-         * MERGE_GAP_MS — gap threshold (milliseconds) used when merging detected speech segments.
-         *
-         * Explanation:
-         * - The VAD produces many short speech segments (start/end in samples).
-         * - If two detected speech segments are separated by less than MERGE_GAP_MS,
-         *   they are considered part of the same utterance and will be merged together.
-         *
-         * Effect:
-         * - Small MERGE_GAP_MS (e.g. 100-300 ms) => results in many short clips, merges only breaths/very short pauses.
-         * - Medium MERGE_GAP_MS (e.g. 500-1200 ms) => merges natural short phrase pauses; common default for conversational audio.
-         * - Large MERGE_GAP_MS (e.g. 2000-5000 ms) => merges longer pauses; produces fewer, longer clips but risks joining separate turns/speakers.
-         *
-         * Implementation note:
-         * - MERGE_GAP_MS is in milliseconds; convert to samples with:
-         *     mergeGapSamples = (sampleRate * MERGE_GAP_MS / 1000)
-         * - We use sample-rate-aware threshold to keep behaviour consistent across 8k/16k/48k audio.
-         */
-        private const val MERGE_GAP_MS = 2000
     }
 
     private fun calculateDefaultPoolSize(): Int {
@@ -164,6 +146,9 @@ class VADProcessor @Inject constructor(
     /**
      * Public processing function (unchanged external signature).
      * Internally uses the fast adaptive resampler.
+     *
+     * IMPORTANT: the `paddingMs` parameter is now interpreted as the single `stitchMs` tuning
+     * parameter (controls merge gap, padding, and stitching/crossfade length).
      */
     @SuppressLint("VisibleForTests")
     fun process(
@@ -177,6 +162,8 @@ class VADProcessor @Inject constructor(
         debugFileBaseName?.let {
             FileSavingUtils.saveDebugFile(context, "${it}_01_original.wav", fullAudioBuffer, config)
         }
+        val stitchMs = paddingMs.coerceAtLeast(0) // single parameter used everywhere
+
         val targetVADRate = when {
             config.sampleRateHz >= VAD_MAX_SAMPLE_RATE -> VAD_MAX_SAMPLE_RATE
             config.sampleRateHz >= VAD_MIN_SAMPLE_RATE -> VAD_MIN_SAMPLE_RATE
@@ -319,11 +306,11 @@ class VADProcessor @Inject constructor(
             } catch (_: Exception) {
             }
         }
-        val mergedTimestamps =
-            mergeTimestamps(allTimestamps, paddingMs, targetVADRate, totalResampledSamples)
+
+        // Use stitchMs (single parameter) both for merging and padding
+        val mergedTimestamps = mergeTimestampsUsingStitch(allTimestamps, stitchMs, targetVADRate, totalResampledSamples)
         val bufferForStitching = fullAudioBuffer.asReadOnlyBuffer()
-        val finalResultBytes =
-            stitchAudio(bufferForStitching, mergedTimestamps, config, targetVADRate.toFloat())
+        val finalResultBytes = stitchAudioWithCrossfade(bufferForStitching, mergedTimestamps, config, targetVADRate.toFloat(), stitchMs)
         debugFileBaseName?.let {
             FileSavingUtils.saveDebugFile(
                 context, "${it}_03_final_result.wav", ByteBuffer.wrap(finalResultBytes), config
@@ -571,23 +558,28 @@ class VADProcessor @Inject constructor(
         return speechSegments
     }
 
-    private fun mergeTimestamps(
-        timestamps: List<SpeechTimestamp>, paddingMs: Int, sampleRate: Int, totalSamples: Int
+    /**
+     * Merge using the single stitch parameter: stitchMs controls both gap-merge and padding.
+     */
+    private fun mergeTimestampsUsingStitch(
+        timestamps: List<SpeechTimestamp>,
+        stitchMs: Int,
+        sampleRate: Int,
+        totalSamples: Int
     ): List<SpeechTimestamp> {
         if (timestamps.isEmpty()) return emptyList()
 
-        val clampedPaddingMs = paddingMs.coerceAtLeast(0)
-        val paddingSamples = (clampedPaddingMs / 1000f * sampleRate).toInt()
+        val clampedStitchMs = stitchMs.coerceAtLeast(0)
+        val paddingSamples = (clampedStitchMs / 1000f * sampleRate).toInt()
+        val mergeGapSamples = paddingSamples // use same value for gap threshold
 
-        // First, do the original merging based on MERGE_GAP_MS
-        val mergeGapSamples = (sampleRate.toLong() * MERGE_GAP_MS / 1000L).toInt()
+        // First, merge close segments using mergeGapSamples
         val prelimMerged = mutableListOf<SpeechTimestamp>()
         var current = timestamps.first().copy()
         for (i in 1 until timestamps.size) {
             val next = timestamps[i]
             val gap = next.start - current.end
             if (gap < mergeGapSamples) {
-                // merge
                 current.end = next.end
             } else {
                 prelimMerged.add(current)
@@ -596,20 +588,18 @@ class VADProcessor @Inject constructor(
         }
         prelimMerged.add(current)
 
-        // Now apply padding to each merged segment
+        // Apply padding (using same paddingSamples), then merge overlapping padded intervals
         val padded = prelimMerged.map {
             val start = (it.start - paddingSamples).coerceAtLeast(0)
             val end = (it.end + paddingSamples).coerceAtMost(totalSamples)
             SpeechTimestamp(start = start, end = end)
         }.sortedBy { it.start }
 
-        // Finally, merge any overlapping or touching padded intervals (to avoid duplication)
         val finalMerged = mutableListOf<SpeechTimestamp>()
         var cur = padded.first().copy()
         for (i in 1 until padded.size) {
             val nxt = padded[i]
             if (nxt.start <= cur.end) {
-                // overlap or touch -> extend
                 cur.end = maxOf(cur.end, nxt.end)
             } else {
                 finalMerged.add(cur)
@@ -627,29 +617,175 @@ class VADProcessor @Inject constructor(
         return value as? Array<Array<FloatArray>>
     }
 
-    private fun stitchAudio(
+    /**
+     * Stitch with short-trim + crossfade using single stitchMs parameter.
+     * This avoids copying long silent padding and performs a short overlap crossfade.
+     */
+    private fun stitchAudioWithCrossfade(
         originalBuffer: ByteBuffer,
         segments: List<SpeechTimestamp>,
         config: AudioConfig,
-        vadSampleRate: Float
+        vadSampleRate: Float,
+        stitchMs: Int
     ): ByteArray {
+        if (segments.isEmpty()) return ByteArray(0)
+
         val bytesPerSample = config.bitDepth.bits / 8
         val originalSampleRate = config.sampleRateHz
         val scaleFactor = originalSampleRate.toDouble() / vadSampleRate
         val resultStream = ByteArrayOutputStream()
+
+        fun msToSamples(ms: Int, sampleRate: Int) = (ms * sampleRate / 1000)
+        val stitchSamples = msToSamples(stitchMs, originalSampleRate)
+
+        fun readBytesForRange(startByte: Int, length: Int): ByteArray {
+            val tmp = ByteArray(length)
+            val pos = originalBuffer.position()
+            try {
+                originalBuffer.position(startByte)
+                originalBuffer.get(tmp)
+            } finally {
+                originalBuffer.position(pos)
+            }
+            return tmp
+        }
+
+        // Detect non-silent region within a byte array, but only trim up to maxTrimSamples.
+        fun findNonSilentRange(bytes: ByteArray, bits: Int, maxTrimSamples: Int, threshold: Float = 0.02f): IntRange? {
+            if (bytes.isEmpty()) return null
+            val bps = bits / 8
+            val totalSamples = bytes.size / bps
+            var first = 0
+            var last = totalSamples - 1
+
+            fun sampleValue(idx: Int): Float {
+                return when (bits) {
+                    16 -> {
+                        val lo = bytes[idx * 2].toInt() and 0xFF
+                        val hi = bytes[idx * 2 + 1].toInt()
+                        val sample = (hi shl 8) or lo
+                        sample.toShort().toInt() / 32768.0f
+                    }
+                    8 -> {
+                        val s = bytes[idx].toInt() and 0xFF
+                        (s - 128) / 128.0f
+                    }
+                    else -> 0f
+                }
+            }
+
+            var trimmed = 0
+            while (trimmed < totalSamples && kotlin.math.abs(sampleValue(trimmed)) < threshold && trimmed < maxTrimSamples) trimmed++
+            first = trimmed
+
+            trimmed = 0
+            while (trimmed < totalSamples - first && kotlin.math.abs(sampleValue(totalSamples - 1 - trimmed)) < threshold && trimmed < maxTrimSamples) trimmed++
+            last = totalSamples - 1 - trimmed
+
+            return if (first > last) null else first..last
+        }
+
+        // Crossfade: truncate last tailBytes from resultStream and write overlap mixed samples
+        fun crossfadeAndReplaceTail(prevTail: ByteArray, nextHead: ByteArray, overlapSamples: Int, bits: Int) {
+            val bps = bits / 8
+            val tailBytes = overlapSamples * bps
+            val resultBytes = resultStream.toByteArray()
+            val keep = resultBytes.size - tailBytes
+            if (keep < 0) return
+            resultStream.reset()
+            if (keep > 0) resultStream.write(resultBytes, 0, keep)
+
+            val prevStart = prevTail.size - tailBytes
+            for (s in 0 until overlapSamples) {
+                when (bits) {
+                    16 -> {
+                        val pIdx = prevStart + s * 2
+                        val nIdx = s * 2
+                        val pLo = prevTail[pIdx].toInt() and 0xFF
+                        val pHi = prevTail[pIdx + 1].toInt()
+                        val pSample = (pHi shl 8) or pLo
+                        val pSigned = pSample.toShort().toInt()
+
+                        val nLo = nextHead[nIdx].toInt() and 0xFF
+                        val nHi = nextHead[nIdx + 1].toInt()
+                        val nSample = (nHi shl 8) or nLo
+                        val nSigned = nSample.toShort().toInt()
+
+                        val fadeOut = 1.0f - (s.toFloat() / (overlapSamples - 1).coerceAtLeast(1))
+                        val fadeIn = (s.toFloat() / (overlapSamples - 1).coerceAtLeast(1))
+                        val mixed = (pSigned * fadeOut + nSigned * fadeIn).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                        resultStream.write(mixed and 0xFF)
+                        resultStream.write((mixed shr 8) and 0xFF)
+                    }
+                    8 -> {
+                        val p = prevTail[s].toInt() and 0xFF
+                        val n = nextHead[s].toInt() and 0xFF
+                        val pNorm = (p - 128).toFloat()
+                        val nNorm = (n - 128).toFloat()
+                        val fadeOut = 1.0f - (s.toFloat() / (overlapSamples - 1).coerceAtLeast(1))
+                        val fadeIn = (s.toFloat() / (overlapSamples - 1).coerceAtLeast(1))
+                        val mixed = (pNorm * fadeOut + nNorm * fadeIn).toInt() + 128
+                        resultStream.write(mixed and 0xFF)
+                    }
+                }
+            }
+        }
+
+        var lastTailForCrossfade: ByteArray? = null
+
         segments.forEach { segment ->
             val startByte = (segment.start * scaleFactor).toInt() * bytesPerSample
             val endByte = (segment.end * scaleFactor).toInt() * bytesPerSample
             val lengthInBytes = endByte - startByte
-            if (lengthInBytes > 0 && startByte + lengthInBytes <= originalBuffer.limit()) {
-                val segmentBytes = ByteArray(lengthInBytes)
-                originalBuffer.position(startByte)
-                originalBuffer.get(segmentBytes)
+            if (lengthInBytes <= 0 || startByte + lengthInBytes > originalBuffer.limit()) {
+                if (lengthInBytes < 0) Timber.e("Stitch error: calculated segment has negative length.")
+                return@forEach
+            }
+
+            val raw = readBytesForRange(startByte, lengthInBytes)
+            val nonSilentRange = findNonSilentRange(raw, config.bitDepth.bits, stitchSamples, threshold = 0.02f)
+            val segmentBytes = if (nonSilentRange == null) ByteArray(0) else {
+                val bps = bytesPerSample
+                val start = nonSilentRange.first * bps
+                val end = (nonSilentRange.last + 1) * bps
+                raw.copyOfRange(start, end)
+            }
+
+            if (segmentBytes.isEmpty()) {
+                // fully silent after trimming: skip writing any silence
+                return@forEach
+            }
+
+            if (lastTailForCrossfade == null) {
+                // first segment, write fully
                 resultStream.write(segmentBytes)
-            } else if (lengthInBytes < 0) {
-                Timber.e("Stitch error: calculated segment has negative length.")
+                val keepSamples = minOf(stitchSamples, segmentBytes.size / bytesPerSample)
+                val keepBytes = keepSamples * bytesPerSample
+                lastTailForCrossfade = if (keepBytes > 0) segmentBytes.copyOfRange(segmentBytes.size - keepBytes, segmentBytes.size) else null
+            } else {
+                val prevTail = lastTailForCrossfade!!
+                val prevSamplesAvailable = prevTail.size / bytesPerSample
+                val headSamplesAvailable = segmentBytes.size / bytesPerSample
+                val overlapSamples = minOf(stitchSamples, prevSamplesAvailable, headSamplesAvailable)
+                if (overlapSamples > 0) {
+                    val headFadeBytes = overlapSamples * bytesPerSample
+                    val headForFade = segmentBytes.copyOfRange(0, headFadeBytes)
+                    val restHead = if (segmentBytes.size > headFadeBytes) segmentBytes.copyOfRange(headFadeBytes, segmentBytes.size) else ByteArray(0)
+
+                    crossfadeAndReplaceTail(prevTail, headForFade, overlapSamples, config.bitDepth.bits)
+                    if (restHead.isNotEmpty()) resultStream.write(restHead)
+                } else {
+                    resultStream.write(segmentBytes)
+                }
+
+                // update lastTailForCrossfade
+                val newBytes = resultStream.toByteArray()
+                val keepSamples = minOf(stitchSamples, newBytes.size / bytesPerSample)
+                val keepBytes = keepSamples * bytesPerSample
+                lastTailForCrossfade = if (keepBytes > 0) newBytes.copyOfRange(newBytes.size - keepBytes, newBytes.size) else null
             }
         }
+
         return resultStream.toByteArray()
     }
 
