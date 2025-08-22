@@ -29,7 +29,7 @@
       </SelectionState>
       <SelectionState runConfigName="processStreamedAudioAndTriggerQuickSaveViaReceiver()">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-08-22T15:38:31.277974400Z">
+        <DropdownSelection timestamp="2025-08-22T20:30:21.136177800Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\morte\.android\avd\Pixel_7.avd" />
