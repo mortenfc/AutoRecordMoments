@@ -60,7 +60,7 @@ class VADProcessor @Inject constructor(
 
         // TUNINGS:
         const val DEFAULT_PADDING_MS = 500
-        const val DEFAULT_MERGE_GAP_MS = 1500
+        const val DEFAULT_MERGE_GAP_MS = 1000
 
         private const val SPEECH_THRESHOLD = 0.4f
         private const val DEFAULT_CHUNK_SIZE_B = 4096
