@@ -16,28 +16,30 @@
   ~ along with this program.  If not, see <https://www.gnu.org/licenses/>.
   -->
 
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:tools="http://schemas.android.com/tools"
+        package="com.mfc.recentaudiobuffer">
 
     <!-- Enable support for devices with unknown specs. VAD processor can fall back to CPU -->
     <uses-feature
-        android:name="android.hardware.microphone"
-        android:required="true" />
+            android:name="android.hardware.microphone"
+            android:required="true" />
 
     <uses-feature
-        android:name="android.hardware.faketouch"
-        android:required="false" />
+            android:name="android.hardware.faketouch"
+            android:required="false" />
 
     <uses-feature
-        android:name="android.hardware.opengles.aep"
-        android:required="false" />
+            android:name="android.hardware.opengles.aep"
+            android:required="false" />
 
     <uses-feature
-        android:name="android.hardware.vulkan.level"
-        android:required="false" />
+            android:name="android.hardware.vulkan.level"
+            android:required="false" />
 
     <uses-feature
-        android:name="android.hardware.vulkan.version"
-        android:required="false" />
+            android:name="android.hardware.vulkan.version"
+            android:required="false" />
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
@@ -120,12 +122,17 @@
                 android:exported="false" />
 
         <receiver
-            android:name=".BootReceiver"
-            android:exported="true">
+                android:name=".BootReceiver"
+                android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <provider
+                android:name="androidx.startup.InitializationProvider"
+                android:authorities="${applicationId}.androidx-startup"
+                tools:node="remove" />
 
     </application>
 
