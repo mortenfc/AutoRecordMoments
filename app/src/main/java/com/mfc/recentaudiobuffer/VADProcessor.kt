@@ -60,9 +60,9 @@ class VADProcessor @Inject constructor(
 
         // TUNINGS:
         const val DEFAULT_PADDING_MS = 500
-        const val DEFAULT_MERGE_GAP_MS = 1000
+        const val DEFAULT_MERGE_GAP_MS = 1500
 
-        private const val SPEECH_THRESHOLD = 0.4f
+        private const val SPEECH_THRESHOLD = 0.2f
         private const val DEFAULT_CHUNK_SIZE_B = 4096
         const val USE_PARALLEL_PIPELINE = true
         const val LINEAR_VS_SINC_RATIO = 0.6
@@ -221,8 +221,9 @@ class VADProcessor @Inject constructor(
                                 srTensor,
                                 absolutePosition  // Pass absolute position
                             )
-                            // Timestamps are already absolute, no need to adjust
+                            // Add the timestamps to the collection!
                             allTimestamps.addAll(timestampsInChunk)
+                            // Timestamps are already absolute, no need to adjust
                             absolutePosition += count
                             // Return slot to pool
                             availableIndices.send(idx)
@@ -253,14 +254,7 @@ class VADProcessor @Inject constructor(
                         srTensor,
                         totalResampledSamples
                     )
-                    timestampsInChunk.forEach {
-                        allTimestamps.add(
-                            SpeechTimestamp(
-                                start = it.start + totalResampledSamples,
-                                end = it.end + totalResampledSamples
-                            )
-                        )
-                    }
+                    allTimestamps.addAll(timestampsInChunk)
                     totalResampledSamples += resampledCount
                     val currentProgress = fullAudioBuffer.position() / totalBytes
                     val currentProgressPercent = (currentProgress * 100).toInt()
@@ -491,11 +485,12 @@ class VADProcessor @Inject constructor(
             onnxFloatBuf.put(reusableVadInputBuffer, 0, vadInputLen)
             onnxFloatBuf.rewind()
             try {
-                val stateTensor = OnnxTensor.createTensor(ortEnvironment, state)
-                OnnxTensor.createTensor(
-                    ortEnvironment, onnxFloatBuf, longArrayOf(1, vadInputLen.toLong())
-                ).use { inputTensor ->
-                    try {
+                synchronized(stateLock) {
+                    OnnxTensor.createTensor(ortEnvironment, state)
+                }.use { stateTensor ->
+                    OnnxTensor.createTensor(
+                        ortEnvironment, onnxFloatBuf, longArrayOf(1, vadInputLen.toLong())
+                    ).use { inputTensor ->
                         val inputs =
                             mapOf("input" to inputTensor, "sr" to srTensor, "state" to stateTensor)
                         session.run(inputs).use { result ->
@@ -504,38 +499,35 @@ class VADProcessor @Inject constructor(
                                     ?: ((result[0].value as? FloatArray)?.firstOrNull()) ?: 0.0f
                             val newState = castToStateArray(result[1].value)
                             synchronized(stateLock) {
-                                if (newState != null) {
-                                    this.state = newState
-                                } else {
-                                    Timber.e("ONNX returned unexpected state shape; keeping previous state.")
-                                }
+                                if (newState != null) this.state = newState
+                                else Timber.e("ONNX returned unexpected state shape; keeping previous state.")
                             }
+
                             // Use the actual window position for speech detection
-                            val currentSamplePosition = i
+                            val currentSamplePosition = i + absoluteOffset
 
                             if (score >= SPEECH_THRESHOLD && currentSpeechStart == null) {
-                                currentSpeechStart = currentSamplePosition + absoluteOffset
+                                currentSpeechStart = currentSamplePosition
                             } else if (currentSpeechStart != null && score < SPEECH_THRESHOLD) {
                                 speechSegments.add(
                                     SpeechTimestamp(
-                                        start = currentSpeechStart!!, end = currentSamplePosition
+                                        start = currentSpeechStart!!,
+                                        end = currentSamplePosition
                                     )
                                 )
                                 currentSpeechStart = null
                             }
 
-                            // Update context AFTER processing the current window
-                            val nextContextStart = i + windowSize - contextSize
-                            if (nextContextStart >= 0 && nextContextStart + contextSize <= audioFloatCount) {
+                            val contextUpdateStart = i + windowSize - contextSize
+                            if (contextUpdateStart >= 0 && contextUpdateStart + contextSize <= audioFloatCount) {
                                 System.arraycopy(
-                                    audioFloats, nextContextStart, vadContext!!, 0, contextSize
+                                    audioFloats,
+                                    contextUpdateStart,
+                                    vadContext!!,
+                                    0,
+                                    contextSize
                                 )
                             }
-                        }
-                    } finally {
-                        try {
-                            stateTensor.close()
-                        } catch (_: Exception) {
                         }
                     }
                 }
@@ -546,10 +538,11 @@ class VADProcessor @Inject constructor(
             i += windowSize
         }
         if (currentSpeechStart != null) {
+            // Use the last processed position
             speechSegments.add(
                 SpeechTimestamp(
-                    start = currentSpeechStart + absoluteOffset,
-                    end = audioFloatCount + absoluteOffset - 1  // -1 to avoid off-by-one
+                    start = currentSpeechStart,
+                    end = (i + absoluteOffset)  // i is now at the position after last window
                 )
             )
         }
@@ -578,7 +571,7 @@ class VADProcessor @Inject constructor(
         for (i in 1 until timestamps.size) {
             val next = timestamps[i]
             val gap = next.start - current.end
-            if (gap < mergeGapSamples) {
+            if (gap <= mergeGapSamples) {
                 current.end = next.end
             } else {
                 prelimMerged.add(current)
@@ -633,11 +626,16 @@ class VADProcessor @Inject constructor(
                     val pIdx = s * bps
                     val nIdx = s * bps
 
-                    // Use ByteBuffer for proper endianness handling
-                    val pSample = ByteBuffer.wrap(prevTail, pIdx, 2)
-                        .order(ByteOrder.LITTLE_ENDIAN).short.toInt()
-                    val nSample = ByteBuffer.wrap(nextHead, nIdx, 2)
-                        .order(ByteOrder.LITTLE_ENDIAN).short.toInt()
+                    // Little-endian assemble with masking to avoid sign-extension issues
+                    val pLo = prevTail[pIdx].toInt() and 0xFF
+                    val pHi = prevTail[pIdx + 1].toInt() and 0xFF
+                    val pSampleRaw = (pLo or (pHi shl 8))
+                    val pSample = if (pSampleRaw >= 0x8000) pSampleRaw - 0x10000 else pSampleRaw
+
+                    val nLo = nextHead[nIdx].toInt() and 0xFF
+                    val nHi = nextHead[nIdx + 1].toInt() and 0xFF
+                    val nSampleRaw = (nLo or (nHi shl 8))
+                    val nSample = if (nSampleRaw >= 0x8000) nSampleRaw - 0x10000 else nSampleRaw
 
                     val mixed = (pSample * fadeOut + nSample * fadeIn).toInt()
                         .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
