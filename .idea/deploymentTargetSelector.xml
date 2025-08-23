@@ -38,6 +38,9 @@
         </DropdownSelection>
         <DialogSelection />
       </SelectionState>
+      <SelectionState runConfigName="processBuffer_withSpeechFile44100Hz_resample_returnsSignificantNonEmptyBuffer()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
     </selectionStates>
   </component>
 </project>

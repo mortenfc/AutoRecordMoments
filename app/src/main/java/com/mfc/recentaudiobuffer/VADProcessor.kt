@@ -77,6 +77,8 @@ class VADProcessor @Inject constructor(
         }
     }
 
+    private val stateLock = Any()
+
     private val poolSize = calculateDefaultPoolSize()
 
     data class SpeechTimestamp(val start: Int, var end: Int)
@@ -179,10 +181,7 @@ class VADProcessor @Inject constructor(
                                 val toRead = minOf(readBuffer.size, fullAudioBuffer.remaining())
                                 fullAudioBuffer.get(readBuffer, 0, toRead)
                                 val floatCount = bytesToFloats(
-                                    readBuffer,
-                                    toRead,
-                                    config.bitDepth.bits,
-                                    reusableFloatBuffer
+                                    readBuffer, toRead, config.bitDepth.bits, reusableFloatBuffer
                                 )
                                 // Fast adaptive resample INTO pool slot
                                 val idx = availableIndices.receive()
@@ -211,7 +210,7 @@ class VADProcessor @Inject constructor(
                         }
                     }
                     val consumer = launch(Dispatchers.Default) {
-                        var processedResampledSamples = 0
+                        var absolutePosition = 0
                         for ((idx, count) in dataChannel) {
                             val bufferSlot = pool[idx]
                             // Process sequentially with ONNX while preserving state
@@ -219,21 +218,16 @@ class VADProcessor @Inject constructor(
                                 bufferSlot,
                                 count,
                                 targetVADRate,
-                                srTensor
+                                srTensor,
+                                absolutePosition  // Pass absolute position
                             )
-                            timestampsInChunk.forEach {
-                                allTimestamps.add(
-                                    SpeechTimestamp(
-                                        start = it.start + processedResampledSamples,
-                                        end = it.end + processedResampledSamples
-                                    )
-                                )
-                            }
-                            processedResampledSamples += count
+                            // Timestamps are already absolute, no need to adjust
+                            allTimestamps.addAll(timestampsInChunk)
+                            absolutePosition += count
                             // Return slot to pool
                             availableIndices.send(idx)
                         }
-                        totalResampledSamples = processedResampledSamples
+                        totalResampledSamples = absolutePosition
                     }
                     producer.join()
                     consumer.join()
@@ -256,7 +250,8 @@ class VADProcessor @Inject constructor(
                         reusableResampledBuffer,
                         resampledCount,
                         targetVADRate,
-                        srTensor
+                        srTensor,
+                        totalResampledSamples
                     )
                     timestampsInChunk.forEach {
                         allTimestamps.add(
@@ -292,19 +287,11 @@ class VADProcessor @Inject constructor(
         }
 
         val mergedTimestamps = mergeTimestamps(
-            allTimestamps,
-            paddingMs,
-            mergeGapMs,
-            targetVADRate,
-            totalResampledSamples
+            allTimestamps, paddingMs, mergeGapMs, targetVADRate, totalResampledSamples
         )
         val bufferForStitching = fullAudioBuffer.asReadOnlyBuffer()
         val finalResultBytes = stitchAudioWithCrossfade(
-            bufferForStitching,
-            mergedTimestamps,
-            config,
-            targetVADRate.toFloat(),
-            paddingMs
+            bufferForStitching, mergedTimestamps, config, targetVADRate.toFloat(), paddingMs
         )
         debugFileBaseName?.let {
             FileSavingUtils.saveDebugFile(
@@ -482,7 +469,11 @@ class VADProcessor @Inject constructor(
     }
 
     private fun getSpeechTimestampsFromBuffer(
-        audioFloats: FloatArray, audioFloatCount: Int, sampleRate: Int, srTensor: OnnxTensor
+        audioFloats: FloatArray,
+        audioFloatCount: Int,
+        sampleRate: Int,
+        srTensor: OnnxTensor,
+        absoluteOffset: Int = 0
     ): List<SpeechTimestamp> {
         val windowSize = if (sampleRate == 16000) 512 else 256
         val contextSize = if (sampleRate == 16000) 64 else 32
@@ -512,18 +503,18 @@ class VADProcessor @Inject constructor(
                                 ((result[0].value as? Array<*>)?.firstOrNull() as? FloatArray)?.firstOrNull()
                                     ?: ((result[0].value as? FloatArray)?.firstOrNull()) ?: 0.0f
                             val newState = castToStateArray(result[1].value)
-                            if (newState != null) {
-                                this.state = newState
-                            } else {
-                                Timber.e("ONNX returned unexpected state shape; keeping previous state.")
+                            synchronized(stateLock) {
+                                if (newState != null) {
+                                    this.state = newState
+                                } else {
+                                    Timber.e("ONNX returned unexpected state shape; keeping previous state.")
+                                }
                             }
-                            val startIdx = i + windowSize - contextSize
-                            if (startIdx >= 0) System.arraycopy(
-                                audioFloats, startIdx, vadContext!!, 0, contextSize
-                            )
+                            // Use the actual window position for speech detection
                             val currentSamplePosition = i
+
                             if (score >= SPEECH_THRESHOLD && currentSpeechStart == null) {
-                                currentSpeechStart = currentSamplePosition
+                                currentSpeechStart = currentSamplePosition + absoluteOffset
                             } else if (currentSpeechStart != null && score < SPEECH_THRESHOLD) {
                                 speechSegments.add(
                                     SpeechTimestamp(
@@ -531,6 +522,14 @@ class VADProcessor @Inject constructor(
                                     )
                                 )
                                 currentSpeechStart = null
+                            }
+
+                            // Update context AFTER processing the current window
+                            val nextContextStart = i + windowSize - contextSize
+                            if (nextContextStart >= 0 && nextContextStart + contextSize <= audioFloatCount) {
+                                System.arraycopy(
+                                    audioFloats, nextContextStart, vadContext!!, 0, contextSize
+                                )
                             }
                         }
                     } finally {
@@ -547,7 +546,12 @@ class VADProcessor @Inject constructor(
             i += windowSize
         }
         if (currentSpeechStart != null) {
-            speechSegments.add(SpeechTimestamp(start = currentSpeechStart, end = audioFloatCount))
+            speechSegments.add(
+                SpeechTimestamp(
+                    start = currentSpeechStart + absoluteOffset,
+                    end = audioFloatCount + absoluteOffset - 1  // -1 to avoid off-by-one
+                )
+            )
         }
         return speechSegments
     }
@@ -612,18 +616,17 @@ class VADProcessor @Inject constructor(
      * Helper function to perform a linear crossfade between two audio chunks.
      */
     private fun crossfade(
-        prevTail: ByteArray,
-        nextHead: ByteArray,
-        overlapSamples: Int,
-        bits: Int
+        prevTail: ByteArray, nextHead: ByteArray, overlapSamples: Int, bits: Int
     ): ByteArray {
         val bps = bits / 8
         val resultStream = ByteArrayOutputStream(overlapSamples * bps)
-        val fadeSamples = overlapSamples.coerceAtLeast(2) // Prevent division issues
+        val fadeSamples = overlapSamples.coerceAtLeast(1)
+        val denom = if (fadeSamples > 1) (fadeSamples - 1).toFloat() else 1.0f
 
         for (s in 0 until overlapSamples) {
-            val fadeOut = 1.0f - (s.toFloat() / fadeSamples)
-            val fadeIn = s.toFloat() / fadeSamples
+            val t = s.toFloat() / denom
+            val fadeOut = 1.0f - t
+            val fadeIn = t
 
             when (bits) {
                 16 -> {
@@ -680,8 +683,11 @@ class VADProcessor @Inject constructor(
         try {
             // Extract audio chunks
             val audioChunks = segments.mapNotNull { segment ->
-                val startByte = (segment.start * scaleFactor).toInt() * bytesPerSample
-                val endByte = (segment.end * scaleFactor).toInt() * bytesPerSample
+                // --- stitchAudioWithCrossfade: use rounding when mapping samples to bytes ---
+                val startSample = kotlin.math.floor(segment.start * scaleFactor).toInt()
+                val endSample = kotlin.math.ceil(segment.end * scaleFactor).toInt()
+                val startByte = startSample * bytesPerSample
+                val endByte = endSample * bytesPerSample
                 val lengthInBytes = endByte - startByte
 
                 if (lengthInBytes <= 0 || startByte < 0 || endByte > originalBuffer.limit()) {

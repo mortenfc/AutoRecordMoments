@@ -23,10 +23,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioFormat
-import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.test.core.app.ApplicationProvider
@@ -115,8 +111,6 @@ class VADProcessorInstrumentedTest {
     val permissionRule: GrantPermissionRule = GrantPermissionRule.grant(
         android.Manifest.permission.RECORD_AUDIO,
         android.Manifest.permission.POST_NOTIFICATIONS,
-        android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
-        android.Manifest.permission.READ_EXTERNAL_STORAGE,
     )
 
     @Inject
