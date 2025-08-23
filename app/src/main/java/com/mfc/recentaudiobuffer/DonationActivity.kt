@@ -219,7 +219,20 @@ class DonationActivity : AppCompatActivity() {
 
             override fun onResponse(call: Call, response: Response) {
                 if (!response.isSuccessful) {
-                    logServerError(response.code)
+                    // Try to read the error message from the response body
+                    val errorBody = response.body?.string()
+                    var errorMessage = "Server error: ${response.code}" // Default message
+                    if (errorBody != null) {
+                        try {
+                            // The server sends { "error": "Some message" }
+                            val errorJson = JSONObject(errorBody)
+                            errorMessage = errorJson.getString("error")
+                        } catch (e: Exception) {
+                            Timber.e(e, "Failed to parse error response from server")
+                        }
+                    }
+                    // Pass the detailed message to our logger
+                    logServerError(errorMessage)
                     return
                 }
                 val responseBody = response.body.string()
@@ -279,9 +292,8 @@ class DonationActivity : AppCompatActivity() {
     }
 
     private fun showPaymentError(message: String, error: Throwable? = null) {
-        error?.let { Timber.e("$message : $it") }
-        Toast.makeText(this, "Payment failed: $message", Toast.LENGTH_SHORT)
-            .show()
+        Timber.e("$message : $error")
+        Toast.makeText(this, "Payment failed: $message", Toast.LENGTH_SHORT).show()
     }
 
     private fun logNetworkError(e: IOException) {
@@ -291,10 +303,10 @@ class DonationActivity : AppCompatActivity() {
         }
     }
 
-    private fun logServerError(code: Int) {
-        Timber.e("sendPaymentRequest: Server returned an error: $code")
+    private fun logServerError(message: String) {
+        Timber.e("sendPaymentRequest: Server returned an error: $message")
         runOnUiThread {
-            showPaymentError("Server error: $code")
+            showPaymentError(message)
         }
     }
 }
