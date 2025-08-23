@@ -107,14 +107,14 @@ export const createPaymentIntent = onRequest({secrets: [stripeLiveSecret, stripe
         const appIntegrity = tokenPayload.appIntegrity;
         const deviceIntegrity = tokenPayload.deviceIntegrity;
 
-        // Check the verdicts
-        if (!deviceIntegrity.deviceRecognitionVerdict.includes("MEETS_BASIC_INTEGRITY")) {
-          logger.error("Failed device integrity check.", {verdict: deviceIntegrity.deviceRecognitionVerdict});
+        // Check the verdicts safely
+        if (!deviceIntegrity?.deviceRecognitionVerdict?.includes("MEETS_BASIC_INTEGRITY")) {
+          logger.error("Failed device integrity check.", {verdict: deviceIntegrity?.deviceRecognitionVerdict || "FIELD_MISSING"});
           res.status(403).json({error: "Forbidden: Device integrity check failed."});
           return;
         }
-        if (appIntegrity.appRecognitionVerdict !== "PLAY_RECOGNIZED") {
-          logger.error("Failed app integrity check.", {verdict: appIntegrity.appRecognitionVerdict});
+        if (appIntegrity?.appRecognitionVerdict !== "PLAY_RECOGNIZED") {
+          logger.error("Failed app integrity check.", {verdict: appIntegrity?.appRecognitionVerdict || "FIELD_MISSING"});
           res.status(403).json({error: "Forbidden: App integrity check failed."});
           return;
         }

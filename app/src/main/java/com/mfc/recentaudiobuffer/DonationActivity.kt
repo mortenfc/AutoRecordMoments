@@ -280,7 +280,7 @@ class DonationActivity : AppCompatActivity() {
 
     private fun showPaymentError(message: String, error: Throwable? = null) {
         error?.let { Timber.e("$message : $it") }
-        Toast.makeText(this, "Payment failed: ${message}, ${error?.localizedMessage}", Toast.LENGTH_SHORT)
+        Toast.makeText(this, "Payment failed: $message", Toast.LENGTH_SHORT)
             .show()
     }
 
