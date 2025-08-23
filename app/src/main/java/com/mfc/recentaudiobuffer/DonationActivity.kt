@@ -19,6 +19,7 @@
 package com.mfc.recentaudiobuffer
 
 import android.os.Bundle
+import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -51,6 +52,7 @@ import org.joda.money.CurrencyUnit
 import org.json.JSONObject
 import timber.log.Timber
 import java.io.IOException
+import java.security.SecureRandom
 import java.util.Locale
 import javax.inject.Inject
 
@@ -146,20 +148,33 @@ class DonationActivity : AppCompatActivity() {
         // A nonce is a one-time-use value that your server should also verify to prevent replay attacks.
         // For simplicity, we'll just generate it here. For higher security, your server should generate it
         // and send it to the client first.
-        val nonce = (System.currentTimeMillis().toString() + amount.toString() + currency.code)
+        // 1. Generate 24 bytes of secure random data. This is more than the minimum 16.
+        val nonceBytes = ByteArray(24)
+        try {
+            SecureRandom().nextBytes(nonceBytes)
+        } catch (e: Exception) {
+            // Handle an error if the random number generator fails, though this is very rare.
+            Timber.e(e, "Failed to generate random nonce")
+            showPaymentError("Could not generate secure request")
+            return
+        }
+
+        // 2. Encode the bytes into a web-safe, no-wrap Base64 string as required by the API.
+        val nonce: String = Base64.encodeToString(nonceBytes, Base64.URL_SAFE or Base64.NO_WRAP)
 
         // Request an integrity token first
         integrityManager.requestIntegrityToken(
-            IntegrityTokenRequest.builder().setNonce(nonce).build()
+            IntegrityTokenRequest.builder().setNonce(nonce)
+                .setCloudProjectNumber(DonationConstants.CLOUD_PROJECT_NUMBER).build()
         ).addOnSuccessListener { tokenResponse ->
-                val integrityToken = tokenResponse.token()
-                sendPaymentRequestToServer(amount, currency, integrityToken)
-            }.addOnFailureListener { e ->
-                Timber.e(e, "Play Integrity token request failed")
-                runOnUiThread {
-                    showPaymentError("Device integrity check failed")
-                }
+            val integrityToken = tokenResponse.token()
+            sendPaymentRequestToServer(amount, currency, integrityToken)
+        }.addOnFailureListener { e ->
+            Timber.e(e, "Play Integrity token request failed")
+            runOnUiThread {
+                showPaymentError("Device integrity check failed")
             }
+        }
     }
 
     private fun setupPaymentMethods() {
@@ -265,7 +280,7 @@ class DonationActivity : AppCompatActivity() {
 
     private fun showPaymentError(message: String, error: Throwable? = null) {
         error?.let { Timber.e("$message : $it") }
-        Toast.makeText(this, "Payment failed: ${error?.localizedMessage}", Toast.LENGTH_SHORT)
+        Toast.makeText(this, "Payment failed: ${message}, ${error?.localizedMessage}", Toast.LENGTH_SHORT)
             .show()
     }
 
@@ -287,4 +302,6 @@ class DonationActivity : AppCompatActivity() {
 object DonationConstants {
     const val SERVER_URL = "https://us-central1-recent-audio-buffer.cloudfunctions.net"
     const val STRIPE_API_KEY = BuildConfig.STRIPE_API_KEY
+
+    const val CLOUD_PROJECT_NUMBER = 341850391115
 }

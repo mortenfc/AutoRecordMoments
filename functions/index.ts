@@ -102,15 +102,10 @@ export const createPaymentIntent = onRequest({secrets: [stripeLiveSecret, stripe
           throw new Error(`API call failed with status ${apiResponse.status}`);
         }
 
-        const responseJson: { tokenPayloadExternal: string } = await apiResponse.json();
+        const tokenPayload: PlayIntegrityPayload = await apiResponse.json();
 
-        // The payload is a JWT string. We need to decode the base64 part.
-        const decodedPayload: PlayIntegrityPayload = JSON.parse(
-          Buffer.from(responseJson.tokenPayloadExternal.split('.')[1], 'base64').toString()
-        );
-
-        const appIntegrity = decodedPayload.appIntegrity;
-        const deviceIntegrity = decodedPayload.deviceIntegrity;
+        const appIntegrity = tokenPayload.appIntegrity;
+        const deviceIntegrity = tokenPayload.deviceIntegrity;
 
         // Check the verdicts
         if (!deviceIntegrity.deviceRecognitionVerdict.includes("MEETS_BASIC_INTEGRITY")) {
