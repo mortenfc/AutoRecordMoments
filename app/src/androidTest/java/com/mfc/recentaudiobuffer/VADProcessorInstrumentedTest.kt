@@ -80,18 +80,9 @@ class VADProcessorInstrumentedTest {
         private var clearedOnce = false
     }
 
-    @Before
-    fun clearOnce() {
-        if (!clearedOnce) {
-            clearDebugFiles()
-            clearedOnce = true
-        }
-    }
-
     private fun clearDebugFiles() {
-        val appContext = ApplicationProvider.getApplicationContext<Context>()
         // Clear from app's external files
-        val debugDir = File(appContext.getExternalFilesDir(null), "debug")
+        val debugDir = File(context.getExternalFilesDir(null), "debug")
 
         if (debugDir.exists()) {
             debugDir.deleteRecursively()
@@ -135,6 +126,11 @@ class VADProcessorInstrumentedTest {
         context = InstrumentationRegistry.getInstrumentation().targetContext
         vadProcessor = VADProcessor(context)
         verifyTestAssets()
+
+        if (!clearedOnce) {
+            clearDebugFiles()
+            clearedOnce = true
+        }
     }
 
     // --- HELPER FUNCTIONS ---

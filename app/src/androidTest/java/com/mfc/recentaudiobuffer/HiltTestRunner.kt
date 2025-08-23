@@ -10,7 +10,7 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
+ * GNU Affero General Public License for more details
  *
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
@@ -29,32 +29,36 @@ import timber.log.Timber
 /**
  * A custom runner for Hilt tests. This runner is necessary to replace the
  * default Application class with Hilt's test application, enabling
- * dependency injection in instrumented tests.
+ * dependency injection in instrumented tests. It also sets up necessary
+ * components like Notification Channels for the test environment.
  */
-
 class HiltTestRunner : AndroidJUnitRunner() {
     override fun newApplication(
         cl: ClassLoader?, className: String?, context: Context?
     ): Application {
+        // Plant a Timber tree for logging during tests.
         Timber.plant(Timber.DebugTree())
-        // ✅ Use the context parameter to call the function
+        // Create all necessary notification channels before tests run.
         createNotificationChannels(context)
+        // Return the HiltTestApplication to enable dependency injection.
         return super.newApplication(cl, HiltTestApplication::class.java.name, context)
     }
 
     private fun createNotificationChannels(context: Context?) {
-        // Use a null-safe call in case the context is null
+        // Use a null-safe call in case the context is null for any reason.
         context?.let {
-            // Recording Channel
+            val manager = it.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // 1. Recording Channel (for MyBufferService)
             val recordingChannel = NotificationChannel(
-                "recording_channel",
-                "Recording Into RingBuffer",
+                MyBufferService.CHRONIC_NOTIFICATION_CHANNEL_ID,
+                "Background Recording in Ring-Buffer",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Channel for the persistent recording notification banner"
+                description = "Persistent notification for audio buffering controls."
             }
 
-            // Result Channel
+            // 2. Result Channel (for FileSavingService)
             val resultChannel = NotificationChannel(
                 FileSavingService.RESULT_NOTIFICATION_CHANNEL_ID,
                 FileSavingService.RESULT_NOTIFICATION_CHANNEL_NAME,
@@ -63,10 +67,29 @@ class HiltTestRunner : AndroidJUnitRunner() {
                 description = FileSavingService.RESULT_NOTIFICATION_CHANNEL_DESCRIPTION
             }
 
-            // ✅ Get the system service from the context
-            val manager = it.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            // 3. Boot Reminder Channel (for BootReceiver)
+            val bootReminderChannel = NotificationChannel(
+                BootReceiver.RESTART_REMINDER_CHANNEL_ID,
+                "Buffering Reminders",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Reminders related to audio buffering after a device restart."
+            }
+
+            // 4. Inactivity Reminder Channel (for InactivityCheckWorker)
+            val inactivityChannel = NotificationChannel(
+                InactivityCheckWorker.INACTIVITY_REMINDER_CHANNEL_ID,
+                "Inactivity Reminders",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "A friendly reminder to use the app after a period of inactivity."
+            }
+
+            // Create all the channels on the system.
             manager.createNotificationChannel(recordingChannel)
             manager.createNotificationChannel(resultChannel)
+            manager.createNotificationChannel(bootReminderChannel)
+            manager.createNotificationChannel(inactivityChannel)
         }
     }
 }

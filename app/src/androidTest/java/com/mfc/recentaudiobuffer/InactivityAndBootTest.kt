@@ -4,6 +4,7 @@
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
+
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
@@ -18,12 +19,16 @@
 
 package com.mfc.recentaudiobuffer
 
+import android.Manifest
+import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.rule.GrantPermissionRule
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
@@ -32,6 +37,9 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import com.google.common.truth.Truth.assertThat
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.spyk
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -45,9 +53,14 @@ import javax.inject.Inject
 @HiltAndroidTest
 class InactivityAndBootTest {
 
-    // Hilt rule must be the first rule defined.
-    @get:Rule
+    // Hilt rule must run before other rules, so we give it a lower order number.
+    @get:Rule(order = 0)
     var hiltRule = HiltAndroidRule(this)
+
+    // This rule grants the POST_NOTIFICATIONS permission required on Android 13+
+    // for the app to show notifications during the test.
+    @get:Rule(order = 1)
+    var grantPermissionRule: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
 
     // Inject dependencies from the Hilt graph.
     @Inject
@@ -58,6 +71,7 @@ class InactivityAndBootTest {
 
     private lateinit var context: Context
     private lateinit var uiDevice: UiDevice
+    private lateinit var notificationManager: NotificationManager
 
     // Timeout for waiting for notifications to appear.
     private val NOTIFICATION_TIMEOUT = 5000L
@@ -67,22 +81,15 @@ class InactivityAndBootTest {
         // Initialize Hilt components for the test.
         hiltRule.inject()
         context = ApplicationProvider.getApplicationContext()
+        notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         // Get an instance of UiDevice to interact with the device UI (like notifications).
         uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         // Ensure the screen is on for UI interactions.
         uiDevice.wakeUp()
-        // Clear any previous notifications to ensure a clean slate for each test.
-        uiDevice.pressHome() // Go to home screen to dismiss any dialogs
-        uiDevice.openNotification()
-        val clearAllButton = uiDevice.findObject(By.text("Clear all"))
-        if (clearAllButton != null) {
-            clearAllButton.click()
-        } else {
-            // Fallback if "Clear all" is not found
-            uiDevice.pressBack()
-        }
-        // Wait for the notification shade to close.
-        uiDevice.wait(Until.gone(By.text("Clear all")), NOTIFICATION_TIMEOUT)
+        // Go to the home screen to ensure a clean state.
+        uiDevice.pressHome()
+        // Programmatically clear all notifications for this app before each test.
+        notificationManager.cancelAll()
     }
 
     @After
@@ -92,6 +99,8 @@ class InactivityAndBootTest {
             settingsRepository.updateWasBufferingActive(false)
             settingsRepository.updateLastActiveTimestamp(0L)
         }
+        // Also clear any notifications that may have been posted during the test.
+        notificationManager.cancelAll()
     }
 
     // --- InactivityCheckWorker Tests ---
@@ -112,7 +121,7 @@ class InactivityAndBootTest {
         // Assert: Check that the worker completed successfully.
         assertThat(result).isEqualTo(ListenableWorker.Result.success())
 
-        // Assert: Verify that the inactivity notification is now visible.
+        // Assert: Verify that the inactivity notification is now visible using a robust wait.
         uiDevice.openNotification()
         val notificationTitle = "Feeling a Little Rusty?"
         val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
@@ -136,6 +145,7 @@ class InactivityAndBootTest {
         assertThat(result).isEqualTo(ListenableWorker.Result.success())
         uiDevice.openNotification()
         val notificationTitle = "Feeling a Little Rusty?"
+        // Verify that the notification does NOT appear within the timeout.
         val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
         assertThat(notificationVisible).isFalse()
     }
@@ -149,17 +159,19 @@ class InactivityAndBootTest {
         settingsRepository.updateWasBufferingActive(true) // Crucially, buffering was active.
         settingsRepository.updateLastActiveTimestamp(tenDaysAgo)
 
-        // Act: Simulate the boot completed event by sending the broadcast intent.
-        val intent = Intent(Intent.ACTION_BOOT_COMPLETED).apply {
-            // Set the package to ensure only our app's receiver gets it.
-            setPackage(context.packageName)
-        }
-        context.sendBroadcast(intent)
+        // Create a spy of the receiver to intercept the problematic goAsync() call.
+        val receiverSpy = spyk(BootReceiver())
+        // Stub goAsync() to return a relaxed mock, preventing the test from crashing.
+        val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
+        every { receiverSpy.goAsync() } returns mockPendingResult
+        // Manually provide the dependency to the spy.
+        receiverSpy.settingsRepository = settingsRepository
+        val intent = Intent(Intent.ACTION_BOOT_COMPLETED)
 
-        // Give the receiver time to process the broadcast and post the notification.
-        Thread.sleep(2000)
+        // Act: Call onReceive on the spy. The real logic will run, but goAsync is stubbed.
+        receiverSpy.onReceive(context, intent)
 
-        // Assert: Check if the correct notification was posted.
+        // Assert: Open the shade and wait for the notification to appear.
         uiDevice.openNotification()
         val notificationTitle = "Restart Buffering?"
         val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
@@ -173,16 +185,21 @@ class InactivityAndBootTest {
         settingsRepository.updateWasBufferingActive(false) // Buffering was off.
         settingsRepository.updateLastActiveTimestamp(tenDaysAgo)
 
-        // Act
-        val intent = Intent(Intent.ACTION_BOOT_COMPLETED).apply {
-            setPackage(context.packageName)
-        }
-        context.sendBroadcast(intent)
-        Thread.sleep(2000)
+        // Create a spy of the receiver to intercept the problematic goAsync() call.
+        val receiverSpy = spyk(BootReceiver())
+        val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
+        every { receiverSpy.goAsync() } returns mockPendingResult
+        // Manually provide the dependency to the spy.
+        receiverSpy.settingsRepository = settingsRepository
+        val intent = Intent(Intent.ACTION_BOOT_COMPLETED)
+
+        // Act: Call onReceive on the spy.
+        receiverSpy.onReceive(context, intent)
 
         // Assert
         uiDevice.openNotification()
         val notificationTitle = "Restart Buffering?"
+        // Verify that the notification does NOT appear within the timeout.
         val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
         assertThat(notificationVisible).isFalse()
     }
