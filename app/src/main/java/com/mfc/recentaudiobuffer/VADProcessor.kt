@@ -65,6 +65,9 @@ class VADProcessor @Inject constructor(
         private const val SPEECH_THRESHOLD = 0.2f
         private const val DEFAULT_CHUNK_SIZE_B = 4096
         const val USE_PARALLEL_PIPELINE = true
+
+        // Linear is safe for upsampling (ratio > 1.0) and mild downsampling (ratio >= 0.6)
+        // Use sinc only for strong downsampling (< 0.6) to prevent aliasing.
         const val LINEAR_VS_SINC_RATIO = 0.6
     }
 
@@ -137,7 +140,8 @@ class VADProcessor @Inject constructor(
         paddingMs: Int = DEFAULT_PADDING_MS,
         mergeGapMs: Int = DEFAULT_MERGE_GAP_MS,
         debugFileBaseName: String? = null,
-        onProgress: ((Float) -> Unit)? = null
+        onProgress: ((Float) -> Unit)? = null,
+        useParallel: Boolean = USE_PARALLEL_PIPELINE
     ): ByteArray {
         // Input validation
         require(paddingMs >= 0) { "paddingMs must be non-negative" }
@@ -150,10 +154,10 @@ class VADProcessor @Inject constructor(
             FileSavingUtils.saveDebugFile(context, "${it}_01_original.wav", fullAudioBuffer, config)
         }
 
-        val targetVADRate = when {
-            config.sampleRateHz >= VAD_MAX_SAMPLE_RATE -> VAD_MAX_SAMPLE_RATE
-            config.sampleRateHz >= VAD_MIN_SAMPLE_RATE -> VAD_MIN_SAMPLE_RATE
-            else -> config.sampleRateHz
+        val targetVADRate = if (config.sampleRateHz >= VAD_MAX_SAMPLE_RATE) {
+            VAD_MAX_SAMPLE_RATE
+        } else {
+            VAD_MIN_SAMPLE_RATE
         }
         val allTimestamps = mutableListOf<SpeechTimestamp>()
         var totalResampledSamples = 0
@@ -167,7 +171,7 @@ class VADProcessor @Inject constructor(
         var availableIndices: Channel<Int>? = null
         var dataChannel: Channel<Pair<Int, Int>>? = null
         try {
-            if (USE_PARALLEL_PIPELINE) {
+            if (useParallel) {
                 // Pool-based pipeline
                 val pool = Array(poolSize) { FloatArray(reusableResampledBufferSize) }
                 availableIndices = Channel(capacity = Channel.UNLIMITED)

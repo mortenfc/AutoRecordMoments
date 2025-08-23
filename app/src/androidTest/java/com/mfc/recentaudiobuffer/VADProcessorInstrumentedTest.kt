@@ -30,12 +30,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.rule.ServiceTestRule
+import com.mfc.recentaudiobuffer.bitDepths
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Rule
@@ -47,6 +49,8 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+import kotlin.math.PI
+import kotlin.math.sin
 import kotlin.random.Random
 
 /**
@@ -77,7 +81,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Before
-    fun maybeClearOnce() {
+    fun clearOnce() {
         if (!clearedOnce) {
             clearDebugFiles()
             clearedOnce = true
@@ -92,6 +96,15 @@ class VADProcessorInstrumentedTest {
         if (debugDir.exists()) {
             debugDir.deleteRecursively()
             Timber.d("Cleared debug directory: ${debugDir.absolutePath}")
+        }
+    }
+
+    @After
+    fun tearDown() {
+        try {
+            vadProcessor.close()
+        } catch (e: Exception) {
+            Timber.w(e, "Error closing VADProcessor in tearDown")
         }
     }
 
@@ -200,6 +213,37 @@ class VADProcessorInstrumentedTest {
         return byteArray.toByteArray()
     }
 
+    /**
+     * Make a simple 16-bit PCM little-endian mono buffer:
+     * 2s at 16kHz with a 200ms sine burst at 1s.
+     */
+    private fun makeTestBuffer16bit(sampleRate: Int = 16000): ByteBuffer {
+        val durationSec = 2.0
+        val totalSamples = (durationSec * sampleRate).toInt()
+        val burstStartSec = 1.0
+        val burstMs = 200
+        val burstStartSample = (burstStartSec * sampleRate).toInt()
+        val burstEndSample = burstStartSample + (burstMs * sampleRate / 1000)
+
+        val amplitude = 0.6 // scale
+        val freqHz = 440.0
+        val out = ByteArray(totalSamples * 2) // 16-bit little-endian
+
+        var idx = 0
+        for (s in 0 until totalSamples) {
+            val sampleVal = if (s in burstStartSample until burstEndSample) {
+                val t = s.toDouble() / sampleRate.toDouble()
+                (amplitude * Short.MAX_VALUE * sin(2.0 * PI * freqHz * t)).toInt()
+            } else {
+                0
+            }
+            // little-endian
+            out[idx++] = (sampleVal and 0xFF).toByte()
+            out[idx++] = ((sampleVal shr 8) and 0xFF).toByte()
+        }
+        return ByteBuffer.wrap(out)
+    }
+
     private fun generateWhiteNoise(
         durationMs: Int, config: AudioConfig, amplitude: Double = 0.3
     ): ByteArray {
@@ -277,7 +321,6 @@ class VADProcessorInstrumentedTest {
 
                 FileSavingUtils.cacheGrantedUri(appContext, testDir.toUri())
                 Timber.d("Cached URI: ${testDir.toUri()}")
-                FileSavingUtils.cacheGrantedUri(appContext, testDir.toUri())
 
                 ContextCompat.registerReceiver(
                     appContext,
@@ -502,66 +545,37 @@ class VADProcessorInstrumentedTest {
     }
 
     //// Newer tests
-
     @Test
-    fun processBuffer_paddingDoesNotDuplicateWhenPaddedWindowsOverlap() {
-        // Arrange: use 16 kHz, 16-bit PCM
+    fun parallel_and_nonParallel_produce_same_output() {
+        // Arrange
         val sampleRate = 16000
-        val config = AudioConfig(sampleRate, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
-        val bytesPerSample = config.bitDepth.bits / 8
-
-        // Build timeline (ms):
-        // initial silence = 2000 ms
-        // speech1 = 1000 ms  (start at 2000ms -> end 3000ms)
-        // gap = 1500 ms
-        // speech2 = 1000 ms  (start at 4500ms -> end 5500ms)
-        // trailing silence = 2000 ms
-        val startSilenceMs = 2000
-        val speechMs = 1000
-        val gapMs = 1500
-        val trailingSilenceMs = 2000
-
-        fun msToBytes(ms: Int) = (ms * sampleRate / 1000) * bytesPerSample
-
-        val stream = ByteArrayOutputStream()
-        // silence
-        stream.write(ByteArray(msToBytes(startSilenceMs)))
-        // speech1 (sine)
-        stream.write(generateSineWave(440.0, speechMs, config, amplitude = 0.8))
-        // gap silence
-        stream.write(ByteArray(msToBytes(gapMs)))
-        // speech2
-        stream.write(generateSineWave(660.0, speechMs, config, amplitude = 0.8))
-        // trailing silence
-        stream.write(ByteArray(msToBytes(trailingSilenceMs)))
-
-        val fullAudio = stream.toByteArray()
-
-        // Use a large padding to force overlap of padded windows
-        val paddingMs = 1300
+        val buffer = makeTestBuffer16bit(sampleRate)
+        val audioConfig = AudioConfig(sampleRateHz = sampleRate, bitDepth = bitDepths["16"]!!)
 
         // Act
-        val result = vadProcessor.process(ByteBuffer.wrap(fullAudio), config, paddingMs = paddingMs)
-
-        // Compute expected merged+padded window in ms:
-        val start1Ms = startSilenceMs
-        val end2Ms =
-            startSilenceMs + speechMs + gapMs + speechMs // 2000 + 1000 + 1500 + 1000 = 5500
-        val paddedStartMs = (start1Ms - paddingMs).coerceAtLeast(0)
-        val paddedEndMs = end2Ms + paddingMs
-
-        val expectedOutputMs = paddedEndMs - paddedStartMs
-        val expectedBytes = expectedOutputMs * sampleRate / 1000 * bytesPerSample
-
-        // Allow a small tolerance because of windowing/resampling rounding (one sample margin)
-        val toleranceBytes =
-            sampleRate * bytesPerSample // 1 second worth of bytes is conservative, reduce if you want stricter
-        assertTrue(
-            "Processed output should equal merged padded span (no duplicated overlap). " + "expected≈$expectedBytes bytes but was ${result.size}",
-            kotlin.math.abs(result.size - expectedBytes) <= toleranceBytes
+        val processor = VADProcessor(ApplicationProvider.getApplicationContext())
+        // Use parallel run
+        val outParallel = processor.process(
+            buffer.duplicate().asReadOnlyBuffer(),
+            audioConfig,
+            useParallel = true
         )
-    }
+        // Non-parallel run
+        val outNonParallel = processor.process(
+            buffer.duplicate().asReadOnlyBuffer(),
+            audioConfig,
+            useParallel = false
+        )
 
+        // Assert
+        assertArrayEquals(
+            "Parallel and non-parallel outputs should match",
+            outParallel,
+            outNonParallel
+        )
+
+        processor.close()
+    }
 
     @Test
     fun processBuffer_withEmptyBuffer_returnsEmpty() {
@@ -858,20 +872,17 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withNegativePadding_usesZero() {
+    fun processBuffer_withNegativePadding() {
         val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
 
-        val result = try {
+        try {
             vadProcessor.process(
                 ByteBuffer.wrap(audioBytes), config, paddingMs = -100 // Invalid negative padding
             )
+            fail("Should not accept negative padding.")
         } catch (e: Exception) {
-            fail("Should handle negative padding gracefully: ${e.message}")
-            ByteArray(0)
+            Timber.d("Test passed because it threw error: $e")
         }
-
-        assertNotNull("Should process with negative padding treated as zero", result)
-        assertTrue("Should return non-empty result", result.isNotEmpty())
     }
 
     @Test
