@@ -50,7 +50,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
@@ -125,6 +124,7 @@ fun DonationScreen(
         authError = authError,
         allowedPaymentMethodsJson = allowedPaymentMethodsJson,
         onCurrencySelected = { currency -> viewModel.updateSelectedCurrency(currency) },
+        onAmountChanged = { viewModel.onAmountChanged() },
         useLiveViewModel = true
     )
 }
@@ -140,6 +140,7 @@ private fun DonationScreenContent(
     authError: AuthError?,
     allowedPaymentMethodsJson: String,
     onCurrencySelected: (String) -> Unit,
+    onAmountChanged: () -> Unit,
     useLiveViewModel: Boolean
 ) {
     var currencyToUse = state.selectedCurrency
@@ -231,6 +232,7 @@ private fun DonationScreenContent(
                     allowedPaymentMethodsJson = allowedPaymentMethodsJson,
                     supportedCurrencies = state.rules.keys.toList(),
                     onCurrencySelected = onCurrencySelected,
+                    onAmountChanged = onAmountChanged,
                     isTablet = isTablet,
                     isLandscape = isLandscape
                 )
@@ -250,6 +252,7 @@ private fun DonationContent(
     allowedPaymentMethodsJson: String,
     supportedCurrencies: List<String>,
     onCurrencySelected: (String) -> Unit,
+    onAmountChanged: () -> Unit,
     isTablet: Boolean,
     isLandscape: Boolean
 ) {
@@ -278,7 +281,11 @@ private fun DonationContent(
         inputIconSize = 24.dp,
         paymentButtonHeight = 48.dp,
         cardPaymentButtonIconSize = 24.dp,
-        cardPaymentButtonTextStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium, color = Color.White)
+        cardPaymentButtonTextStyle = TextStyle(
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.White
+        )
     )
 
     val tabletSizing = DonationSizing(
@@ -293,7 +300,11 @@ private fun DonationContent(
         inputIconSize = 34.dp,
         paymentButtonHeight = 52.dp,
         cardPaymentButtonIconSize = 40.dp,
-        cardPaymentButtonTextStyle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.Medium, color = Color.White)
+        cardPaymentButtonTextStyle = TextStyle(
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.White
+        )
     )
 
     val sizing = if (isTablet) tabletSizing else phoneSizing
@@ -345,6 +356,7 @@ private fun DonationContent(
                     },
                     amount = amountString,
                     onAmountChange = { newAmountString ->
+                        onAmountChanged()
                         amountString = newAmountString
                         val amount = newAmountString.toDoubleOrNull()
                         val minMajorUnit = rule.min.toDouble() / rule.multiplier
@@ -395,6 +407,7 @@ private fun DonationContent(
                 },
                 amount = amountString,
                 onAmountChange = { newAmountString ->
+                    onAmountChanged()
                     amountString = newAmountString
                     val amount = newAmountString.toDoubleOrNull()
                     val minMajorUnit = rule.min.toDouble() / rule.multiplier
@@ -545,7 +558,7 @@ private fun DonationInput(
         if (isAmountError) {
             Text(
                 text = "Amount must be at least $minAmountFormatted",
-                color =colorResource(id = R.color.red),
+                color = colorResource(id = R.color.red),
                 style = supportingTextStyle,
                 modifier = Modifier.padding(start = 16.dp, top = 4.dp)
             )
@@ -679,7 +692,9 @@ private fun DonationScreenPhonePortraitPreview() {
             authError = null,
             allowedPaymentMethodsJson = "",
             onCurrencySelected = {},
-            useLiveViewModel = false)
+            onAmountChanged = {},
+            useLiveViewModel = false
+        )
     }
 }
 
@@ -700,7 +715,9 @@ private fun DonationScreenPhoneLandscapePreview() {
             authError = null,
             allowedPaymentMethodsJson = "",
             onCurrencySelected = {},
-            useLiveViewModel = false)
+            onAmountChanged = {},
+            useLiveViewModel = false
+        )
     }
 }
 
@@ -721,7 +738,9 @@ private fun DonationScreenTabletPortraitPreview() {
             authError = null,
             allowedPaymentMethodsJson = "",
             onCurrencySelected = {},
-            useLiveViewModel = false)
+            onAmountChanged = {},
+            useLiveViewModel = false
+        )
     }
 }
 
@@ -742,6 +761,8 @@ private fun DonationScreenTabletLandscapePreview() {
             authError = null,
             allowedPaymentMethodsJson = "",
             onCurrencySelected = {},
-            useLiveViewModel = false)
+            onAmountChanged = {},
+            useLiveViewModel = false
+        )
     }
 }

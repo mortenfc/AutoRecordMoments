@@ -63,8 +63,15 @@ class DonationViewModel : ViewModel() {
     fun updateSelectedCurrency(currencyCode: String) {
         // Only update if the currency is supported
         if (uiState.rules.containsKey(currencyCode)) {
+            // Invalidate the client secret when currency changes
+            clientSecret = null
             uiState = uiState.copy(selectedCurrency = CurrencyUnit.of(currencyCode))
         }
+    }
+
+    fun onAmountChanged() {
+        // Any time the user edits the amount, the previous payment intent is invalid.
+        clientSecret = null
     }
 
     fun setGooglePayReady(isReady: Boolean) {
