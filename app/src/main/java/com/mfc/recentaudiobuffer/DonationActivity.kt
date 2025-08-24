@@ -31,9 +31,8 @@ import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSiz
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
-import com.google.android.play.core.integrity.IntegrityManager
 import com.google.android.play.core.integrity.IntegrityManagerFactory
-import com.google.android.play.core.integrity.IntegrityTokenRequest
+import com.google.android.play.core.integrity.StandardIntegrityManager
 import com.stripe.android.PaymentConfiguration
 import com.stripe.android.googlepaylauncher.GooglePayEnvironment
 import com.stripe.android.googlepaylauncher.GooglePayLauncher
@@ -52,7 +51,8 @@ import org.joda.money.CurrencyUnit
 import org.json.JSONObject
 import timber.log.Timber
 import java.io.IOException
-import java.security.SecureRandom
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.Locale
 import javax.inject.Inject
 
@@ -61,10 +61,11 @@ class DonationActivity : AppCompatActivity() {
     @Inject
     lateinit var authenticationManager: AuthenticationManager
     private val httpClient = OkHttpClient()
-    private lateinit var integrityManager: IntegrityManager
     private val donationViewModel: DonationViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
 
+    // --- FIX: Store the provider as a member variable to be reused ---
+    private var integrityTokenProvider: StandardIntegrityManager.StandardIntegrityTokenProvider? = null
     private lateinit var googlePayLauncher: GooglePayLauncher
     private lateinit var stripePaymentSheet: PaymentSheet
 
@@ -73,7 +74,6 @@ class DonationActivity : AppCompatActivity() {
 
     // JSON configuration for the Google Pay button
     private val allowedPaymentMethodsJson: String by lazy {
-        // Using lazy to ensure stripeApiKey is initialized
         """
         [
           {
@@ -99,7 +99,8 @@ class DonationActivity : AppCompatActivity() {
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        integrityManager = IntegrityManagerFactory.create(applicationContext)
+        // --- FIX: Prepare the provider ahead of time, as recommended by Google ---
+        prepareIntegrityTokenProvider()
         setupPaymentMethods()
 
         setContent {
@@ -122,6 +123,65 @@ class DonationActivity : AppCompatActivity() {
         }
     }
 
+    private fun createRequestHash(amount: Int, currency: CurrencyUnit): String {
+        // The string format MUST be identical on the server.
+        val dataToHash = "$amount:${currency.code.uppercase()}"
+        val messageDigest = MessageDigest.getInstance("SHA-256")
+        val hashBytes = messageDigest.digest(dataToHash.toByteArray(StandardCharsets.UTF_8))
+
+        // The encoding MUST be web-safe, no-wrap, AND no-padding to match Node.js's 'base64url'.
+        return Base64.encodeToString(
+            hashBytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+        )
+    }
+
+    // --- FIX: Prepare the provider once and cache it for later use ---
+    private fun prepareIntegrityTokenProvider() {
+        val standardIntegrityManager = IntegrityManagerFactory.createStandard(applicationContext)
+        standardIntegrityManager.prepareIntegrityToken(
+            StandardIntegrityManager.PrepareIntegrityTokenRequest.builder()
+                .setCloudProjectNumber(DonationConstants.CLOUD_PROJECT_NUMBER).build()
+        ).addOnSuccessListener { provider ->
+            Timber.i("StandardIntegrityTokenProvider prepared successfully.")
+            this.integrityTokenProvider = provider
+        }.addOnFailureListener { e ->
+            Timber.e(e, "Error preparing StandardIntegrityTokenProvider.")
+            showPaymentError("Could not prepare integrity service.")
+        }
+    }
+
+    // --- FIX: Use the cached provider, which is now warmed up and ready ---
+    private fun onPayClick(amount: Int, currency: CurrencyUnit) {
+        if (donationViewModel.clientSecret != null) {
+            presentPaymentFlow()
+            return
+        }
+
+        val currentTokenProvider = this.integrityTokenProvider
+        if (currentTokenProvider == null) {
+            showPaymentError("Integrity service not ready. Please try again.")
+            // Attempt to re-prepare in case it failed the first time
+            prepareIntegrityTokenProvider()
+            return
+        }
+
+        val requestHash = createRequestHash(amount, currency)
+        Timber.d("Requesting token with hash: $requestHash")
+
+        // Request a token using the pre-warmed provider.
+        currentTokenProvider.request(
+            StandardIntegrityManager.StandardIntegrityTokenRequest.builder()
+                .setRequestHash(requestHash).build()
+        ).addOnSuccessListener { tokenResponse ->
+            val integrityToken = tokenResponse.token()
+            sendPaymentRequestToServer(amount, currency, integrityToken)
+        }.addOnFailureListener { e ->
+            Timber.e(e, "Standard token request failed")
+            showPaymentError("Device integrity check failed.")
+        }
+    }
+
+
     private fun presentPaymentFlow() {
         val showGooglePay =
             donationViewModel.uiState.isGooglePayReady && authenticationManager.authError.value == null
@@ -132,48 +192,6 @@ class DonationActivity : AppCompatActivity() {
             }
         } else {
             presentCardPaymentSheet()
-        }
-    }
-
-    private fun onPayClick(amount: Int, currency: CurrencyUnit) {
-        // Check if we already have a clientSecret from a previous rotation
-        if (donationViewModel.clientSecret != null) {
-            presentPaymentFlow()
-        } else {
-            fetchClientSecret(amount, currency)
-        }
-    }
-
-    private fun fetchClientSecret(amount: Int, currency: CurrencyUnit) {
-        // A nonce is a one-time-use value that your server should also verify to prevent replay attacks.
-        // For simplicity, we'll just generate it here. For higher security, your server should generate it
-        // and send it to the client first.
-        // 1. Generate 24 bytes of secure random data. This is more than the minimum 16.
-        val nonceBytes = ByteArray(24)
-        try {
-            SecureRandom().nextBytes(nonceBytes)
-        } catch (e: Exception) {
-            // Handle an error if the random number generator fails, though this is very rare.
-            Timber.e(e, "Failed to generate random nonce")
-            showPaymentError("Could not generate secure request")
-            return
-        }
-
-        // 2. Encode the bytes into a web-safe, no-wrap Base64 string as required by the API.
-        val nonce: String = Base64.encodeToString(nonceBytes, Base64.URL_SAFE or Base64.NO_WRAP)
-
-        // Request an integrity token first
-        integrityManager.requestIntegrityToken(
-            IntegrityTokenRequest.builder().setNonce(nonce)
-                .setCloudProjectNumber(DonationConstants.CLOUD_PROJECT_NUMBER).build()
-        ).addOnSuccessListener { tokenResponse ->
-            val integrityToken = tokenResponse.token()
-            sendPaymentRequestToServer(amount, currency, integrityToken)
-        }.addOnFailureListener { e ->
-            Timber.e(e, "Play Integrity token request failed")
-            runOnUiThread {
-                showPaymentError("Device integrity check failed")
-            }
         }
     }
 
@@ -204,7 +222,7 @@ class DonationActivity : AppCompatActivity() {
         val jsonBody = JSONObject().apply {
             put("amount", amount)
             put("environment", environment)
-            put("currency", currency.code)
+            put("currency", currency.code.uppercase())
             put("integrityToken", integrityToken)
             put("packageName", BuildConfig.APPLICATION_ID)
         }
@@ -219,19 +237,14 @@ class DonationActivity : AppCompatActivity() {
 
             override fun onResponse(call: Call, response: Response) {
                 if (!response.isSuccessful) {
-                    // Try to read the error message from the response body
-                    val errorBody = response.body?.string()
-                    var errorMessage = "Server error: ${response.code}" // Default message
-                    if (errorBody != null) {
-                        try {
-                            // The server sends { "error": "Some message" }
-                            val errorJson = JSONObject(errorBody)
-                            errorMessage = errorJson.getString("error")
-                        } catch (e: Exception) {
-                            Timber.e(e, "Failed to parse error response from server")
-                        }
+                    val errorBody = response.body.string()
+                    var errorMessage = "Server error: ${response.code}"
+                    try {
+                        val errorJson = JSONObject(errorBody)
+                        errorMessage = errorJson.getString("error")
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to parse error response from server")
                     }
-                    // Pass the detailed message to our logger
                     logServerError(errorMessage)
                     return
                 }
@@ -271,7 +284,6 @@ class DonationActivity : AppCompatActivity() {
                 "Card payment failed", paymentSheetResult.error
             )
         }
-
         donationViewModel.clientSecret = null
     }
 
@@ -283,17 +295,16 @@ class DonationActivity : AppCompatActivity() {
                 "Google Pay failed", result.error
             )
         }
-
         donationViewModel.clientSecret = null
     }
 
     private fun showPaymentResultToast(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     private fun showPaymentError(message: String, error: Throwable? = null) {
         Timber.e("$message : $error")
-        Toast.makeText(this, "Payment failed: $message", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Payment failed: $message", Toast.LENGTH_LONG).show()
     }
 
     private fun logNetworkError(e: IOException) {
