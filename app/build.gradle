@@ -17,8 +17,8 @@ android {
         applicationId = "com.mfc.recentaudiobuffer"
         minSdk = 32
         targetSdk = 36
-        versionCode = 51
-        versionName = "1.0.51"
+        versionCode = 52
+        versionName = "1.0.52"
 
         testInstrumentationRunner = "com.mfc.recentaudiobuffer.HiltTestRunner"
         testInstrumentationRunnerArguments.put('clearPackageData', 'false')
