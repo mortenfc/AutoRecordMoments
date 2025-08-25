@@ -54,12 +54,21 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DividerDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
@@ -85,8 +94,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.constraintlayout.compose.ConstraintLayout
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerControlView
+import com.mfc.recentaudiobuffer.speakeridentification.Speaker
 import java.util.concurrent.TimeUnit
 
 private data class LayoutSizing(
@@ -115,6 +126,8 @@ fun MainScreen(
     widthSizeClass: WindowWidthSizeClass,
     heightSizeClass: WindowHeightSizeClass,
     // System actions that the ViewModel can't/shouldn't handle
+    onSpeakerSelectionChanged: (String, Boolean) -> Unit,
+    onManageSpeakersClicked: () -> Unit,
     openLockScreenSettings: () -> Unit,
     openBatteryOptimizationSettings: () -> Unit,
     // Actions that need access to the service
@@ -140,11 +153,17 @@ fun MainScreen(
     val showPrivacyInfoDialog by viewModel.showPrivacyInfoDialog.collectAsState()
     val showLockscreenInfoDialog by viewModel.showLockscreenInfoDialog.collectAsState()
     val showBatteryInfoDialog by viewModel.showBatteryInfoDialog.collectAsState()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val speakers by viewModel.speakers.collectAsStateWithLifecycle()
 
     // The stateful composable passes all state and events down to the stateless one
     MainScreenContent(
         widthSizeClass = widthSizeClass,
         heightSizeClass = heightSizeClass,
+        settings = settings,
+        speakers = speakers,
+        onSpeakerSelectionChanged = onSpeakerSelectionChanged,
+        onManageSpeakersClicked = onManageSpeakersClicked,
         isRecordingFromService = isRecording,
         onStartBufferingClick = onStartBufferingClick,
         onStopBufferingClick = onStopBufferingClick,
@@ -202,6 +221,10 @@ fun MainScreen(
 private fun MainScreenContent(
     widthSizeClass: WindowWidthSizeClass,
     heightSizeClass: WindowHeightSizeClass,
+    settings: SettingsConfig,
+    speakers: List<Speaker>,
+    onSpeakerSelectionChanged: (String, Boolean) -> Unit,
+    onManageSpeakersClicked: () -> Unit,
     isRecordingFromService: Boolean,
     onStartBufferingClick: () -> Unit,
     onStopBufferingClick: () -> Unit,
@@ -366,7 +389,11 @@ private fun MainScreenContent(
                     mediaPlayerManager = mediaPlayerManager,
                     playerUiState = playerUiState,
                     onPlayerClose = onPlayerClose,
-                    useLiveViewModel = useLiveViewModel
+                    useLiveViewModel = useLiveViewModel,
+                    settings = settings,
+                    speakers = speakers,
+                    onSpeakerSelectionChanged = onSpeakerSelectionChanged,
+                    onManageSpeakersClicked = onManageSpeakersClicked,
                 )
             } else {
                 PortraitLayout(
@@ -387,7 +414,11 @@ private fun MainScreenContent(
                     onDonateClick = onDonateClick,
                     mediaPlayerManager = mediaPlayerManager,
                     playerUiState = playerUiState,
-                    onPlayerClose = onPlayerClose
+                    onPlayerClose = onPlayerClose,
+                    settings = settings,
+                    speakers = speakers,
+                    onSpeakerSelectionChanged = onSpeakerSelectionChanged,
+                    onManageSpeakersClicked = onManageSpeakersClicked,
                 )
             }
         }
@@ -465,7 +496,12 @@ private fun PortraitLayout(
     onDonateClick: () -> Unit,
     mediaPlayerManager: MediaPlayerManager,
     playerUiState: PlayerUiState,
-    onPlayerClose: () -> Unit
+    onPlayerClose: () -> Unit,
+
+    settings: SettingsConfig,
+    speakers: List<Speaker>,
+    onSpeakerSelectionChanged: (String, Boolean) -> Unit,
+    onManageSpeakersClicked: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -541,6 +577,13 @@ private fun PortraitLayout(
                 iconSize = sizing.secondaryActionIconSize,
                 textStyle = sizing.secondaryButtonTextStyle
             )
+            Spacer(Modifier.weight(0.12f))
+            SpeakerSelectionGroup(
+                settings = settings,
+                speakers = speakers,
+                onSelectionChanged = onSpeakerSelectionChanged,
+                onManageClicked = onManageSpeakersClicked
+            )
             Spacer(Modifier.weight(0.2f))
         }
 
@@ -592,7 +635,11 @@ private fun LandscapeLayout(
     mediaPlayerManager: MediaPlayerManager,
     playerUiState: PlayerUiState,
     onPlayerClose: () -> Unit,
-    useLiveViewModel: Boolean
+    useLiveViewModel: Boolean,
+    settings: SettingsConfig,
+    speakers: List<Speaker>,
+    onSpeakerSelectionChanged: (String, Boolean) -> Unit,
+    onManageSpeakersClicked: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxSize(),
@@ -686,6 +733,13 @@ private fun LandscapeLayout(
                             textStyle = sizing.secondaryButtonTextStyle
                         )
                     }
+                    Spacer(Modifier.height(sizing.secondaryActionSpacing))
+                    SpeakerSelectionGroup(
+                        settings = settings,
+                        speakers = speakers,
+                        onSelectionChanged = onSpeakerSelectionChanged,
+                        onManageClicked = onManageSpeakersClicked
+                    )
                 }
             }
             // Player appears at the bottom of the pane, outside the weighted content
@@ -836,6 +890,94 @@ fun SecondaryActionButton(
         Text(
             text = text, style = textStyle
         )
+    }
+}
+
+@kotlin.OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SpeakerSelectionGroup(
+    modifier: Modifier = Modifier,
+    settings: SettingsConfig,
+    speakers: List<Speaker>,
+    onSelectionChanged: (speakerId: String, isSelected: Boolean) -> Unit,
+    onManageClicked: () -> Unit
+) {
+    AnimatedVisibility(
+        visible = settings.isSpeakerAutoClipEnabled,
+        enter = fadeIn(animationSpec = tween(300)),
+        exit = fadeOut(animationSpec = tween(300))
+    ) {
+        Column(modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+
+            if (speakers.isEmpty()) {
+                Text(
+                    "No speakers have been enrolled yet.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = onManageClicked) {
+                    Text("Enroll Speakers Now")
+                }
+            } else {
+                var expanded by remember { mutableStateOf(false) }
+
+                val selectedSpeakersText = when {
+                    settings.selectedSpeakerIds.isEmpty() -> "Select speakers to record..."
+                    settings.selectedSpeakerIds.size == 1 -> speakers.find { it.id in settings.selectedSpeakerIds }?.name ?: "1 speaker selected"
+                    else -> "${settings.selectedSpeakerIds.size} speakers selected"
+                }
+
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = !expanded },
+                    modifier = modifier
+                ) {
+                    OutlinedTextField(
+                        value = selectedSpeakersText,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Auto-Record Speakers") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth()
+                    )
+
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        speakers.forEach { speaker ->
+                            val isSelected = settings.selectedSpeakerIds.contains(speaker.id)
+                            DropdownMenuItem(
+                                text = { Text(speaker.name) },
+                                onClick = {
+                                    onSelectionChanged(speaker.id, !isSelected)
+                                },
+                                leadingIcon = {
+                                    Checkbox(
+                                        checked = isSelected,
+                                        onCheckedChange = null // The entire item is clickable
+                                    )
+                                }
+                            )
+                        }
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            thickness = DividerDefaults.Thickness,
+                            color = DividerDefaults.color
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Manage Enrolled Speakers...") },
+                            onClick = {
+                                onManageClicked()
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1118,6 +1260,21 @@ fun PlayerControlViewContainer(
 
 // --- PREVIEWS ---
 
+private fun mockSpeakers(): List<Speaker> {    // Create a mock list of speakers for the preview
+    return listOf(
+        Speaker(id = "1", name = "Alice", embedding = floatArrayOf()),
+        Speaker(id = "2", name = "Bob", embedding = floatArrayOf()),
+        Speaker(id = "3", name = "Charlie", embedding = floatArrayOf())
+    )
+}
+
+private fun mockSettingsSelectedSpeakers(): SettingsConfig {
+    return SettingsConfig(
+        isSpeakerAutoClipEnabled = true,
+        selectedSpeakerIds = setOf("1", "3") // Pre-select Alice and Charlie
+    )
+}
+
 @OptIn(UnstableApi::class)
 @Preview(
     showBackground = true,
@@ -1130,6 +1287,10 @@ fun MainScreen9x16PhonePortraitPreview() {
         MainScreenContent(
             widthSizeClass = WindowWidthSizeClass.Compact,
             heightSizeClass = WindowHeightSizeClass.Medium,
+            settings = mockSettingsSelectedSpeakers(),
+            speakers = mockSpeakers(),
+            onSpeakerSelectionChanged = { _, _ -> },
+            onManageSpeakersClicked = {},
             isRecordingFromService = false,
             onStartBufferingClick = {},
             onStopBufferingClick = {},
@@ -1177,6 +1338,10 @@ fun MainScreenTypicalPhonePortraitPreview() {
         MainScreenContent(
             widthSizeClass = WindowWidthSizeClass.Compact,
             heightSizeClass = WindowHeightSizeClass.Medium,
+            settings = mockSettingsSelectedSpeakers(),
+            speakers = mockSpeakers(),
+            onSpeakerSelectionChanged = { _, _ -> },
+            onManageSpeakersClicked = {},
             isRecordingFromService = false,
             onStartBufferingClick = {},
             onStopBufferingClick = {},
@@ -1228,6 +1393,10 @@ fun MainScreenPhoneLandscapePreview() {
         MainScreenContent(
             widthSizeClass = WindowWidthSizeClass.Medium,
             heightSizeClass = WindowHeightSizeClass.Compact,
+            settings = mockSettingsSelectedSpeakers(),
+            speakers = mockSpeakers(),
+            onSpeakerSelectionChanged = { _, _ -> },
+            onManageSpeakersClicked = {},
             isRecordingFromService = false,
             onStartBufferingClick = {},
             onStopBufferingClick = {},
@@ -1279,6 +1448,10 @@ fun MainScreenTabletPortraitPreview() {
         MainScreenContent(
             widthSizeClass = WindowWidthSizeClass.Medium,
             heightSizeClass = WindowHeightSizeClass.Expanded,
+            settings = mockSettingsSelectedSpeakers(),
+            speakers = mockSpeakers(),
+            onSpeakerSelectionChanged = { _, _ -> },
+            onManageSpeakersClicked = {},
             isRecordingFromService = true,
             onStartBufferingClick = {},
             onStopBufferingClick = {},
@@ -1330,6 +1503,10 @@ fun MainScreenTabletLandscapePreview() {
         MainScreenContent(
             widthSizeClass = WindowWidthSizeClass.Expanded,
             heightSizeClass = WindowHeightSizeClass.Medium,
+            settings = mockSettingsSelectedSpeakers(),
+            speakers = mockSpeakers(),
+            onSpeakerSelectionChanged = { _, _ -> },
+            onManageSpeakersClicked = {},
             isRecordingFromService = true,
             onStartBufferingClick = {},
             onStopBufferingClick = {},
