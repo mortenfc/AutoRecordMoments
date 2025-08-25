@@ -6,14 +6,17 @@
 -keep class com.mfc.recentaudiobuffer.MyBufferService { *; }
 -keep class com.mfc.recentaudiobuffer.NotificationActionReceiver { *; }
 -keep class com.mfc.recentaudiobuffer.FileSavingService { *; }
+# Keep the new activities for the speaker identification feature.
+-keep class com.mfc.recentaudiobuffer.speakeridentification.EnrollmentActivity { *; }
+-keep class com.mfc.recentaudiobuffer.speakeridentification.SpeakerManagementActivity { *; }
+# Keep all data classes in the speakeridentification package.
+# This is important for Room and any JSON serialization.
+-keep class com.mfc.recentaudiobuffer.speakeridentification.Speaker { *; }
 
 # Keep all classes in the ONNX Runtime package.
 # This prevents ProGuard/R8 from removing them and causing JNI crashes.
 -keep class ai.onnxruntime.** { *; }
 -keep public class * extends ai.onnxruntime.OnnxValue
-
-# Keep all classes in the TarsosDSP package as a precaution.
--keep class be.tarsos.dsp.** { *; }
 
 # Suppress warnings for classes that may not exist on all API levels.
 -dontwarn android.media.LoudnessCodecController**

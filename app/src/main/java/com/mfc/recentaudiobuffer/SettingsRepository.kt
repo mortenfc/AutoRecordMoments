@@ -30,6 +30,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentReference
@@ -38,7 +39,9 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import kotlinx.parcelize.Parcelize
 import timber.log.Timber
@@ -118,6 +121,8 @@ data class SettingsConfig(
     var bitDepth: BitDepth = bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
     var areAdsEnabled: Boolean = true,
     var isAiAutoClipEnabled: Boolean = true,
+    var isSpeakerAutoClipEnabled: Boolean = false,
+    var selectedSpeakerIds: Set<String> = emptySet(),
     var hasShownLockscreenInfo: Boolean = false,
     var wasBufferingActive: Boolean = false,
     var lastActiveTimestamp: Long = 0L,
@@ -150,8 +155,9 @@ class SettingsRepository @Inject constructor(
         val BIT_DEPTH = stringPreferencesKey("bit_depth")
         val ARE_ADS_ENABLED = booleanPreferencesKey("are_ads_enabled")
         val IS_AI_AUTO_CLIP_ENABLED = booleanPreferencesKey("is_ai_auto_clip_enabled")
+        val IS_SPEAKER_AUTO_CLIP_ENABLED = booleanPreferencesKey("is_speaker_auto_clip_enabled")
+        val SELECTED_SPEAKER_IDS = stringSetPreferencesKey("selected_speaker_ids")
         val HAS_SHOWN_LOCKSCREEN_INFO = booleanPreferencesKey("has_shown_lockscreen_info")
-        // New keys for boot notification logic
         val WAS_BUFFERING_ACTIVE = booleanPreferencesKey("was_buffering_active")
         val LAST_ACTIVE_TIMESTAMP = longPreferencesKey("last_active_timestamp")
     }
@@ -206,7 +212,18 @@ class SettingsRepository @Inject constructor(
         updateSetting(
             PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED, isAiAutoClipEnabled, "isAiAutoClipEnabled"
         )
+    }
 
+    suspend fun updateIsSpeakerAutoClipEnabled(isEnabled: Boolean) {
+        updateSetting(
+            PreferencesKeys.IS_SPEAKER_AUTO_CLIP_ENABLED,
+            isEnabled,
+            "isSpeakerAutoClipEnabled"
+        )
+    }
+
+    suspend fun updateSelectedSpeakerIds(speakerIds: Set<String>) {
+        updateSetting(PreferencesKeys.SELECTED_SPEAKER_IDS, speakerIds, "selectedSpeakerIds")
     }
 
     suspend fun updateHasShownLockscreenInfo(shown: Boolean) {
@@ -230,6 +247,31 @@ class SettingsRepository @Inject constructor(
 
     suspend fun getSettingsConfig(): SettingsConfig = loadSettingsFromDatastore()
 
+    /**
+     * Provides a reactive Flow of the current settings configuration.
+     * The UI layer should collect this to automatically update when settings change.
+     */
+    fun getSettingsConfigFlow(): Flow<SettingsConfig> {
+        return dataStore.data.map { prefs ->
+            SettingsConfig(
+                sampleRateHz = prefs[PreferencesKeys.SAMPLE_RATE_HZ] ?: DEFAULT_SAMPLE_RATE,
+                bufferTimeLengthS = prefs[PreferencesKeys.BUFFER_TIME_LENGTH_S]
+                    ?: DEFAULT_BUFFER_TIME_LENGTH_S,
+                bitDepth = BitDepth.fromString(
+                    prefs[PreferencesKeys.BIT_DEPTH] ?: DEFAULT_BIT_DEPTH_KEY
+                ) ?: bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
+                areAdsEnabled = prefs[PreferencesKeys.ARE_ADS_ENABLED] ?: true,
+                isAiAutoClipEnabled = prefs[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] ?: true,
+                isSpeakerAutoClipEnabled = prefs[PreferencesKeys.IS_SPEAKER_AUTO_CLIP_ENABLED]
+                    ?: false,
+                selectedSpeakerIds = prefs[PreferencesKeys.SELECTED_SPEAKER_IDS] ?: emptySet(),
+                hasShownLockscreenInfo = prefs[PreferencesKeys.HAS_SHOWN_LOCKSCREEN_INFO] ?: false,
+                wasBufferingActive = prefs[PreferencesKeys.WAS_BUFFERING_ACTIVE] ?: false,
+                lastActiveTimestamp = prefs[PreferencesKeys.LAST_ACTIVE_TIMESTAMP] ?: 0L
+            )
+        }
+    }
+
     private fun DocumentSnapshot.toAudioConfig(): AudioConfig {
         val sampleRate = getLong("sampleRateHz")?.toInt() ?: DEFAULT_SAMPLE_RATE
         val bufferTimeLength = getLong("bufferTimeLengthS")?.toInt() ?: DEFAULT_BUFFER_TIME_LENGTH_S
@@ -242,6 +284,10 @@ class SettingsRepository @Inject constructor(
         val audioConfig = this.toAudioConfig()
         val areAdsEnabled = getBoolean("areAdsEnabled") ?: true
         val isAiAutoClipEnabled = getBoolean("isAiAutoClipEnabled") ?: true
+        val isSpeakerAutoClipEnabled = getBoolean("isSpeakerAutoClipEnabled") ?: false
+        // Firestore stores lists, not sets. Read as List and convert.
+        @Suppress("UNCHECKED_CAST")
+        val selectedSpeakerIds = (get("selectedSpeakerIds") as? List<String>)?.toSet() ?: emptySet()
         val hasShownLockscreenInfo = getBoolean("hasShownLockscreenInfo") ?: false
         val wasBufferingActive = getBoolean("wasBufferingActive") ?: false
         val lastActiveTimestamp = getLong("lastActiveTimestamp") ?: 0L
@@ -251,6 +297,8 @@ class SettingsRepository @Inject constructor(
             bitDepth = audioConfig.bitDepth,
             areAdsEnabled = areAdsEnabled,
             isAiAutoClipEnabled = isAiAutoClipEnabled,
+            isSpeakerAutoClipEnabled = isSpeakerAutoClipEnabled,
+            selectedSpeakerIds = selectedSpeakerIds,
             hasShownLockscreenInfo = hasShownLockscreenInfo,
             wasBufferingActive = wasBufferingActive,
             lastActiveTimestamp = lastActiveTimestamp
@@ -268,6 +316,8 @@ class SettingsRepository @Inject constructor(
             ) ?: bitDepths[DEFAULT_BIT_DEPTH_KEY]!!,
             areAdsEnabled = prefs[PreferencesKeys.ARE_ADS_ENABLED] ?: true,
             isAiAutoClipEnabled = prefs[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] ?: true,
+            isSpeakerAutoClipEnabled = prefs[PreferencesKeys.IS_SPEAKER_AUTO_CLIP_ENABLED] ?: false,
+            selectedSpeakerIds = prefs[PreferencesKeys.SELECTED_SPEAKER_IDS] ?: emptySet(),
             hasShownLockscreenInfo = prefs[PreferencesKeys.HAS_SHOWN_LOCKSCREEN_INFO] ?: false,
             wasBufferingActive = prefs[PreferencesKeys.WAS_BUFFERING_ACTIVE] ?: false,
             lastActiveTimestamp = prefs[PreferencesKeys.LAST_ACTIVE_TIMESTAMP] ?: 0L
@@ -304,6 +354,10 @@ class SettingsRepository @Inject constructor(
                     preferences[PreferencesKeys.ARE_ADS_ENABLED] = settingsToCache.areAdsEnabled
                     preferences[PreferencesKeys.IS_AI_AUTO_CLIP_ENABLED] =
                         settingsToCache.isAiAutoClipEnabled
+                    preferences[PreferencesKeys.IS_SPEAKER_AUTO_CLIP_ENABLED] =
+                        settingsToCache.isSpeakerAutoClipEnabled
+                    preferences[PreferencesKeys.SELECTED_SPEAKER_IDS] =
+                        settingsToCache.selectedSpeakerIds
                     preferences[PreferencesKeys.HAS_SHOWN_LOCKSCREEN_INFO] =
                         settingsToCache.hasShownLockscreenInfo
                     preferences[PreferencesKeys.WAS_BUFFERING_ACTIVE] =
@@ -342,6 +396,8 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
         private set
     var isAiAutoClipEnabled = mutableStateOf(initialConfig.isAiAutoClipEnabled)
         private set
+    var isSpeakerAutoClipEnabled = mutableStateOf(initialConfig.isSpeakerAutoClipEnabled)
+        private set
 
     fun updateBufferTimeLengthTemp(newBufferTimeLength: Int) {
         Timber.d("updateBufferTimeLengthTemp to $newBufferTimeLength")
@@ -361,6 +417,11 @@ class SettingsScreenState(initialConfig: SettingsConfig) {
     fun updateIsAiAutoClipEnabled(newIsAiAutoClipEnabled: Boolean) {
         Timber.d("updateIsAiAutoClipEnabled to $newIsAiAutoClipEnabled")
         isAiAutoClipEnabled.value = newIsAiAutoClipEnabled
+    }
+
+    fun updateIsSpeakerAutoClipEnabled(isAutoSpeakerIdentificationSaving: Boolean) {
+        Timber.d("updateIsSpeakerAutoClipEnabled to $isAutoSpeakerIdentificationSaving")
+        isSpeakerAutoClipEnabled.value = isAutoSpeakerIdentificationSaving
     }
 
     fun uploadSettingsToAppView(settingsViewModel: SettingsViewModel): List<Job> {

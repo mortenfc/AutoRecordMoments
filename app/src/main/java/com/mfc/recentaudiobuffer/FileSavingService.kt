@@ -1,20 +1,3 @@
-/*
- * Auto Record Moments
- * Copyright (C) 2025 Morten Fjord Christensen
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
 
 package com.mfc.recentaudiobuffer
 
@@ -32,11 +15,6 @@ import timber.log.Timber
 import java.io.File
 import java.io.IOException
 
-/**
- * A service dedicated to writing a file to its final destination.
- * It receives a Uri to a temporary file in the app's cache and a destination directory Uri.
- * It streams the data, posts a result notification, and cleans up the temporary file.
- */
 class FileSavingService : Service() {
     companion object {
         private const val RESULT_NOTIFICATION_ID = 2
@@ -44,6 +22,9 @@ class FileSavingService : Service() {
         const val RESULT_NOTIFICATION_CHANNEL_NAME = "Result of an operation"
         const val RESULT_NOTIFICATION_CHANNEL_DESCRIPTION = "A user message as a notification"
         const val ACTION_OPEN_FILE = "com.mfc.recentaudiobuffer.ACTION_OPEN_FILE"
+
+        // NEW: Action for silent auto-saves
+        const val ACTION_SILENT_SAVE_COMPLETE = "com.mfc.recentaudiobuffer.ACTION_SILENT_SAVE_COMPLETE"
 
         // Intent Extras
         const val EXTRA_TEMP_FILE_URI = "com.mfc.recentaudiobuffer.EXTRA_TEMP_FILE_URI"
@@ -54,7 +35,6 @@ class FileSavingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Extract data from the intent
         val tempFileUri = intent?.getParcelableExtra<Uri>(EXTRA_TEMP_FILE_URI)
         val destDirUri = intent?.getParcelableExtra<Uri>(EXTRA_DEST_DIR_URI)
         val destFileName = intent?.getStringExtra(EXTRA_DEST_FILENAME)
@@ -62,79 +42,81 @@ class FileSavingService : Service() {
 
         if (tempFileUri == null || destDirUri == null || destFileName == null || audioConfig == null) {
             Timber.e("FileSavingService started with incomplete data. Aborting.")
-            postResultNotification(
-                success = false,
-                title = "ERROR: Save Failed",
-                text = "Could not save audio due to an internal error.",
-                savedFileUri = null
-            )
+            // For silent saves, we don't want to post a failure notification that might spam the user.
+            if (intent?.action != ACTION_SILENT_SAVE_COMPLETE) {
+                postResultNotification(
+                    success = false,
+                    title = "ERROR: Save Failed",
+                    text = "Could not save audio due to an internal error.",
+                    savedFileUri = null
+                )
+            }
             stopSelf()
             return START_NOT_STICKY
         }
 
-        // Perform the file operation
         val savedFileUri = saveFile(tempFileUri, destDirUri, destFileName, audioConfig)
 
-        // Post the result notification
-        if (savedFileUri != null) {
-            // Tell the buffer service to reset itself
-            Timber.d("Sent ACTION_ON_SAVE_SUCCESS intent after file saving success!")
-            val resetIntent = Intent(this, MyBufferService::class.java).apply {
-                action = MyBufferService.ACTION_ON_SAVE_SUCCESS
+        when (intent.action) {
+            ACTION_SILENT_SAVE_COMPLETE -> {
+                if (savedFileUri != null) {
+                    Timber.d("Silent save successful for $destFileName")
+                    // Optionally, post a less intrusive notification for auto-saves
+                    postResultNotification(
+                        success = true,
+                        title = "Auto-Saved Recording",
+                        text = "$destFileName was saved automatically.",
+                        savedFileUri = savedFileUri
+                    )
+                } else {
+                    Timber.e("Silent save failed for $destFileName")
+                    // We typically don't notify the user of a failed auto-save to avoid spam.
+                }
             }
-            startService(resetIntent)
-
-            postResultNotification(
-                success = true,
-                title = "Audio Saved",
-                text = "The audio has been successfully saved.",
-                savedFileUri = savedFileUri
-            )
-        } else {
-            Timber.d("Sent ACTION_ON_SAVE_FAIL intent after file saving fail!")
-            val resetIntent = Intent(this, MyBufferService::class.java).apply {
-                action = MyBufferService.ACTION_ON_SAVE_FAIL
+            else -> { // Default behavior for manual saves
+                if (savedFileUri != null) {
+                    val resetIntent = Intent(this, MyBufferService::class.java).apply {
+                        action = MyBufferService.ACTION_ON_SAVE_SUCCESS
+                    }
+                    startService(resetIntent)
+                    postResultNotification(
+                        success = true,
+                        title = "Audio Saved",
+                        text = "The audio has been successfully saved.",
+                        savedFileUri = savedFileUri
+                    )
+                } else {
+                    val resetIntent = Intent(this, MyBufferService::class.java).apply {
+                        action = MyBufferService.ACTION_ON_SAVE_FAIL
+                    }
+                    startService(resetIntent)
+                    postResultNotification(
+                        success = false,
+                        title = "ERROR: Save Failed",
+                        text = "Could not write the audio file to the destination.",
+                        savedFileUri = null
+                    )
+                }
             }
-            startService(resetIntent)
-
-            postResultNotification(
-                success = false,
-                title = "ERROR: Save Failed",
-                text = "Could not write the audio file to the destination.",
-                savedFileUri = null
-            )
         }
 
-        // Clean up the temporary file
         cleanupTempFile(tempFileUri)
-
         stopSelf()
         return START_NOT_STICKY
     }
 
-    /**
-     * Streams data from the temporary file to the final destination file.
-     * @return The Uri of the successfully saved file, or null on failure.
-     */
     private fun saveFile(
         tempFileUri: Uri,
         destDirUri: Uri,
         fileName: String,
         config: AudioConfig
     ): Uri? {
-        val destDir = if (destDirUri.scheme == "file") {
-            // For testing with the local cache directory (file://)
-            DocumentFile.fromFile(File(destDirUri.path!!))
-        } else {
-            // For production with a user-selected directory (content://)
-            DocumentFile.fromTreeUri(this, destDirUri)
-        }
+        val destDir = DocumentFile.fromTreeUri(this, destDirUri)
         if (destDir == null || !destDir.exists() || !destDir.isDirectory) {
             Timber.e("Destination directory is invalid or doesn't exist: $destDirUri")
             return null
         }
 
-        // Overwrite if exists, as MainActivity should have already prompted the user.
         destDir.findFile(fileName)?.delete()
 
         val finalFile = destDir.createFile("audio/wav", fileName)
@@ -144,16 +126,10 @@ class FileSavingService : Service() {
         }
 
         try {
-            // Open streams using 'use' for automatic closing
             contentResolver.openInputStream(tempFileUri)?.use { inputStream ->
                 contentResolver.openOutputStream(finalFile.uri)?.use { outputStream ->
-                    // Get the size of the raw audio data from the temp file
                     val audioDataSize = inputStream.available()
-
-                    // Write the proper WAV header first
                     WavUtils.writeWavHeader(outputStream, audioDataSize, config)
-
-                    // Copy the raw audio data from the temp file to the final file
                     inputStream.copyTo(outputStream)
                     Timber.d("File saved successfully to ${finalFile.uri}")
                     return finalFile.uri
@@ -161,22 +137,16 @@ class FileSavingService : Service() {
             }
         } catch (e: IOException) {
             Timber.e(e, "Failed to stream data to final destination.")
-            // Clean up partially created file on error
             finalFile.delete()
         }
         return null
     }
 
-    /**
-     * Deletes the temporary file from the cache.
-     */
     private fun cleanupTempFile(tempFileUri: Uri) {
         try {
             val tempFile = File(tempFileUri.path!!)
             if (tempFile.exists()) {
-                if (tempFile.delete()) {
-                    Timber.d("Temporary file deleted: $tempFileUri")
-                } else {
+                if (!tempFile.delete()) {
                     Timber.w("Failed to delete temporary file: $tempFileUri")
                 }
             }
@@ -185,9 +155,6 @@ class FileSavingService : Service() {
         }
     }
 
-    /**
-     * Creates and displays a notification with the result of the save operation.
-     */
     @OptIn(UnstableApi::class)
     private fun postResultNotification(
         success: Boolean,
@@ -195,9 +162,7 @@ class FileSavingService : Service() {
         text: String,
         savedFileUri: Uri?
     ) {
-        val notificationManager =
-            getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         val notificationBuilder =
             NotificationCompat.Builder(this, RESULT_NOTIFICATION_CHANNEL_ID)
                 .setContentTitle(title)
@@ -207,7 +172,6 @@ class FileSavingService : Service() {
                 .setTimeoutAfter(1000 * 60) // 1 minute
 
         if (success && savedFileUri != null) {
-            // Create an intent to open MainActivity when the notification is tapped
             val mainActivityIntent = Intent(this, MainActivity::class.java).apply {
                 action = ACTION_OPEN_FILE
                 putExtra(EXTRA_SAVED_FILE_URI, savedFileUri)
@@ -215,14 +179,16 @@ class FileSavingService : Service() {
             }
             val pendingIntent = PendingIntent.getActivity(
                 this,
-                0,
+                savedFileUri.hashCode(), // Use a unique request code for each file
                 mainActivityIntent,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
             notificationBuilder.setContentIntent(pendingIntent)
         }
 
-        notificationManager.notify(RESULT_NOTIFICATION_ID, notificationBuilder.build())
+        // Use a unique notification ID for each file to prevent them from overwriting each other
+        val notificationId = savedFileUri?.hashCode() ?: RESULT_NOTIFICATION_ID
+        notificationManager.notify(notificationId, notificationBuilder.build())
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

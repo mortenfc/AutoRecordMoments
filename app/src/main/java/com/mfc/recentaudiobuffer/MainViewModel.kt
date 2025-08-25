@@ -23,11 +23,16 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mfc.recentaudiobuffer.speakeridentification.DiarizationProcessor
+import com.mfc.recentaudiobuffer.speakeridentification.Speaker
+import com.mfc.recentaudiobuffer.speakeridentification.SpeakerRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -87,7 +92,9 @@ sealed class UiEvent {
 class MainViewModel @Inject constructor(
     private val application: Application,
     private val vadProcessor: VADProcessor,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val speakerRepository: SpeakerRepository,
+    private val diarizationProcessor: DiarizationProcessor
 ) : ViewModel() {
 
     // --- UI State Management ---
@@ -126,6 +133,12 @@ class MainViewModel @Inject constructor(
     private val _pendingQuickSave = MutableStateFlow(false)
     val pendingQuickSave = _pendingQuickSave.asStateFlow()
 
+    val settings: StateFlow<SettingsConfig> = settingsRepository.getSettingsConfigFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsConfig())
+
+    val speakers: StateFlow<List<Speaker>> = speakerRepository.getAllSpeakers()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val mediaPlayerManager: MediaPlayerManager = MediaPlayerManager(application) { uri, fileName ->
         viewModelScope.launch {
             _playerUiState.update {
@@ -137,28 +150,82 @@ class MainViewModel @Inject constructor(
     }
 
     // --- Setters for UI State ---
-    fun setServiceError(error: String?) { _serviceError.value = error }
-    fun setIsRecording(recording: Boolean) { _isRecording.value = recording }
-    fun setShowRecentFilesDialog(show: Boolean) { _showRecentFilesDialog.value = show }
-    fun setShowTrimFileDialog(show: Boolean) { _showTrimFileDialog.value = show }
-    fun setShowDirectoryPermissionDialog(show: Boolean) { _showDirectoryPermissionDialog.value = show }
-    fun setShowLockscreenInfoDialog(show: Boolean) { _showLockscreenInfoDialog.value = show }
-    fun setHasDonated(donated: Boolean) { _hasDonated.value = donated }
-    fun setWasStartRecordingButtonPress(pressed: Boolean) { _wasStartRecordingButtonPress.value = pressed }
-    fun setIsRewardActive(active: Boolean) { _isRewardActive.value = active }
-    fun setRewardExpiryTimestamp(timestamp: Long) { _rewardExpiryTimestamp.value = timestamp }
-    fun setShowPrivacyInfoDialog(value: Boolean) { _showPrivacyInfoDialog.value = value }
-    fun setShowBatteryInfoDialog(value: Boolean) { _showBatteryInfoDialog.value = value }
-    fun setLoading(loading: Boolean) { _isLoading.value = loading }
-    fun onDismissSaveDialog() { _saveDialogState.value = null }
+    fun setServiceError(error: String?) {
+        _serviceError.value = error
+    }
+
+    fun setIsRecording(recording: Boolean) {
+        _isRecording.value = recording
+    }
+
+    fun setShowRecentFilesDialog(show: Boolean) {
+        _showRecentFilesDialog.value = show
+    }
+
+    fun setShowTrimFileDialog(show: Boolean) {
+        _showTrimFileDialog.value = show
+    }
+
+    fun setShowDirectoryPermissionDialog(show: Boolean) {
+        _showDirectoryPermissionDialog.value = show
+    }
+
+    fun setShowLockscreenInfoDialog(show: Boolean) {
+        _showLockscreenInfoDialog.value = show
+    }
+
+    fun setHasDonated(donated: Boolean) {
+        _hasDonated.value = donated
+    }
+
+    fun setWasStartRecordingButtonPress(pressed: Boolean) {
+        _wasStartRecordingButtonPress.value = pressed
+    }
+
+    fun setIsRewardActive(active: Boolean) {
+        _isRewardActive.value = active
+    }
+
+    fun setRewardExpiryTimestamp(timestamp: Long) {
+        _rewardExpiryTimestamp.value = timestamp
+    }
+
+    fun setShowPrivacyInfoDialog(value: Boolean) {
+        _showPrivacyInfoDialog.value = value
+    }
+
+    fun setShowBatteryInfoDialog(value: Boolean) {
+        _showBatteryInfoDialog.value = value
+    }
+
+    fun setLoading(loading: Boolean) {
+        _isLoading.value = loading
+    }
+
+    fun onDismissSaveDialog() {
+        _saveDialogState.value = null
+    }
+
     fun onPlayerClose() {
         mediaPlayerManager.closeMediaPlayer()
         _playerUiState.update { it.copy(isVisible = false) }
     }
-    fun setUpMediaPlayer(uri: Uri) { mediaPlayerManager.setUpMediaPlayer(uri) }
-    fun onEventHandled() { _uiEvents.value = null }
-    fun requestDirectoryPicker() { _uiEvents.value = UiEvent.RequestDirectoryPicker }
-    fun setPendingQuickSave(pending: Boolean) { _pendingQuickSave.value = pending }
+
+    fun setUpMediaPlayer(uri: Uri) {
+        mediaPlayerManager.setUpMediaPlayer(uri)
+    }
+
+    fun onEventHandled() {
+        _uiEvents.value = null
+    }
+
+    fun requestDirectoryPicker() {
+        _uiEvents.value = UiEvent.RequestDirectoryPicker
+    }
+
+    fun setPendingQuickSave(pending: Boolean) {
+        _pendingQuickSave.value = pending
+    }
 
     // --- Business Logic ---
     fun onPrivacyDialogDismissed() {
@@ -171,7 +238,19 @@ class MainViewModel @Inject constructor(
         _showBatteryInfoDialog.value = true
     }
 
-    fun saveBufferFromService(bufferService: MyBufferServiceInterface?) {
+    fun onSpeakerSelectionChanged(speakerId: String, isSelected: Boolean) {
+        viewModelScope.launch {
+            val currentSelection = settings.value.selectedSpeakerIds.toMutableSet()
+            if (isSelected) {
+                currentSelection.add(speakerId)
+            } else {
+                currentSelection.remove(speakerId)
+            }
+            settingsRepository.updateSelectedSpeakerIds(currentSelection)
+        }
+    }
+
+    fun processAndSaveBufferFromService(bufferService: MyBufferServiceInterface?) {
         if (bufferService == null) {
             _uiEvents.value = UiEvent.ShowToast("ERROR: Buffer service is not running.")
             return
@@ -179,29 +258,43 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             setLoading(true)
             try {
-                val saveData = withContext(Dispatchers.IO) {
-                    val settings = settingsRepository.getSettingsConfig()
-                    val originalBuffer = bufferService.pauseSortAndGetBuffer()
-                    val bufferToSave = if (settings.isAiAutoClipEnabled && originalBuffer.hasRemaining()) {
-                        withContext(Dispatchers.Default) {
-                            vadProcessor.process(originalBuffer, settings.toAudioConfig())
-                        }
-                    } else {
-                        originalBuffer.rewind()
-                        val bytes = ByteArray(originalBuffer.remaining())
-                        originalBuffer.get(bytes)
-                        bytes
-                    }
-                    val audioConfig = settings.toAudioConfig()
-                    val timestamp = SimpleDateFormat("yy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
-                    val suggestedFileName = "recording_${timestamp}.wav"
-                    Triple(bufferToSave, audioConfig, suggestedFileName)
+                val currentSettings = settings.value
+                val originalBuffer =
+                    withContext(Dispatchers.IO) { bufferService.pauseSortAndGetBuffer() }
+
+                if (!originalBuffer.hasRemaining()) {
+                    _uiEvents.value = UiEvent.ShowToast("Buffer is empty, nothing to save.")
+                    return@launch
                 }
-                _saveDialogState.value = SaveDialogState(saveData.first, saveData.second, saveData.third)
+
+                val (dataToSave, configForSave) = if (currentSettings.isAiAutoClipEnabled) {
+                    val audioBytes = withContext(Dispatchers.Default) {
+                        vadProcessor.process(originalBuffer, currentSettings.toAudioConfig())
+                    }
+                    Pair(audioBytes, currentSettings.toAudioConfig())
+                } else {
+                    val audioBytes =
+                        ByteArray(originalBuffer.remaining()).also { originalBuffer.get(it) }
+                    Pair(audioBytes, currentSettings.toAudioConfig())
+                }
+
+                if (dataToSave.isEmpty()) {
+                    _uiEvents.value =
+                        UiEvent.ShowToast("No audio from selected speakers was found.")
+                    return@launch
+                }
+
+                val timestamp =
+                    SimpleDateFormat("yy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
+                val suggestedFileName = "recording_${timestamp}.wav" // TODO maybe name based on speakers
+                _saveDialogState.value =
+                    SaveDialogState(dataToSave, configForSave, suggestedFileName)
+
                 val destDirUri = FileSavingUtils.getCachedGrantedUri(application)
                 if (!FileSavingUtils.isUriValidAndAccessible(application, destDirUri)) {
                     _uiEvents.value = UiEvent.RequestDirectoryPicker
                 }
+
             } catch (e: Exception) {
                 Timber.e(e, "Error during save buffer preparation")
                 _uiEvents.value = UiEvent.ShowToast("Error: ${e.message}")
@@ -219,6 +312,9 @@ class MainViewModel @Inject constructor(
                 application.contentResolver.openInputStream(fileUri)?.use { inputStream ->
                     val originalBytes = withContext(Dispatchers.IO) { inputStream.readBytes() }
                     val config = WavUtils.readWavHeader(originalBytes)
+                    if (config == null) {
+                        throw IllegalArgumentException("Invalid WAV header")
+                    }
                     val audioDataBuffer = ByteBuffer.wrap(
                         originalBytes,
                         WavUtils.WAV_HEADER_SIZE,
@@ -227,8 +323,10 @@ class MainViewModel @Inject constructor(
                     val processedBytes = withContext(Dispatchers.Default) {
                         vadProcessor.process(audioDataBuffer, config)
                     }
-                    val originalFileName = DocumentFile.fromSingleUri(application, fileUri)?.name ?: "processed.wav"
-                    val suggestedName = originalFileName.replace(".wav", "_clipped.wav", ignoreCase = true)
+                    val originalFileName =
+                        DocumentFile.fromSingleUri(application, fileUri)?.name ?: "processed.wav"
+                    val suggestedName =
+                        originalFileName.replace(".wav", "_clipped.wav", ignoreCase = true)
                     _saveDialogState.value = SaveDialogState(processedBytes, config, suggestedName)
                 } ?: run {
                     _uiEvents.value = UiEvent.ShowToast("Failed to open file")

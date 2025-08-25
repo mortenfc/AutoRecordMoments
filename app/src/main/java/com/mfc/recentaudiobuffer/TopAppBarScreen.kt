@@ -19,8 +19,6 @@
 package com.mfc.recentaudiobuffer
 
 import android.app.Activity
-import android.content.Intent
-import android.provider.Settings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,7 +41,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ripple
@@ -62,6 +59,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -174,7 +173,8 @@ fun TopAppBarContent(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = ripple(bounded = true, radius = 24.dp),
                             onClick = { onSettingsClick() })
-                        .padding(12.dp),
+                        .padding(12.dp)
+                        .semantics { contentDescription = "Settings" }, // This makes the clickable area testable
                     verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         painterResource(id = R.drawable.baseline_settings_24),

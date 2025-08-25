@@ -49,6 +49,7 @@ import androidx.media3.common.util.UnstableApi
 import com.google.android.ump.ConsentInformation
 import com.google.android.ump.ConsentRequestParameters
 import com.google.android.ump.UserMessagingPlatform
+import com.mfc.recentaudiobuffer.speakeridentification.SpeakerManagementActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -144,9 +145,7 @@ class MainActivity : AppCompatActivity() {
                 //  Handle case where user cancels the picker
                 if (viewModel.pendingQuickSave.value) {
                     Toast.makeText(
-                        this,
-                        "Save cancelled: Directory permission is required.",
-                        Toast.LENGTH_LONG
+                        this, "Save cancelled: Directory permission is required.", Toast.LENGTH_LONG
                     ).show()
                     viewModel.setPendingQuickSave(false)
                 }
@@ -232,6 +231,10 @@ class MainActivity : AppCompatActivity() {
                 viewModel = viewModel,
                 widthSizeClass = windowSizeClass.widthSizeClass,
                 heightSizeClass = windowSizeClass.heightSizeClass,
+                onSpeakerSelectionChanged = viewModel::onSpeakerSelectionChanged,
+                onManageSpeakersClicked = {
+                    startActivity(Intent(this, SpeakerManagementActivity::class.java))
+                },
                 // System actions that only the Activity can perform
                 openLockScreenSettings = ::openLockScreenSettings,
                 openBatteryOptimizationSettings = ::openBatteryOptimizationSettings,
@@ -239,7 +242,7 @@ class MainActivity : AppCompatActivity() {
                 onStartBufferingClick = ::onClickStartRecording,
                 onStopBufferingClick = ::onClickStopRecording,
                 onResetBufferClick = ::onClickResetBuffer,
-                onSaveBufferClick = { viewModel.saveBufferFromService(myBufferService) },
+                onSaveBufferClick = { viewModel.processAndSaveBufferFromService(myBufferService) },
                 onDonateClick = ::onClickDonate,
                 onSettingsClick = ::onClickSettings,
                 onConfirmSave = { fileName ->
@@ -406,7 +409,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onClickSaveBuffer() {
-        viewModel.saveBufferFromService(myBufferService)
+        viewModel.processAndSaveBufferFromService(myBufferService)
     }
 
     private fun onClickDonate() {

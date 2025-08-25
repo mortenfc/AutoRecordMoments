@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.mfc.recentaudiobuffer.speakeridentification.SpeakerManagementActivity
 import com.mfc.recentaudiobuffer.ui.theme.RecentAudioBufferTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.joinAll
@@ -113,6 +114,13 @@ class SettingsActivity : ComponentActivity() {
                 Timber.d("onBufferTimeLengthChanged to $value")
                 // Temporary value updater for error recompose
                 state.value.updateIsAiAutoClipEnabled(value)
+            },
+            onSpeakerAutoClipChanged = { value ->
+                        state.value.updateIsSpeakerAutoClipEnabled(value)
+                        state.value.validateSettings()
+                    },
+            onManageSpeakersClicked = {
+                startActivity(Intent(this, SpeakerManagementActivity::class.java))
             },
             onSubmit = {
                 // Launch a coroutine for the save and restart logic

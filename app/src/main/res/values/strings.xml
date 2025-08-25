@@ -50,5 +50,7 @@
     <string name="submit">Apply, Save, and\nRestart Recording</string>
     <string name="back">Return</string>
     <string name="close_media_player">Close Media Player</string>
+    <string name="title_activity_speaker_management">SpeakerManagementActivity</string>
+    <string name="title_activity_enrollment">EnrollmentActivity</string>
 
 </resources>

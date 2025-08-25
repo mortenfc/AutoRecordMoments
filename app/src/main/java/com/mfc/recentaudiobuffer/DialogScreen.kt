@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalTextStyle
@@ -434,6 +435,14 @@ fun appTextFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors(
     errorBorderColor = colorResource(id = R.color.red),
     errorSupportingTextColor = colorResource(id = R.color.red),
     errorContainerColor = colorResource(id = R.color.teal_150)
+)
+
+@Composable
+fun appButtonColors(): ButtonColors = ButtonDefaults.buttonColors(
+    containerColor = colorResource(id = R.color.teal_350),
+    contentColor = colorResource(id = R.color.teal_900),
+    disabledContainerColor = colorResource(id = R.color.teal_350).copy(alpha = 0.5f),
+    disabledContentColor = colorResource(id = R.color.teal_900).copy(alpha = 0.5f),
 )
 
 // --- Previews ---

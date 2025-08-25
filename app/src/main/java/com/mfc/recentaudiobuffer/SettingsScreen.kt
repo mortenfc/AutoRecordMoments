@@ -107,6 +107,8 @@ fun SettingsScreen(
     onBitDepthChanged: (BitDepth) -> Unit,
     onBufferTimeLengthChanged: (Int) -> Unit,
     onAiAutoClipChanged: (Boolean) -> Unit,
+    onSpeakerAutoClipChanged: (Boolean) -> Unit,
+    onManageSpeakersClicked: () -> Unit,
     onSubmit: (Int) -> Unit,
     justExit: () -> Unit,
     viewModel: AuthViewModel = hiltViewModel() // Get the ViewModel
@@ -126,6 +128,8 @@ fun SettingsScreen(
         onBitDepthChanged = onBitDepthChanged,
         onBufferTimeLengthChanged = onBufferTimeLengthChanged,
         onAiAutoClipChanged = onAiAutoClipChanged,
+        onSpeakerAutoClipChanged = onSpeakerAutoClipChanged,
+        onManageSpeakersClicked = onManageSpeakersClicked,
         onSubmit = onSubmit,
         justExit = justExit
     )
@@ -147,6 +151,8 @@ private fun SettingsScreenContent(
     onBitDepthChanged: (BitDepth) -> Unit,
     onBufferTimeLengthChanged: (Int) -> Unit,
     onAiAutoClipChanged: (Boolean) -> Unit,
+    onSpeakerAutoClipChanged: (Boolean) -> Unit,
+    onManageSpeakersClicked: () -> Unit,
     onSubmit: (Int) -> Unit,
     justExit: () -> Unit,
     isPreview: Boolean = false
@@ -260,7 +266,14 @@ private fun SettingsScreenContent(
                             onBufferTimeLengthChanged,
                             sizing
                         )
-                        Spacer(Modifier.weight(0.15f))
+                        Spacer(Modifier.weight(0.1f))
+                        SpeakerSettingsGroup(
+                            state,
+                            onSpeakerAutoClipChanged,
+                            onManageSpeakersClicked,
+                            sizing
+                        )
+                        Spacer(Modifier.weight(0.1f))
                         AISettingsGroup(state, onAiAutoClipChanged, sizing)
                         Spacer(Modifier.weight(0.2f))
                         ActionsGroup(state, onSubmit, isUserSignedIn, sizing)
@@ -312,9 +325,16 @@ private fun SettingsScreenContent(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            Spacer(Modifier.weight(.2f))
+                            Spacer(Modifier.weight(.1f))
+                            SpeakerSettingsGroup(
+                                state,
+                                onSpeakerAutoClipChanged,
+                                onManageSpeakersClicked,
+                                sizing
+                            )
+                            Spacer(Modifier.weight(.1f))
                             AISettingsGroup(state, onAiAutoClipChanged, sizing)
-                            Spacer(Modifier.weight(.2f))
+                            Spacer(Modifier.weight(.1f))
                             ActionsGroup(state, onSubmit, isUserSignedIn, sizing)
                             Spacer(Modifier.weight(.2f))
                             if (isTablet && isUserSignedIn) {
@@ -491,6 +511,67 @@ private fun AISettingsGroup(
                 alpha = 0.5f
             ), thickness = 2.dp
         )
+    }
+}
+
+@Composable
+private fun SpeakerSettingsGroup(
+    state: MutableState<SettingsScreenState>,
+    onSpeakerAutoClipChanged: (Boolean) -> Unit,
+    onManageSpeakersClicked: () -> Unit,
+    sizing: SettingsSizing
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        HorizontalDivider(
+            color = colorResource(id = R.color.purple_accent).copy(alpha = 0.5f),
+            thickness = 2.dp
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "Auto-Record by Speaker",
+                style = sizing.aiTitleStyle,
+                fontWeight = FontWeight.SemiBold,
+                color = colorResource(id = R.color.teal_900)
+            )
+            Switch(
+                checked = state.value.isSpeakerAutoClipEnabled.value,
+                onCheckedChange = onSpeakerAutoClipChanged,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = colorResource(id = R.color.purple_accent),
+                    checkedTrackColor = colorResource(id = R.color.teal_350),
+                    uncheckedThumbColor = colorResource(id = R.color.purple_accent),
+                    uncheckedTrackColor = colorResource(id = R.color.teal_100),
+                    uncheckedBorderColor = colorResource(id = R.color.teal_350),
+                ),
+                modifier = Modifier.scale(sizing.aiSwitchScale)
+            )
+        }
+        Text(
+            text = "When enabled, the app will automatically save recordings of selected speakers after a period of silence or when the buffer is full.",
+            style = sizing.aiBodyStyle.copy(
+                textAlign = TextAlign.Justify,
+                hyphens = Hyphens.Auto,
+                lineBreak = LineBreak.Paragraph,
+            ),
+            color = colorResource(id = R.color.teal_700)
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = onManageSpeakersClicked,
+            colors = ButtonDefaults.buttonColors(containerColor = colorResource(id = R.color.teal_350)),
+            border = BorderStroke(1.dp, colorResource(id = R.color.purple_accent))
+        ) {
+            Text("Manage Enrolled Speakers", color = colorResource(id = R.color.teal_900))
+        }
+        Spacer(Modifier.height(4.dp))
     }
 }
 
@@ -1049,7 +1130,10 @@ private fun ComprehensiveHelpDialog(
 @Composable
 private fun PresetItem(preset: Preset, isSelected: Boolean, onClick: () -> Unit) {
     var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isPressed) 0.97f else 1f, label = "PresetScaleAnimation")
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        label = "PresetScaleAnimation"
+    )
 
     val selectedBorderColor = Color(0xFF388E3C) // A nice, complimentary green
     val defaultBorderColor = colorResource(id = R.color.purple_accent)
@@ -1123,6 +1207,8 @@ fun SettingsScreenTypicalPhonePortraitSignedInPreview() {
             onBitDepthChanged = {},
             onBufferTimeLengthChanged = {},
             onAiAutoClipChanged = {},
+            onSpeakerAutoClipChanged = {},
+            onManageSpeakersClicked = {},
             onSubmit = {},
             justExit = {})
     }
@@ -1148,6 +1234,8 @@ fun SettingsScreenPhonePortraitSignedInPreview() {
             onBitDepthChanged = {},
             onBufferTimeLengthChanged = {},
             onAiAutoClipChanged = {},
+            onSpeakerAutoClipChanged = {},
+            onManageSpeakersClicked = {},
             onSubmit = {},
             justExit = {})
     }
@@ -1173,6 +1261,8 @@ fun SettingsScreenPhonePortraitSignedOutPreview() {
             onBitDepthChanged = {},
             onBufferTimeLengthChanged = {},
             onAiAutoClipChanged = {},
+            onSpeakerAutoClipChanged = {},
+            onManageSpeakersClicked = {},
             onSubmit = {},
             justExit = {})
     }
@@ -1198,6 +1288,8 @@ fun SettingsScreenLandscapeTabletPreview() {
             onBitDepthChanged = {},
             onBufferTimeLengthChanged = {},
             onAiAutoClipChanged = {},
+            onSpeakerAutoClipChanged = {},
+            onManageSpeakersClicked = {},
             onSubmit = {},
             justExit = {})
     }
@@ -1223,6 +1315,8 @@ fun SettingsScreenPortaitTabletPreview() {
             onBitDepthChanged = {},
             onBufferTimeLengthChanged = {},
             onAiAutoClipChanged = {},
+            onSpeakerAutoClipChanged = {},
+            onManageSpeakersClicked = {},
             onSubmit = {},
             justExit = {})
     }
@@ -1248,6 +1342,8 @@ fun SettingsScreenPhoneLandscapePreview() {
             onBitDepthChanged = {},
             onBufferTimeLengthChanged = {},
             onAiAutoClipChanged = {},
+            onSpeakerAutoClipChanged = {},
+            onManageSpeakersClicked = {},
             onSubmit = {},
             justExit = {})
     }
