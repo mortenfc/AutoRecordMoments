@@ -50,10 +50,12 @@ data class RecordingFile(
 
 sealed class SpeakerDiscoveryUiState {
     object Idle : SpeakerDiscoveryUiState()
+    object LoadingFiles : SpeakerDiscoveryUiState() // State for initial file loading
     data class FileSelection(
         val allFiles: List<RecordingFile>,
         val selectedFileUris: Set<Uri>,
-        val processedFileUris: Set<String>
+        val processedFileUris: Set<String>,
+        val isLoading: Boolean = false // State for reloading/resetting within the dialog
     ) : SpeakerDiscoveryUiState()
 
     data class Scanning(val progress: Float, val currentFile: Int, val totalFiles: Int) :
@@ -76,14 +78,30 @@ class SpeakersViewModel @Inject constructor(
 
     companion object {
 
-        //Characteristic	    Higher Threshold (Stricter)	                            Lower Threshold (More Lenient)
-//Strictness	        High ("Must be nearly identical")	                    Low ("Must have a family resemblance")
-//Cluster Purity	    Very High (Clean clusters, one speaker per cluster)	    Lower (Risk of multiple speakers in one cluster)
-//Cluster Size	        Tends to be small and fragmented	                    Tends to be large and comprehensive
-//Primary Risk	        Missing speakers (False Negatives)	                    Incorrectly merging speakers (False Positives)
-//Your App's Result	    [1, 1, 1, ...] -> "No new speakers found"	            [5, 3, 2, ...] -> "Found 3 new speakers"
-//Best For	            Security, Verification	                                Discovery, Identification, Grouping
-        const val CLUSTERING_THRESHOLD = 0.48
+        /**
+         * ## Tuning Variable: Unknown Speaker Clustering Threshold
+         *
+         * This threshold controls the grouping of *unknown* voice segments into potential new speakers.
+         * It answers the question: "How similar do two unidentified voice samples need to be before we
+         * consider them to be from the same new person?"
+         *
+         * - **A HIGHER VALUE (e.g., 0.65f):**
+         * - **Stricter.** Creates fewer, but more accurate, speaker clusters.
+         * - **Pro:** Low risk of grouping two different people together.
+         * - **Con:** May fail to group segments from the same person if their voice varies,
+         * resulting in fragmented clusters that get discarded by `MIN_CLUSTER_SIZE`. This can
+         * lead to the "no new speakers found" message.
+         *
+         * - **A LOWER VALUE (e.g., 0.55f):**
+         * - **More Lenient.** "Casts a wider net" to find potential speakers.
+         * - **Pro:** Better at finding new speakers, even with voice variations.
+         * - **Con:** Higher risk of incorrectly grouping two different but similar-sounding
+         * speakers into the same cluster.
+         *
+         * For a "discovery" feature like this, it's better to start with a more lenient value
+         * to find more potential matches for the user to review.
+         */
+        const val CLUSTERING_THRESHOLD = 0.48f
 
         const val MIN_CLUSTER_SIZE = 2
 
@@ -106,6 +124,7 @@ class SpeakersViewModel @Inject constructor(
 
     fun prepareFileSelection() {
         viewModelScope.launch(Dispatchers.IO) {
+            _uiState.value = SpeakerDiscoveryUiState.LoadingFiles
             try {
                 val recordingsDirUri = FileSavingUtils.getCachedGrantedUri(context)
                     ?: throw IOException("Please set a recordings directory first.")
@@ -189,6 +208,9 @@ class SpeakersViewModel @Inject constructor(
 
                     _uiState.value = SpeakerDiscoveryUiState.Success(finalUnknownSpeakers)
                 }
+            } else {
+                // If no segments were found and it wasn't cancelled, it means scan finished with no results.
+                _uiState.value = SpeakerDiscoveryUiState.Success(emptyList())
             }
         }
     }
@@ -524,13 +546,52 @@ class SpeakersViewModel @Inject constructor(
     }
 
     fun resetProcessedFiles() {
-        processedFiles.clear()
-        Timber.d("Cleared processed files list. Next scan will process all files.")
-        // Refresh file selection state if it's currently showing
-        if (_uiState.value is SpeakerDiscoveryUiState.FileSelection) {
-            prepareFileSelection()
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentState = _uiState.value
+            if (currentState is SpeakerDiscoveryUiState.FileSelection) {
+                // Update current state to show loading IN the dialog
+                _uiState.value = currentState.copy(isLoading = true)
+            } else {
+                // If not in file selection, show a global loading indicator
+                _uiState.value = SpeakerDiscoveryUiState.LoadingFiles
+            }
+
+            processedFiles.clear()
+            Timber.d("Cleared processed files list. Next scan will process all files.")
+
+            // Now, reload the files and create the new state
+            try {
+                val recordingsDirUri = FileSavingUtils.getCachedGrantedUri(context)
+                    ?: throw IOException("Please set a recordings directory first.")
+
+                val allWavFiles = DocumentFile.fromTreeUri(context, recordingsDirUri)
+                    ?.listFiles()
+                    ?.filter { it.name?.endsWith(".wav") == true && it.name?.startsWith(".trashed") == false }
+                    ?.map {
+                        RecordingFile(
+                            name = it.name ?: "Unknown File",
+                            uri = it.uri,
+                            sizeMb = it.length() / (1024f * 1024f),
+                            lastModified = it.lastModified()
+                        )
+                    }
+                    ?.sortedByDescending { it.lastModified }
+                    ?: emptyList()
+
+                // The new state has all files selected and loading is false
+                _uiState.value = SpeakerDiscoveryUiState.FileSelection(
+                    allFiles = allWavFiles,
+                    selectedFileUris = allWavFiles.map { it.uri }.toSet(),
+                    processedFileUris = emptySet(),
+                    isLoading = false
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "Error during reset")
+                _uiState.value = SpeakerDiscoveryUiState.Error("Failed to reload files after reset.")
+            }
         }
     }
+
 
     override fun onCleared() {
         super.onCleared()

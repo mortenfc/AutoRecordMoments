@@ -30,7 +30,6 @@ import com.mfc.recentaudiobuffer.R
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.core.net.toUri
 
 @Composable
 fun SpeakersScreen(
@@ -205,7 +204,9 @@ fun SpeakersScreenContent(
         },
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier.padding(paddingValues).fillMaxSize(),
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -286,6 +287,7 @@ fun SpeakersScreenContent(
                     is SpeakerDiscoveryUiState.Idle, is SpeakerDiscoveryUiState.FileSelection -> {
                         Button(
                             onClick = onPrepareFileSelection,
+                            enabled = uiState !is SpeakerDiscoveryUiState.LoadingFiles,
                             colors = ButtonDefaults.buttonColors(containerColor = colorResource(id = R.color.teal_350)),
                             border = BorderStroke(2.dp, colorResource(id = R.color.purple_accent))
                         ) {
@@ -296,6 +298,19 @@ fun SpeakersScreenContent(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text("Scan Recordings", color = colorResource(id = R.color.teal_900))
+                        }
+                    }
+                    is SpeakerDiscoveryUiState.LoadingFiles -> {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator(color = colorResource(id = R.color.purple_accent))
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Loading recordings...",
+                                color = colorResource(id = R.color.teal_900)
+                            )
                         }
                     }
 
@@ -422,7 +437,9 @@ fun IdentifiedSpeakerCard(
         border = BorderStroke(1.dp, colorResource(id = R.color.purple_accent))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -470,7 +487,8 @@ fun UnknownSpeakerCard(
     onIdentifyClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
             .shadow(elevation = 4.dp, shape = RoundedCornerShape(12.dp)),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.teal_150)),
@@ -563,66 +581,86 @@ fun FileSelectionDialog(
     onToggleFile: (Uri) -> Unit,
     onResetProcessedFiles: () -> Unit
 ) {
-    val (allFiles, selectedUris, processedUris) = fileSelectionState
-    val allSelected = selectedUris.size == allFiles.size
+    val (allFiles, selectedUris, processedUris, isLoading) = fileSelectionState
+    val allSelected = selectedUris.size == allFiles.size && allFiles.isNotEmpty()
     val unprocessedFiles = allFiles.filter { !processedUris.contains(it.uri.toString()) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = { if (!isLoading) onDismiss() }) {
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.teal_100))
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Select Recordings to Scan", style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(8.dp))
+            Box(
+                modifier = Modifier.padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column {
+                    Text("Select Recordings to Scan", style = MaterialTheme.typography.titleLarge)
+                    Spacer(Modifier.height(8.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = { allFiles.forEach { onToggleFile(it.uri) } }) {
-                        Text(if (allSelected) "Deselect All" else "Select All")
-                    }
-                    TextButton(onClick = { unprocessedFiles.forEach { onToggleFile(it.uri) } }) {
-                        Text("Select New")
-                    }
-                    TextButton(onClick = onResetProcessedFiles) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "Reset",
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("Reset")
-                    }
-                }
-
-                LazyColumn(modifier = Modifier.weight(1f, fill = false).fillMaxWidth()) {
-                    items(allFiles, key = { it.uri }) { file ->
-                        FileRow(
-                            file = file,
-                            isSelected = selectedUris.contains(file.uri),
-                            isProcessed = processedUris.contains(file.uri.toString()),
-                            onToggle = { onToggleFile(file.uri) })
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = onConfirm,
-                        enabled = selectedUris.isNotEmpty(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = colorResource(id = R.color.purple_accent)
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Scan ${selectedUris.size} Files")
+                        TextButton(
+                            onClick = { allFiles.forEach { onToggleFile(it.uri) } },
+                            enabled = !isLoading
+                        ) {
+                            Text(if (allSelected) "Deselect All" else "Select All")
+                        }
+                        TextButton(
+                            onClick = { unprocessedFiles.forEach { onToggleFile(it.uri) } },
+                            enabled = !isLoading
+                        ) {
+                            Text("Select New")
+                        }
+                        TextButton(onClick = onResetProcessedFiles, enabled = !isLoading) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Reset",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Reset")
+                        }
                     }
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .fillMaxWidth()
+                    ) {
+                        items(allFiles, key = { it.uri }) { file ->
+                            FileRow(
+                                file = file,
+                                isSelected = selectedUris.contains(file.uri),
+                                isProcessed = processedUris.contains(file.uri.toString()),
+                                onToggle = { onToggleFile(file.uri) },
+                                enabled = !isLoading
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = onDismiss, enabled = !isLoading) { Text("Cancel") }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = onConfirm,
+                            enabled = selectedUris.isNotEmpty() && !isLoading,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colorResource(id = R.color.purple_accent)
+                            )
+                        ) {
+                            Text("Scan ${selectedUris.size} Files")
+                        }
+                    }
+                }
+                if (isLoading) {
+                    CircularProgressIndicator(color = colorResource(id = R.color.purple_accent))
                 }
             }
         }
@@ -631,17 +669,25 @@ fun FileSelectionDialog(
 
 @Composable
 fun FileRow(
-    file: RecordingFile, isSelected: Boolean, isProcessed: Boolean, onToggle: () -> Unit
+    file: RecordingFile,
+    isSelected: Boolean,
+    isProcessed: Boolean,
+    onToggle: () -> Unit,
+    enabled: Boolean
 ) {
     val dateFormatter = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
 
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle, enabled = enabled)
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Checkbox(
             checked = isSelected,
             onCheckedChange = { onToggle() },
+            enabled = enabled,
             colors = CheckboxDefaults.colors(
                 checkedColor = colorResource(id = R.color.purple_accent),
                 uncheckedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
@@ -723,15 +769,15 @@ fun SpeakersScreenScanningPreview() {
 fun FileSelectionDialogPreview() {
     val files = listOf(
         RecordingFile(
-            "rec_01.wav", "file:///rec_01.wav".toUri(), 10.5f, System.currentTimeMillis()
+            "rec_01.wav", Uri.parse("file:///rec_01.wav"), 10.5f, System.currentTimeMillis()
         ), RecordingFile(
             "rec_02_very_long_name_to_see_how_it_truncates.wav",
-            "file:///rec_02.wav".toUri(),
+            Uri.parse("file:///rec_02.wav"),
             2.1f,
             System.currentTimeMillis() - 86400000
         ), RecordingFile(
             "rec_03.wav",
-            "file:///rec_03.wav".toUri(),
+            Uri.parse("file:///rec_03.wav"),
             5.0f,
             System.currentTimeMillis() - 172800000
         )

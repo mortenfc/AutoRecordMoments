@@ -33,7 +33,26 @@ typealias SpeakerEmbedding = FloatArray
 
 interface SpeakerIdentifier {
     companion object {
-        const val SIMILARITY_THRESHOLD = 0.75f
+        /**
+         * ## Tuning Variable: Known Speaker Identification Threshold
+         *
+         * This threshold is the gatekeeper for matching a voice segment to an *already identified* speaker.
+         * It answers the question: "Is this voice close enough to a speaker I already know?"
+         *
+         * - **A HIGHER VALUE (e.g., 0.80f):**
+         * - **Stricter.** Requires a very close match.
+         * - **Pro:** Reduces the chance of incorrectly labeling a new person as a known speaker.
+         * - **Con:** May fail to recognize a known speaker if their voice changes slightly (e.g., due to tone or microphone distance).
+         *
+         * - **A LOWER VALUE (e.g., 0.70f):**
+         * - **More Lenient.** Allows for more variation in a known speaker's voice.
+         * - **Pro:** Better at recognizing known speakers under different recording conditions.
+         * - **Con:** Increases the risk of misidentifying a new, similar-sounding person as a known speaker.
+         *
+         * This should generally be higher than the `CLUSTERING_THRESHOLD` in SpeakersViewModel,
+         * as confirming a known identity should be stricter than grouping unknown ones.
+         */
+        const val SIMILARITY_THRESHOLD = 0.65f
     }
 
     /**
