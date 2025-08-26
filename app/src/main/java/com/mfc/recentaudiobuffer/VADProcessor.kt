@@ -61,7 +61,7 @@ class VADProcessor @Inject constructor(
         const val DEFAULT_PADDING_MS = 500
         const val DEFAULT_MERGE_GAP_MS = 1500
 
-        private const val SPEECH_THRESHOLD = 0.25f
+        private const val SPEECH_THRESHOLD = 0.3f
         private const val DEFAULT_CHUNK_SIZE_B = 4096
         const val USE_PARALLEL_PIPELINE = true
 
@@ -270,7 +270,6 @@ class VADProcessor @Inject constructor(
      * Public processing function (unchanged external signature).
      * Internally uses the fast adaptive resampler.
      */
-    @SuppressLint("VisibleForTests")
     fun process(
         fullAudioBuffer: ByteBuffer,
         config: AudioConfig,

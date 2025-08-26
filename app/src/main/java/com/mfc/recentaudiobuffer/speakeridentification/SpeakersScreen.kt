@@ -1,8 +1,8 @@
 package com.mfc.recentaudiobuffer.speakeridentification
 
-import android.graphics.Color
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,16 +16,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mfc.recentaudiobuffer.*
 import com.mfc.recentaudiobuffer.R
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import androidx.core.net.toUri
 
 @Composable
 fun SpeakersScreen(
@@ -42,12 +47,16 @@ fun SpeakersScreen(
         speakers = speakers,
         uiState = uiState,
         isUserSignedIn = isUserSignedIn,
-        onScanRecordings = viewModel::scanRecordingsForUnknownSpeakers,
+        onPrepareFileSelection = viewModel::prepareFileSelection,
+        onToggleFileSelection = viewModel::toggleFileSelection,
+        onStartScan = viewModel::startScan,
         onStopScanning = viewModel::stopScanning,
         onClearScanState = viewModel::clearScanState,
         onIdentifySpeaker = viewModel::addSpeaker,
         onRenameSpeaker = viewModel::renameSpeaker,
         onDeleteSpeaker = viewModel::deleteSpeaker,
+        onDeleteAllSpeakers = viewModel::deleteAllSpeakers,
+        onResetProcessedFiles = viewModel::resetProcessedFiles,
         onNavigateBack = onNavigateBack,
         isPreview = false
     )
@@ -59,17 +68,22 @@ fun SpeakersScreenContent(
     speakers: List<Speaker>,
     uiState: SpeakerDiscoveryUiState,
     isUserSignedIn: Boolean,
-    onScanRecordings: () -> Unit,
+    onPrepareFileSelection: () -> Unit,
+    onToggleFileSelection: (Uri) -> Unit,
+    onStartScan: (Set<Uri>) -> Unit,
     onStopScanning: () -> Unit,
     onClearScanState: () -> Unit,
     onIdentifySpeaker: (String, UnknownSpeaker) -> Unit,
     onRenameSpeaker: (Speaker, String) -> Unit,
     onDeleteSpeaker: (Speaker) -> Unit,
+    onDeleteAllSpeakers: () -> Unit,
+    onResetProcessedFiles: () -> Unit,
     onNavigateBack: () -> Unit,
     isPreview: Boolean = true
 ) {
     var showRenameDialog by remember { mutableStateOf<Speaker?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf<Speaker?>(null) }
+    var showDeleteAllConfirmDialog by remember { mutableStateOf(false) }
     var showNameDialogFor by remember { mutableStateOf<UnknownSpeaker?>(null) }
     val identifiedSpeakers = remember { mutableStateListOf<String>() }
 
@@ -93,6 +107,79 @@ fun SpeakersScreenContent(
             mediaPlayerManager.closeMediaPlayer()
         }
     }
+
+    // --- Dialogs ---
+    if (uiState is SpeakerDiscoveryUiState.FileSelection) {
+        FileSelectionDialog(
+            fileSelectionState = uiState,
+            onDismiss = onClearScanState,
+            onConfirm = { onStartScan(uiState.selectedFileUris) },
+            onToggleFile = onToggleFileSelection,
+            onResetProcessedFiles = onResetProcessedFiles
+        )
+    }
+
+    showRenameDialog?.let { speaker ->
+        AddOrRenameSpeakerDialog(
+            onDismiss = { showRenameDialog = null },
+            onConfirm = { newName -> onRenameSpeaker(speaker, newName) },
+            title = "Rename Speaker",
+            initialName = speaker.name
+        )
+    }
+
+    showDeleteConfirmDialog?.let { speaker ->
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = null },
+            title = { Text("Delete Speaker") },
+            text = { Text("Are you sure you want to delete '${speaker.name}'? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteSpeaker(speaker)
+                        showDeleteConfirmDialog = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colorResource(id = R.color.red))
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = null }) {
+                    Text("Cancel")
+                }
+            })
+    }
+
+    if (showDeleteAllConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAllConfirmDialog = false },
+            title = { Text("Delete All Speakers") },
+            text = { Text("Are you sure you want to delete all identified speakers? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteAllSpeakers()
+                        showDeleteAllConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colorResource(id = R.color.red))
+                ) { Text("Delete All") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            })
+    }
+
+    showNameDialogFor?.let { speakerToIdentify ->
+        AddOrRenameSpeakerDialog(
+            onDismiss = { showNameDialogFor = null }, onConfirm = { name ->
+                onIdentifySpeaker(name, speakerToIdentify)
+                identifiedSpeakers.add(speakerToIdentify.id)
+                showNameDialogFor = null
+            }, title = "Identify New Speaker"
+        )
+    }
+
 
     Scaffold(
         containerColor = colorResource(id = R.color.teal_100),
@@ -133,12 +220,23 @@ fun SpeakersScreenContent(
                         style = MaterialTheme.typography.titleLarge,
                         color = colorResource(id = R.color.teal_900)
                     )
-                    if (!isUserSignedIn) {
-                        Text(
-                            "Sign in to sync",
-                            fontStyle = FontStyle.Italic,
-                            color = colorResource(id = R.color.purple_accent)
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (speakers.isNotEmpty()) {
+                            IconButton(onClick = { showDeleteAllConfirmDialog = true }) {
+                                Icon(
+                                    Icons.Default.DeleteSweep,
+                                    contentDescription = "Delete All Speakers",
+                                    tint = colorResource(id = R.color.red)
+                                )
+                            }
+                        }
+                        if (!isUserSignedIn) {
+                            Text(
+                                "Sign in to sync",
+                                fontStyle = FontStyle.Italic,
+                                color = colorResource(id = R.color.purple_accent)
+                            )
+                        }
                     }
                 }
             }
@@ -146,15 +244,27 @@ fun SpeakersScreenContent(
             if (speakers.isEmpty()) {
                 item {
                     Text(
-                        "No speakers identified. Scan your recordings to find new speakers.",
+                        "No speakers identified. Scan your recordings to find new speakers to optionally auto-save conversations with.",
                         modifier = Modifier.padding(vertical = 8.dp),
                         color = colorResource(id = R.color.teal_700)
                     )
                 }
             } else {
-                items(speakers) { speaker ->
+                items(speakers, key = { it.id }) { speaker ->
                     IdentifiedSpeakerCard(
                         speaker = speaker,
+                        isPlaying = currentlyPlayingSpeakerId == speaker.id,
+                        onPlayClick = {
+                            if (currentlyPlayingSpeakerId == speaker.id) {
+                                mediaPlayerManager.closeMediaPlayer()
+                                currentlyPlayingSpeakerId = null
+                            } else {
+                                speaker.sampleUri?.let { uri ->
+                                    mediaPlayerManager.setUpMediaPlayer(uri)
+                                    currentlyPlayingSpeakerId = speaker.id
+                                }
+                            }
+                        },
                         onRenameClick = { showRenameDialog = speaker },
                         onDeleteClick = { showDeleteConfirmDialog = speaker })
                 }
@@ -165,7 +275,7 @@ fun SpeakersScreenContent(
                 HorizontalDivider(color = colorResource(id = R.color.purple_accent).copy(alpha = 0.5f))
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    "Identify New Speakers from Recordings",
+                    "Identify New Speakers",
                     style = MaterialTheme.typography.titleLarge,
                     color = colorResource(id = R.color.teal_900)
                 )
@@ -173,14 +283,19 @@ fun SpeakersScreenContent(
 
             item {
                 when (val state = uiState) {
-                    is SpeakerDiscoveryUiState.Idle -> {
+                    is SpeakerDiscoveryUiState.Idle, is SpeakerDiscoveryUiState.FileSelection -> {
                         Button(
-                            onClick = onScanRecordings,
-                            colors = ButtonDefaults.buttonColors(containerColor = colorResource(id = R.color.purple_accent))
+                            onClick = onPrepareFileSelection,
+                            colors = ButtonDefaults.buttonColors(containerColor = colorResource(id = R.color.teal_350)),
+                            border = BorderStroke(2.dp, colorResource(id = R.color.purple_accent))
                         ) {
-                            Icon(Icons.Default.Search, contentDescription = null)
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                tint = colorResource(id = R.color.teal_900)
+                            )
                             Spacer(Modifier.width(8.dp))
-                            Text("Scan Recordings")
+                            Text("Scan Recordings", color = colorResource(id = R.color.teal_900))
                         }
                     }
 
@@ -195,6 +310,13 @@ fun SpeakersScreenContent(
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 "Scanning file ${state.currentFile} of ${state.totalFiles}...",
+                                color = colorResource(id = R.color.teal_900)
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Stop earlier to only process the currently scanned files",
+                                fontStyle = FontStyle.Italic,
+                                fontSize = 12.sp,
                                 color = colorResource(id = R.color.teal_900)
                             )
                             Spacer(Modifier.height(8.dp))
@@ -227,7 +349,7 @@ fun SpeakersScreenContent(
                                 color = colorResource(id = R.color.teal_900)
                             )
                         }
-                        TextButton(onClick = onScanRecordings) { Text("Rescan") }
+                        TextButton(onClick = onPrepareFileSelection) { Text("Scan Again") }
                     }
 
                     is SpeakerDiscoveryUiState.Clustering -> {
@@ -235,7 +357,7 @@ fun SpeakersScreenContent(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            CircularProgressIndicator()
+                            CircularProgressIndicator(color = colorResource(id = R.color.purple_accent))
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 "Grouping speakers ...",
@@ -249,11 +371,10 @@ fun SpeakersScreenContent(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            CircularProgressIndicator()
+                            CircularProgressIndicator(color = colorResource(id = R.color.purple_accent))
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "Stopping scan ...",
-                                color = colorResource(id = R.color.teal_900)
+                                "Stopping scan ...", color = colorResource(id = R.color.teal_900)
                             )
                         }
                     }
@@ -261,7 +382,7 @@ fun SpeakersScreenContent(
             }
 
             if (uiState is SpeakerDiscoveryUiState.Success) {
-                items(uiState.unknownSpeakers) { unknownSpeaker ->
+                items(uiState.unknownSpeakers, key = { it.id }) { unknownSpeaker ->
                     val isIdentified = identifiedSpeakers.contains(unknownSpeaker.id)
                     if (!isIdentified) {
                         UnknownSpeakerCard(
@@ -284,50 +405,15 @@ fun SpeakersScreenContent(
             }
         }
     }
-
-    // --- Dialogs ---
-    showRenameDialog?.let { speaker ->
-        AddOrRenameSpeakerDialog(
-            onDismiss = { showRenameDialog = null },
-            onConfirm = { newName -> onRenameSpeaker(speaker, newName) },
-            title = "Rename Speaker",
-            initialName = speaker.name
-        )
-    }
-    showDeleteConfirmDialog?.let { speaker ->
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmDialog = null },
-            title = { Text("Delete Speaker") },
-            text = { Text("Are you sure you want to delete '${speaker.name}'? This action cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onDeleteSpeaker(speaker)
-                        showDeleteConfirmDialog = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = colorResource(id = R.color.red))
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmDialog = null }) {
-                    Text("Cancel")
-                }
-            })
-    }
-    showNameDialogFor?.let { speakerToIdentify ->
-        AddOrRenameSpeakerDialog(
-            onDismiss = { showNameDialogFor = null }, onConfirm = { name ->
-                onIdentifySpeaker(name, speakerToIdentify)
-                identifiedSpeakers.add(speakerToIdentify.id)
-                showNameDialogFor = null
-            }, title = "Identify New Speaker"
-        )
-    }
 }
 
 @Composable
 fun IdentifiedSpeakerCard(
-    speaker: Speaker, onRenameClick: () -> Unit, onDeleteClick: () -> Unit
+    speaker: Speaker,
+    isPlaying: Boolean,
+    onPlayClick: () -> Unit,
+    onRenameClick: () -> Unit,
+    onDeleteClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -344,9 +430,19 @@ fun IdentifiedSpeakerCard(
                 text = speaker.name,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
-                color = colorResource(id = R.color.teal_900)
+                color = colorResource(id = R.color.teal_900),
+                modifier = Modifier.weight(1f)
             )
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onPlayClick, enabled = speaker.sampleUri != null) {
+                    Icon(
+                        if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        contentDescription = "Play sample for ${speaker.name}",
+                        tint = if (speaker.sampleUri != null) colorResource(id = R.color.teal_900) else MaterialTheme.colorScheme.onSurface.copy(
+                            alpha = 0.38f
+                        )
+                    )
+                }
                 IconButton(onClick = onRenameClick) {
                     Icon(
                         Icons.Default.Edit,
@@ -403,7 +499,7 @@ fun UnknownSpeakerCard(
                     Icon(
                         if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
                         contentDescription = "Play Sample",
-                        tint = colorResource(id = R.color.purple_accent)
+                        tint = colorResource(id = R.color.teal_900)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
@@ -419,7 +515,7 @@ fun UnknownSpeakerCard(
                 ) {
                     Icon(Icons.Default.PersonAdd, contentDescription = "Identify")
                     Spacer(Modifier.width(8.dp))
-                    Text("Identify Speaker")
+                    Text("Identify")
                 }
             }
         }
@@ -446,8 +542,9 @@ fun AddOrRenameSpeakerDialog(
         Button(
             onClick = {
                 onConfirm(name)
-                onDismiss()
-            }, enabled = isNameValid
+            }, enabled = isNameValid, colors = ButtonDefaults.buttonColors(
+                containerColor = colorResource(id = R.color.purple_accent)
+            )
         ) {
             Text("Save")
         }
@@ -458,26 +555,147 @@ fun AddOrRenameSpeakerDialog(
     })
 }
 
+@Composable
+fun FileSelectionDialog(
+    fileSelectionState: SpeakerDiscoveryUiState.FileSelection,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    onToggleFile: (Uri) -> Unit,
+    onResetProcessedFiles: () -> Unit
+) {
+    val (allFiles, selectedUris, processedUris) = fileSelectionState
+    val allSelected = selectedUris.size == allFiles.size
+    val unprocessedFiles = allFiles.filter { !processedUris.contains(it.uri.toString()) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.teal_100))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Select Recordings to Scan", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = { allFiles.forEach { onToggleFile(it.uri) } }) {
+                        Text(if (allSelected) "Deselect All" else "Select All")
+                    }
+                    TextButton(onClick = { unprocessedFiles.forEach { onToggleFile(it.uri) } }) {
+                        Text("Select New")
+                    }
+                    TextButton(onClick = onResetProcessedFiles) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Reset",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Reset")
+                    }
+                }
+
+                LazyColumn(modifier = Modifier.weight(1f, fill = false).fillMaxWidth()) {
+                    items(allFiles, key = { it.uri }) { file ->
+                        FileRow(
+                            file = file,
+                            isSelected = selectedUris.contains(file.uri),
+                            isProcessed = processedUris.contains(file.uri.toString()),
+                            onToggle = { onToggleFile(file.uri) })
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = onConfirm,
+                        enabled = selectedUris.isNotEmpty(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colorResource(id = R.color.purple_accent)
+                        )
+                    ) {
+                        Text("Scan ${selectedUris.size} Files")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FileRow(
+    file: RecordingFile, isSelected: Boolean, isProcessed: Boolean, onToggle: () -> Unit
+) {
+    val dateFormatter = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = isSelected,
+            onCheckedChange = { onToggle() },
+            colors = CheckboxDefaults.colors(
+                checkedColor = colorResource(id = R.color.purple_accent),
+                uncheckedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = file.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "${"%.2f".format(file.sizeMb)} MB • ${dateFormatter.format(Date(file.lastModified))}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (isProcessed) {
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = "Already processed",
+                tint = colorResource(id = R.color.teal_700),
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
+    }
+}
+
+
 // --- Previews ---
 
 @Preview(showBackground = true, name = "Idle State")
 @Composable
 fun SpeakersScreenIdlePreview() {
     val mockSpeakers = listOf(
-        Speaker(id = "1", name = "Alice", embedding = floatArrayOf()),
+        Speaker(id = "1", name = "Alice", embedding = floatArrayOf(), sampleUri = Uri.EMPTY),
         Speaker(id = "2", name = "Bob", embedding = floatArrayOf())
     )
     SpeakersScreenContent(
         speakers = mockSpeakers,
         uiState = SpeakerDiscoveryUiState.Idle,
         isUserSignedIn = false,
-        onScanRecordings = {},
+        onPrepareFileSelection = {},
+        onStartScan = {},
         onStopScanning = {},
         onClearScanState = {},
         onIdentifySpeaker = { _, _ -> },
         onRenameSpeaker = { _, _ -> },
         onDeleteSpeaker = {},
-        onNavigateBack = {})
+        onDeleteAllSpeakers = {},
+        onNavigateBack = {},
+        onToggleFileSelection = {},
+        onResetProcessedFiles = {})
 }
 
 @Preview(showBackground = true, name = "Scanning State")
@@ -487,47 +705,41 @@ fun SpeakersScreenScanningPreview() {
         speakers = emptyList(),
         uiState = SpeakerDiscoveryUiState.Scanning(0.6f, 6, 10),
         isUserSignedIn = true,
-        onScanRecordings = {},
+        onPrepareFileSelection = {},
+        onStartScan = {},
         onStopScanning = {},
         onClearScanState = {},
         onIdentifySpeaker = { _, _ -> },
         onRenameSpeaker = { _, _ -> },
         onDeleteSpeaker = {},
-        onNavigateBack = {})
+        onDeleteAllSpeakers = {},
+        onNavigateBack = {},
+        onToggleFileSelection = {},
+        onResetProcessedFiles = {})
 }
 
-@Preview(showBackground = true, name = "Success with Unknown Speakers")
+@Preview(showBackground = true, name = "File Selection Dialog")
 @Composable
-fun SpeakersScreenSuccessPreview() {
-    val mockUnknown = listOf(
-        UnknownSpeaker("unknown1", emptyList(), Uri.EMPTY),
-        UnknownSpeaker("unknown2", emptyList(), Uri.EMPTY)
+fun FileSelectionDialogPreview() {
+    val files = listOf(
+        RecordingFile(
+            "rec_01.wav", "file:///rec_01.wav".toUri(), 10.5f, System.currentTimeMillis()
+        ), RecordingFile(
+            "rec_02_very_long_name_to_see_how_it_truncates.wav",
+            "file:///rec_02.wav".toUri(),
+            2.1f,
+            System.currentTimeMillis() - 86400000
+        ), RecordingFile(
+            "rec_03.wav",
+            "file:///rec_03.wav".toUri(),
+            5.0f,
+            System.currentTimeMillis() - 172800000
+        )
     )
-    SpeakersScreenContent(
-        speakers = emptyList(),
-        uiState = SpeakerDiscoveryUiState.Success(mockUnknown),
-        isUserSignedIn = true,
-        onScanRecordings = {},
-        onStopScanning = {},
-        onClearScanState = {},
-        onIdentifySpeaker = { _, _ -> },
-        onRenameSpeaker = { _, _ -> },
-        onDeleteSpeaker = {},
-        onNavigateBack = {})
-}
-
-@Preview(showBackground = true, name = "Error State")
-@Composable
-fun SpeakersScreenErrorPreview() {
-    SpeakersScreenContent(
-        speakers = emptyList(),
-        uiState = SpeakerDiscoveryUiState.Error("Failed to access recordings directory."),
-        isUserSignedIn = true,
-        onScanRecordings = {},
-        onStopScanning = {},
-        onClearScanState = {},
-        onIdentifySpeaker = { _, _ -> },
-        onRenameSpeaker = { _, _ -> },
-        onDeleteSpeaker = {},
-        onNavigateBack = {})
+    FileSelectionDialog(
+        fileSelectionState = SpeakerDiscoveryUiState.FileSelection(
+            allFiles = files,
+            selectedFileUris = setOf(files[0].uri),
+            processedFileUris = setOf(files[2].uri.toString())
+        ), onDismiss = {}, onConfirm = {}, onToggleFile = {}, onResetProcessedFiles = {})
 }

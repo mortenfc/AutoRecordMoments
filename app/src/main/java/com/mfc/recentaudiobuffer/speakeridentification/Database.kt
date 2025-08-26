@@ -1,17 +1,10 @@
 package com.mfc.recentaudiobuffer.speakeridentification
 
 import android.content.Context
-import androidx.room.Dao
-import androidx.room.Database
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Room
-import androidx.room.RoomDatabase
-import androidx.room.TypeConverter
-import androidx.room.TypeConverters
-import androidx.room.Update
+import android.net.Uri
+import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import dagger.Module
@@ -62,13 +55,35 @@ class Converters {
         val type = object : TypeToken<FloatArray>() {}.type
         return gson.fromJson(value, type)
     }
+
+    @TypeConverter
+    fun fromUri(uri: Uri?): String? {
+        return uri?.toString()
+    }
+
+    @TypeConverter
+    fun toUri(uriString: String?): Uri? {
+        return uriString?.let { Uri.parse(it) }
+    }
 }
 
 // --- Room Database Definition ---
-@Database(entities = [Speaker::class], version = 1, exportSchema = false)
+@Database(entities = [Speaker::class], version = 2, exportSchema = false)  // Increment version to 2
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun speakerDao(): SpeakerDao
+}
+
+// --- Migration from version 1 to 2 ---
+object DatabaseMigrations {
+    val MIGRATION_1_2 = object : Migration(1, 2) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // Add the new columns with default values
+            database.execSQL("ALTER TABLE speakers ADD COLUMN sampleUri TEXT DEFAULT NULL")
+            database.execSQL("ALTER TABLE speakers ADD COLUMN createdAt INTEGER NOT NULL DEFAULT ${System.currentTimeMillis()}")
+            database.execSQL("ALTER TABLE speakers ADD COLUMN lastUsedAt INTEGER NOT NULL DEFAULT ${System.currentTimeMillis()}")
+        }
+    }
 }
 
 // --- Hilt Module to Provide the Database ---
@@ -83,7 +98,10 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "speaker_database"
-        ).build()
+        )
+        .addMigrations(DatabaseMigrations.MIGRATION_1_2)  // Add migration
+        .fallbackToDestructiveMigration()  // Optional: destroy and recreate if migration fails (for development)
+        .build()
     }
 
     @Provides
