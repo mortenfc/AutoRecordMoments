@@ -150,7 +150,7 @@ class VADProcessorInstrumentedTest {
 
     private fun loadAudioAndConfig(fileName: String): Pair<AudioConfig, ByteArray> {
         val fullFileBytes = loadAudioFromTestAssets(fileName, skipHeader = false)
-        val config = WavUtils.readWavHeader(fullFileBytes)
+        val config = WavUtils.readWavHeader(fullFileBytes)!!
         val audioBytes = fullFileBytes.copyOfRange(WavUtils.WAV_HEADER_SIZE, fullFileBytes.size)
         return Pair(config, audioBytes)
     }
@@ -270,7 +270,7 @@ class VADProcessorInstrumentedTest {
     //// Original tests
 
     @Test
-    fun processStreamedAudioAndTriggerQuickSaveViaReceiver() {
+    suspend fun processStreamedAudioAndTriggerQuickSaveViaReceiver() {
         runBlocking {
             val appContext = ApplicationProvider.getApplicationContext<Context>()
 
@@ -399,8 +399,8 @@ class VADProcessorInstrumentedTest {
                 val audioDataSize = fileBytes.size - WavUtils.WAV_HEADER_SIZE
 
                 // Calculate duration in seconds
-                val bytesPerSecond = wavConfig.sampleRateHz * (wavConfig.bitDepth.bits / 8)
-                val durationInSeconds = audioDataSize.toDouble() / bytesPerSecond
+                val bytesPerSecond = wavConfig?.sampleRateHz?.times((wavConfig.bitDepth.bits.div(8))!!)
+                val durationInSeconds = audioDataSize.toDouble() / bytesPerSecond!!
 
                 Timber.d("Saved file duration: $durationInSeconds seconds.")
 
@@ -423,7 +423,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withSilenceFile_returnsEmptyOrVerySmallBuffer() {
+    suspend fun processBuffer_withSilenceFile_returnsEmptyOrVerySmallBuffer() {
         val (config, audioBytes) = loadAudioAndConfig("silence_5s.wav")
         assertEquals("Expected sample rate for silence file", 22050, config.sampleRateHz)
         assertEquals(
@@ -445,7 +445,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withSpeechFile44100Hz_resample_returnsSignificantNonEmptyBuffer() {
+    suspend fun processBuffer_withSpeechFile44100Hz_resample_returnsSignificantNonEmptyBuffer() {
         val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
         assertEquals("Expected sample rate for speech file", 44100, config.sampleRateHz)
         assertEquals(
@@ -480,7 +480,7 @@ class VADProcessorInstrumentedTest {
 
 
     @Test
-    fun processBuffer_withMusicFile_returnsVerySmallBuffer() {
+    suspend fun processBuffer_withMusicFile_returnsVerySmallBuffer() {
         // Given
         val (config, audioBytes) = loadAudioAndConfig("music_30s.wav")
         assertEquals("Expected sample rate for music file", 22050, config.sampleRateHz)
@@ -504,7 +504,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withNoisySilenceFile_returnsSmallBuffer() {
+    suspend fun processBuffer_withNoisySilenceFile_returnsSmallBuffer() {
         // Given
         val (config, audioBytes) = loadAudioAndConfig("mostly_silence_noise_5min.wav")
         assertEquals("Expected sample rate for noisy file", 22050, config.sampleRateHz)
@@ -528,7 +528,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withBufferSmallerThanWindowSize_doesNotCrash() {
+    suspend fun processBuffer_withBufferSmallerThanWindowSize_doesNotCrash() {
         // Given
         val config = AudioConfig(16000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
         val tinyBuffer = ByteArray(500 * 2) // 500 samples, 16-bit
@@ -542,7 +542,7 @@ class VADProcessorInstrumentedTest {
 
     //// Newer tests
     @Test
-    fun parallel_and_nonParallel_produce_same_output() {
+    suspend fun parallel_and_nonParallel_produce_same_output() {
         // Arrange
         val sampleRate = 16000
         val buffer = makeTestBuffer16bit(sampleRate)
@@ -574,7 +574,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withEmptyBuffer_returnsEmpty() {
+    suspend fun processBuffer_withEmptyBuffer_returnsEmpty() {
         val config = AudioConfig(16000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
         val emptyBuffer = ByteArray(0)
 
@@ -589,7 +589,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withSingleSample_doesNotCrash() {
+    suspend fun processBuffer_withSingleSample_doesNotCrash() {
         val config = AudioConfig(16000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
         val singleSample = ByteArray(2) // One 16-bit sample
 
@@ -604,7 +604,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withExactWindowSize_processes() {
+    suspend fun processBuffer_withExactWindowSize_processes() {
         val config = AudioConfig(16000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
         // Window size for 16kHz is 512 samples, context is 64
         val windowSize = 512
@@ -623,7 +623,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withVeryLowSampleRate_handlesCorrectly() {
+    suspend fun processBuffer_withVeryLowSampleRate_handlesCorrectly() {
         // Test with sample rate below VAD_MIN_SAMPLE_RATE (8000Hz)
         val config = AudioConfig(4000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
         val audio = generateSineWave(440.0, 1000, config)
@@ -639,7 +639,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withVeryHighSampleRate_downsamples() {
+    suspend fun processBuffer_withVeryHighSampleRate_downsamples() {
         // Test with very high sample rate (96kHz)
         val config = AudioConfig(96000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
         val audio = generateSineWave(440.0, 1000, config)
@@ -656,7 +656,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_with8BitAudio_processes() {
+    suspend fun processBuffer_with8BitAudio_processes() {
         val config = AudioConfig(16000, 0, BitDepth(8, AudioFormat.ENCODING_PCM_8BIT))
         val audio = generateSineWave(440.0, 2000, config)
 
@@ -671,7 +671,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withAlternatingShortSpeechAndSilence_mergesCorrectly() {
+    suspend fun processBuffer_withAlternatingShortSpeechAndSilence_mergesCorrectly() {
         val config = AudioConfig(16000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
         val byteStream = ByteArrayOutputStream()
 
@@ -690,7 +690,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withProgressCallback_reportsMonotonicallyIncreasing() {
+    suspend fun processBuffer_withProgressCallback_reportsMonotonicallyIncreasing() {
         val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
         val progressValues = mutableListOf<Float>()
 
@@ -716,7 +716,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withWhiteNoise_filtersOutMostNoise() {
+    suspend fun processBuffer_withWhiteNoise_filtersOutMostNoise() {
         val config = AudioConfig(16000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
         val noise = generateWhiteNoise(5000, config)
 
@@ -734,7 +734,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withClippedAudio_handlesGracefully() {
+    suspend fun processBuffer_withClippedAudio_handlesGracefully() {
         val config = AudioConfig(16000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
         val byteStream = ByteArrayOutputStream()
 
@@ -758,7 +758,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withDifferentPaddingValues_adjustsOutput() {
+    suspend fun processBuffer_withDifferentPaddingValues_adjustsOutput() {
         val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
 
         val resultNoPadding = vadProcessor.process(
@@ -776,7 +776,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withReadOnlyByteBuffer_processes() {
+    suspend fun processBuffer_withReadOnlyByteBuffer_processes() {
         val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
         val readOnlyBuffer = ByteBuffer.wrap(audioBytes).asReadOnlyBuffer()
 
@@ -792,7 +792,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withDirectByteBuffer_processes() {
+    suspend fun processBuffer_withDirectByteBuffer_processes() {
         val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
         val directBuffer = ByteBuffer.allocateDirect(audioBytes.size)
         directBuffer.put(audioBytes)
@@ -810,7 +810,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_benchmark_completesInReasonableTime() {
+    suspend fun processBuffer_benchmark_completesInReasonableTime() {
         val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
 
         val benchmark = try {
@@ -838,7 +838,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withOddNumberOfBytes_handlesGracefully() {
+    suspend fun processBuffer_withOddNumberOfBytes_handlesGracefully() {
         val config = AudioConfig(16000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
         // Create buffer with odd number of bytes (not aligned to 16-bit samples)
         val oddBuffer = ByteArray(1001)
@@ -854,7 +854,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_multipleCallsWithSameProcessor_maintainsConsistency() {
+    suspend fun processBuffer_multipleCallsWithSameProcessor_maintainsConsistency() {
         val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
 
         // Process same audio twice
@@ -868,7 +868,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withNegativePadding() {
+    suspend fun processBuffer_withNegativePadding() {
         val (config, audioBytes) = loadAudioAndConfig("talking_24s.wav")
 
         try {
@@ -882,7 +882,7 @@ class VADProcessorInstrumentedTest {
     }
 
     @Test
-    fun processBuffer_withExtremelyLargePadding_doesNotOverflow() {
+    suspend fun processBuffer_withExtremelyLargePadding_doesNotOverflow() {
         val config = AudioConfig(16000, 0, BitDepth(16, AudioFormat.ENCODING_PCM_16BIT))
         val audio = generateSineWave(440.0, 1000, config)
 

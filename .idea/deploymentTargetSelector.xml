@@ -13,15 +13,6 @@
         </DropdownSelection>
         <DialogSelection />
       </SelectionState>
-      <SelectionState runConfigName="EnrollmentViewModelTest">
-        <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
-      <SelectionState runConfigName="processAudioFile_andEnrollSpeaker_succeeds()">
-        <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
-      <SelectionState runConfigName="SpeakerFlowTest">
-        <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
       <SelectionState runConfigName="VADProcessorInstrumentedTest">
         <option name="selectionMode" value="DROPDOWN" />
         <DropdownSelection timestamp="2025-08-25T18:36:56.535067100Z">

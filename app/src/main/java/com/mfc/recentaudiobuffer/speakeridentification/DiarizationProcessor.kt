@@ -19,21 +19,48 @@ data class UnidentifiedSegment(
     val startOffsetBytes: Int,
     val endOffsetBytes: Int,
     val embedding: SpeakerEmbedding,
-    val originalSampleRate: Int  // Add this to track sample rate
-)
+    val originalSampleRate: Int
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as UnidentifiedSegment
+
+        if (startOffsetBytes != other.startOffsetBytes) return false
+        if (endOffsetBytes != other.endOffsetBytes) return false
+        if (originalSampleRate != other.originalSampleRate) return false
+        if (fileUriString != other.fileUriString) return false
+        if (!embedding.contentEquals(other.embedding)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = startOffsetBytes
+        result = 31 * result + endOffsetBytes
+        result = 31 * result + originalSampleRate
+        result = 31 * result + fileUriString.hashCode()
+        result = 31 * result + embedding.contentHashCode()
+        return result
+    }
+}
 
 @Singleton
 class DiarizationProcessor @Inject constructor(
-    private val speakerIdentifier: SpeakerIdentifier,
-    private val vadProcessor: VADProcessor
+    private val speakerIdentifier: SpeakerIdentifier, private val vadProcessor: VADProcessor
 ) {
     companion object {
-        // Minimum segment duration for reliable embeddings (in seconds)
-        const val MIN_SEGMENT_DURATION_SEC = 1.0f
-        // Maximum segment duration to avoid multiple speakers - increased from 3.0f
-        const val MAX_SEGMENT_DURATION_SEC = 5.0f
-        // Overlap threshold for splitting segments
-        const val SEGMENT_OVERLAP_THRESHOLD = 0.25f
+        // Match the model's expectation of 1.5s
+        const val MIN_SEGMENT_DURATION_SEC = 1.5f
+        // Process in chunks up to 3s to get varied speech
+        const val MAX_SEGMENT_DURATION_SEC = 3.0f
+        // Overlap when splitting long segments to avoid cutting words
+        const val SEGMENT_OVERLAP_WINDOW_S = 0.1f
+
+        const val MERGE_GAP_MS = 150 // Tighter gap to prevent merging different speakers
+        const val PADDING_MS = 50
+        const val IS_SPEECH_THRESHOLD = 0.3f
     }
 
     suspend fun process(
@@ -43,33 +70,24 @@ class DiarizationProcessor @Inject constructor(
         audioConfig: AudioConfig
     ): List<UnidentifiedSegment> = withContext(Dispatchers.Default) {
         if (!fullBuffer.hasRemaining()) return@withContext emptyList()
-
         Timber.d("Starting diarization for file: $fileUriString")
 
-        // Check buffer size to avoid processing huge files
-        val bufferSize = fullBuffer.remaining()
-        if (bufferSize > 100_000_000) { // 100MB limit
-            Timber.w("File too large for diarization: ${bufferSize / 1_000_000}MB")
-            return@withContext emptyList()
-        }
-
-        // 1. Determine the sample rate the VAD will use
         val vadSampleRate = if (audioConfig.sampleRateHz >= VADProcessor.VAD_MAX_SAMPLE_RATE) {
             VADProcessor.VAD_MAX_SAMPLE_RATE
         } else {
             VADProcessor.VAD_MIN_SAMPLE_RATE
         }
 
-        // 2. Get speech timestamps with appropriate parameters for diarization
-        // Use smaller merge gap to avoid combining different speakers
-        val mergedTimestamps = vadProcessor.getSpeechTimestamps(
+        // 1. Get all speech timestamps from VAD
+        val speechTimestamps = vadProcessor.getSpeechTimestamps(
             fullBuffer,
             audioConfig,
-            paddingMs = 100,  // Less padding to avoid overlap
-            mergeGapMs = 200  // Smaller gap to keep speakers separate
+            paddingMs = PADDING_MS,
+            mergeGapMs = MERGE_GAP_MS,
+            speechThreshold = IS_SPEECH_THRESHOLD
         )
 
-        if (mergedTimestamps.isEmpty()) {
+        if (speechTimestamps.isEmpty()) {
             Timber.d("No speech found by VAD in $fileUriString.")
             return@withContext emptyList()
         }
@@ -77,164 +95,99 @@ class DiarizationProcessor @Inject constructor(
         val bytesPerSample = audioConfig.bitDepth.bits / 8
         val originalArray = fullBuffer.array()
         val unidentified = mutableListOf<UnidentifiedSegment>()
-
-        // Calculate scaling factor
         val scaleFactor = audioConfig.sampleRateHz.toDouble() / vadSampleRate.toDouble()
+        var validSegmentsCount = 0
 
-        Timber.d("VAD sample rate: $vadSampleRate, Original sample rate: ${audioConfig.sampleRateHz}")
-        Timber.d("Scale factor: $scaleFactor")
+        // 2. Process each individual speech segment
+        for (segment in speechTimestamps.take(200)) { // Limit segments per file
+            coroutineContext.ensureActive()
+            val startVad = segment.start
+            val endVad = segment.end
+            val durationSec = (endVad - startVad).toFloat() / vadSampleRate
 
-        // Limit number of segments to process to avoid memory issues
-        val segmentsToProcess = mergedTimestamps.take(50)
-
-        // Process each merged speech segment
-        for (segment in segmentsToProcess) {
-            // Scale VAD timestamps back to original sample rate
-            val startSampleOriginal = floor(segment.start * scaleFactor).toInt()
-            val endSampleOriginal = ceil(segment.end * scaleFactor).toInt()
-
-            // Debug assertion: verify duration consistency
-            val vadDurationSec = (segment.end - segment.start).toFloat() / vadSampleRate
-            val originalDurationSec = (endSampleOriginal - startSampleOriginal).toFloat() / audioConfig.sampleRateHz
-            val durationDifference = kotlin.math.abs(vadDurationSec - originalDurationSec)
-
-            Timber.d("Segment: VAD duration=${vadDurationSec}s, Scaled duration=${originalDurationSec}s, Diff=${durationDifference}s")
-
-            // Assert durations match within a small tolerance (1ms)
-            if (durationDifference > 0.001f) {
-                Timber.e("Duration mismatch! VAD: ${vadDurationSec}s, Scaled: ${originalDurationSec}s")
-                assert(false) {
-                    "Timestamp scaling error: VAD duration ($vadDurationSec) != Scaled duration ($originalDurationSec)"
-                }
+            // 3. IMPORTANT: Only process segments that are long enough on their own
+            if (durationSec < MIN_SEGMENT_DURATION_SEC) {
+                continue // Skip short segments entirely
             }
+            validSegmentsCount++
 
-            // Calculate duration in seconds
-            val durationSec = (endSampleOriginal - startSampleOriginal).toFloat() / audioConfig.sampleRateHz
+            val startSampleOriginal = floor(startVad * scaleFactor).toInt()
+            val endSampleOriginal = ceil(endVad * scaleFactor).toInt()
 
-            // Split long segments to avoid multiple speakers
-            val subSegments = if (durationSec > MAX_SEGMENT_DURATION_SEC) {
-                splitLongSegment(startSampleOriginal, endSampleOriginal, audioConfig.sampleRateHz)
-            } else if (durationSec < MIN_SEGMENT_DURATION_SEC) {
-                // Try to extend short segments if possible
-                listOf(extendShortSegment(
-                    startSampleOriginal,
-                    endSampleOriginal,
-                    originalArray.size / bytesPerSample,
-                    audioConfig.sampleRateHz
-                ))
-            } else {
-                listOf(Pair(startSampleOriginal, endSampleOriginal))
-            }
+            // Split the chunk if it's longer than our max duration
+            val subSegments = splitLongSegment(startSampleOriginal, endSampleOriginal, audioConfig.sampleRateHz)
 
-            // Process each sub-segment
             for ((subStart, subEnd) in subSegments) {
-                // Check for cancellation before processing
                 coroutineContext.ensureActive()
-
                 val startByte = subStart * bytesPerSample
                 val endByte = subEnd * bytesPerSample
 
                 if (startByte < 0 || endByte > originalArray.size || startByte >= endByte) continue
 
-                // Limit segment size to avoid memory issues
-                val maxSegmentBytes = 10_000_000 // 10MB max per segment
-                val actualEndByte = min(endByte, startByte + maxSegmentBytes)
-
-                val segmentBytes = originalArray.copyOfRange(startByte, actualEndByte)
+                val segmentBytes = originalArray.copyOfRange(startByte, endByte)
                 if (segmentBytes.isEmpty()) continue
 
                 try {
-                    // Check again right before the expensive operation
-                    coroutineContext.ensureActive()
-
                     val segmentEmbedding = speakerIdentifier.generateEmbedding(segmentBytes)
+                    if (segmentEmbedding.isNotEmpty()) {
+                        val bestKnownSimilarity = allKnownSpeakers.maxOfOrNull { speaker ->
+                            speakerIdentifier.calculateCosineSimilarity(segmentEmbedding, speaker.embedding)
+                        } ?: 0f
 
-                    // Check against known speakers
-                    val bestKnownSimilarity = allKnownSpeakers.maxOfOrNull { speaker ->
-                        speakerIdentifier.calculateCosineSimilarity(segmentEmbedding, speaker.embedding)
-                    } ?: 0f
-
-                    if (bestKnownSimilarity <= SpeakerIdentifier.SIMILARITY_THRESHOLD) {
-                        unidentified.add(
-                            UnidentifiedSegment(
-                                fileUriString = fileUriString,
-                                startOffsetBytes = startByte,
-                                endOffsetBytes = actualEndByte,
-                                embedding = segmentEmbedding,
-                                originalSampleRate = audioConfig.sampleRateHz
+                        if (bestKnownSimilarity <= SpeakerIdentifier.SIMILARITY_THRESHOLD) {
+                            unidentified.add(
+                                UnidentifiedSegment(
+                                    fileUriString = fileUriString,
+                                    startOffsetBytes = startByte,
+                                    endOffsetBytes = endByte,
+                                    embedding = segmentEmbedding,
+                                    originalSampleRate = audioConfig.sampleRateHz
+                                )
                             )
-                        )
+                        }
                     }
                 } catch (e: CancellationException) {
-                    // Propagate cancellation properly
                     throw e
-                } catch (e: OutOfMemoryError) {
-                    Timber.e("OOM generating embedding, skipping segment")
-                    System.gc()
-                    break // Stop processing this file
                 } catch (e: Exception) {
                     Timber.w(e, "Failed to generate embedding for segment")
                 }
             }
         }
 
+        Timber.d("VAD produced ${speechTimestamps.size} segments, ${validSegmentsCount} were long enough for processing.")
         Timber.d("Diarization for $fileUriString complete. Found ${unidentified.size} unidentified segments.")
         return@withContext unidentified
     }
 
     private fun splitLongSegment(
-        startSample: Int,
-        endSample: Int,
-        sampleRate: Int
+        startSample: Int, endSample: Int, sampleRate: Int
     ): List<Pair<Int, Int>> {
         val segments = mutableListOf<Pair<Int, Int>>()
-        if (startSample >= endSample) return segments
+        val totalSamples = endSample - startSample
+        val totalDurationSec = totalSamples.toFloat() / sampleRate
+
+        if (totalDurationSec <= MAX_SEGMENT_DURATION_SEC) {
+            segments.add(Pair(startSample, endSample))
+            return segments
+        }
 
         val maxSamplesPerSegment = (MAX_SEGMENT_DURATION_SEC * sampleRate).toInt()
-        val overlapSamples = (SEGMENT_OVERLAP_THRESHOLD * sampleRate).toInt()
+        val overlapSamples = (SEGMENT_OVERLAP_WINDOW_S * sampleRate).toInt()
         val stepSize = maxSamplesPerSegment - overlapSamples
 
-        // Safety check: if overlap is >= max duration, stepSize would be <= 0, causing a loop.
-        // In this case, we just return the original segment to avoid crashing.
         if (stepSize <= 0) {
             segments.add(Pair(startSample, endSample))
             return segments
         }
 
         var currentStart = startSample
-        while (true) {
+        while (currentStart < endSample) {
             val currentEnd = min(currentStart + maxSamplesPerSegment, endSample)
             segments.add(Pair(currentStart, currentEnd))
-
-            // If the segment we just created reaches the very end, we are done.
-            if (currentEnd == endSample) {
-                break
-            }
-
-            // Advance the start of the next window by the step size. This guarantees progress.
+            if (currentEnd == endSample) break
             currentStart += stepSize
         }
-
         return segments
     }
-
-
-    private fun extendShortSegment(
-        startSample: Int,
-        endSample: Int,
-        maxSamples: Int,
-        sampleRate: Int
-    ): Pair<Int, Int> {
-        val targetSamples = (MIN_SEGMENT_DURATION_SEC * sampleRate).toInt()
-        val currentSamples = endSample - startSample
-        val neededSamples = targetSamples - currentSamples
-
-        if (neededSamples <= 0) return Pair(startSample, endSample)
-
-        val paddingSamples = neededSamples / 2
-        val newStart = (startSample - paddingSamples).coerceAtLeast(0)
-        val newEnd = (endSample + paddingSamples).coerceAtMost(maxSamples)
-
-        return Pair(newStart, newEnd)
-    }
 }
+

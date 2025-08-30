@@ -566,8 +566,8 @@ private fun SpeakerSettingsGroup(
         Spacer(Modifier.height(8.dp))
         Button(
             onClick = onManageSpeakersClicked,
-            colors = ButtonDefaults.buttonColors(containerColor = colorResource(id = R.color.teal_350)),
-            border = BorderStroke(1.dp, colorResource(id = R.color.purple_accent))
+            colors = appButtonColors(),
+            border = BorderStroke(2.dp, colorResource(id = R.color.purple_accent))
         ) {
             Text("Manage Enrolled Speakers", color = colorResource(id = R.color.teal_900))
         }
