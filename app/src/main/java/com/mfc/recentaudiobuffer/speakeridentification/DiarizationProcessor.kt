@@ -58,12 +58,12 @@ class DiarizationProcessor @Inject constructor(
         const val SEGMENT_OVERLAP_WINDOW_S = 0.15f
 
         // VAD parameters tuned for sensitivity
-        const val MERGE_GAP_MS = 300           // Increased from 200 to group quieter speech with longer pauses
+        const val MERGE_GAP_MS = 300
         const val PADDING_MS = 100
-        const val IS_SPEECH_THRESHOLD = 0.5f   // Lowered from 0.55f to be more sensitive
+        const val IS_SPEECH_THRESHOLD = 0.5f      // Reverted from 0.45f to reduce noise that might confuse clustering
 
-        // Energy threshold lowered to catch quiet speakers
-        const val MIN_SPEECH_ENERGY_RMS = 0.001f  // Lowered from 0.002f
+        // Energy threshold at a balanced level
+        const val MIN_SPEECH_ENERGY_RMS = 0.001f  // Reverted from 0.0008f to re-stabilize clustering
     }
 
     private fun calculateRMS(audioBytes: ByteArray): Float {
@@ -304,3 +304,5 @@ class DiarizationProcessor @Inject constructor(
         return segments
     }
 }
+
+

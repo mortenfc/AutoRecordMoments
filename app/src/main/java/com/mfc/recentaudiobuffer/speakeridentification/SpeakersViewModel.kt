@@ -78,20 +78,21 @@ class SpeakersViewModel @Inject constructor(
 ) : ViewModel() {
 
     companion object {
-        // DBSCAN parameters
-        const val DBSCAN_EPS = 0.55f
-        const val DBSCAN_MIN_PTS = 3
+        // DBSCAN parameters - More inclusive initial clustering
+        const val DBSCAN_EPS = 0.55f // Lower means more clusters
+        const val DBSCAN_MIN_PTS =
+            2                      // Lower means more clusters
 
         // Noise re-clustering
         const val NOISE_EPS = 0.45f
         const val NOISE_MIN_PTS = 5
         const val MIN_NOISE_FOR_RECLUSTERING = 10
 
-        // Post-processing
-        const val FINAL_MERGE_THRESHOLD = 0.4f          // Lowered from 0.45f to merge speech/laugh clusters
+        const val FINAL_MERGE_THRESHOLD = 0.25f         // Lower means less clusters.
         const val MIN_CLUSTER_SIZE = 2
         const val CLUSTER_PURITY_THRESHOLD = 0.55f
-        const val MAX_CLUSTER_VARIANCE = 0.0030f        // Raised from 0.0025f to allow for more variance (e.g., laughter)
+        const val MAX_CLUSTER_VARIANCE =
+            0.004f        // Raised from 0.0035f to allow for highly varied clusters (speech+laugh)
 
         // Sample generation
         const val SAMPLE_MIN_DURATION_SEC = 7
@@ -240,8 +241,7 @@ class SpeakersViewModel @Inject constructor(
     }
 
     private fun calculateClusterVariance(
-        embeddings: List<SpeakerEmbedding>,
-        centroid: SpeakerEmbedding
+        embeddings: List<SpeakerEmbedding>, centroid: SpeakerEmbedding
     ): Float {
         if (embeddings.isEmpty()) return 0f
 
@@ -278,15 +278,20 @@ class SpeakersViewModel @Inject constructor(
 
         // Stage 2: Re-cluster noise if it's a significant portion of the data, or if initial clustering was weak.
         val finalClusters = initialClusters.toMutableMap()
-        val noiseToTotalRatio = if (validSegments.isNotEmpty()) noisePoints.size.toFloat() / validSegments.size else 0f
+        val noiseToTotalRatio =
+            if (validSegments.isNotEmpty()) noisePoints.size.toFloat() / validSegments.size else 0f
 
         // Re-cluster if noise makes up > 30% of segments, OR if we found 5 or fewer initial clusters.
-        val shouldReclusterNoise = noisePoints.size >= MIN_NOISE_FOR_RECLUSTERING &&
-                (noiseToTotalRatio > 0.3f || initialClusters.size <= 5)
+        val shouldReclusterNoise =
+            noisePoints.size >= MIN_NOISE_FOR_RECLUSTERING && (noiseToTotalRatio > 0.3f || initialClusters.size <= 5)
 
         if (shouldReclusterNoise) {
             // Much stricter parameters for noise clustering
-            Timber.d("Re-clustering ${noisePoints.size} noise points (ratio: %.2f) with eps=$NOISE_EPS, minPts=$NOISE_MIN_PTS".format(noiseToTotalRatio))
+            Timber.d(
+                "Re-clustering ${noisePoints.size} noise points (ratio: %.2f) with eps=$NOISE_EPS, minPts=$NOISE_MIN_PTS".format(
+                    noiseToTotalRatio
+                )
+            )
             val (noiseClusters, remainingNoise) = dbscanClusteringPass(
                 noisePoints, eps = NOISE_EPS, minPts = NOISE_MIN_PTS
             )
@@ -302,7 +307,11 @@ class SpeakersViewModel @Inject constructor(
                 }
             }
         } else if (noisePoints.isNotEmpty()) {
-            Timber.d("Skipping noise re-clustering: ${noisePoints.size} noise points (ratio: %.2f), ${initialClusters.size} initial clusters".format(noiseToTotalRatio))
+            Timber.d(
+                "Skipping noise re-clustering: ${noisePoints.size} noise points (ratio: %.2f), ${initialClusters.size} initial clusters".format(
+                    noiseToTotalRatio
+                )
+            )
         }
 
 
@@ -738,3 +747,4 @@ class SpeakersViewModel @Inject constructor(
         scanningJob?.cancel()
     }
 }
+
