@@ -56,8 +56,10 @@ class OnnxSpeakerIdentifier @Inject constructor(
 
         // Minimum audio quality thresholds
         private const val MIN_RMS_ENERGY = 0.002f
-        // Reject any chunk that is less than 50% of the required duration
-        private const val MIN_REQUIRED_SAMPLES_RATIO = 0.5f
+
+        // Reject any chunk that is less than X% of the required duration
+        // (67% of 1.5s is 1.0 seconds)
+        private const val MIN_REQUIRED_SAMPLES_RATIO = 0.67f
     }
 
     private val ortEnvironment = OrtEnvironment.getEnvironment()

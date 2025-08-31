@@ -36,7 +36,6 @@ import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
-import kotlin.math.min
 import kotlin.math.sqrt
 
 data class UnknownSpeaker(
@@ -80,13 +79,22 @@ class SpeakersViewModel @Inject constructor(
 
     companion object {
         // DBSCAN parameters
-        const val DBSCAN_EPS = 0.65f
+        // DBSCAN parameters - STRICTER for cleaner initial clusters
+        const val DBSCAN_EPS = 0.55f                    // Tightened from 0.58f
         const val DBSCAN_MIN_PTS = 3
 
+        // Noise re-clustering - MUCH STRICTER to avoid trash clusters
+        const val NOISE_EPS = 0.45f                     // Requires 55% similarity (was 0.85f!)
+        const val NOISE_MIN_PTS = 5                     // Requires 5+ segments (was 2!)
+        const val MIN_NOISE_FOR_RECLUSTERING =
+            10       // Only recluster if we have substantial noise
+
         // Post-processing
-        const val FINAL_MERGE_THRESHOLD = 0.35f         // Slightly more lenient merge to combine duplicates
-        const val MIN_CLUSTER_SIZE = 2
-        const val CLUSTER_PURITY_THRESHOLD = 0.50f      // Segments must be at least 50% similar to the cluster average
+        const val FINAL_MERGE_THRESHOLD = 0.45f         // Slightly raised from 0.4f
+        const val MIN_CLUSTER_SIZE = 2                  // Raised from 2
+        const val CLUSTER_PURITY_THRESHOLD = 0.55f      // Raised from 0.45f for higher purity
+        const val MAX_CLUSTER_VARIANCE = 0.0025f        // Lowered from 0.35f for tighter clusters
+
 
         // Sample generation
         const val SAMPLE_MIN_DURATION_SEC = 7
@@ -234,6 +242,26 @@ class SpeakersViewModel @Inject constructor(
         }
     }
 
+    private fun calculateClusterVariance(
+        embeddings: List<SpeakerEmbedding>,
+        centroid: SpeakerEmbedding
+    ): Float {
+        if (embeddings.isEmpty()) return 0f
+
+        val distances = embeddings.map { embedding ->
+            1.0f - speakerIdentifier.calculateCosineSimilarity(embedding, centroid)
+        }
+
+        val mean = distances.average().toFloat()
+        val variance = distances.map { d ->
+            val diff = d - mean
+            diff * diff
+        }.average().toFloat()
+
+        return variance
+    }
+
+
     private suspend fun improvedClusterSegments(
         segments: List<UnidentifiedSegment>
     ): Map<String, List<UnidentifiedSegment>> = withContext(Dispatchers.Default) {
@@ -251,22 +279,27 @@ class SpeakersViewModel @Inject constructor(
         )
         Timber.d("Primary pass found ${initialClusters.size} clusters and ${noisePoints.size} noise points.")
 
-        // Stage 2: Re-cluster noise points with more lenient settings
+        // Stage 2: Only re-cluster noise if we have few speakers and substantial noise
         val finalClusters = initialClusters.toMutableMap()
-        if (noisePoints.size >= MIN_CLUSTER_SIZE) {
-            val noiseEps = 0.85f // Corresponds to 15% similarity, lenient for leftovers
-            val noiseMinPts = 2
-            Timber.d("Re-clustering ${noisePoints.size} noise points with eps=$noiseEps, minPts=$noiseMinPts")
-            val (noiseClusters, _) = dbscanClusteringPass(
-                noisePoints, eps = noiseEps, minPts = noiseMinPts
+        if (noisePoints.size >= MIN_NOISE_FOR_RECLUSTERING && initialClusters.size <= 2) {
+            // Much stricter parameters for noise clustering
+            Timber.d("Re-clustering ${noisePoints.size} noise points with eps=$NOISE_EPS, minPts=$NOISE_MIN_PTS")
+            val (noiseClusters, remainingNoise) = dbscanClusteringPass(
+                noisePoints, eps = NOISE_EPS, minPts = NOISE_MIN_PTS
             )
-            Timber.d("Second pass found ${noiseClusters.size} additional clusters from noise.")
+            Timber.d("Second pass found ${noiseClusters.size} additional clusters from noise, ${remainingNoise.size} points remain as noise.")
 
-            // Add new clusters found in noise, avoiding key collisions
+            // Only add noise clusters that meet minimum size requirements
             noiseClusters.values.forEach { newCluster ->
-                val newId = "cluster_noise_${finalClusters.size}"
-                finalClusters[newId] = newCluster
+                if (newCluster.size >= MIN_CLUSTER_SIZE) {
+                    val newId = "cluster_noise_${finalClusters.size}"
+                    finalClusters[newId] = newCluster
+                } else {
+                    Timber.d("Rejected noise cluster with only ${newCluster.size} segments")
+                }
             }
+        } else if (noisePoints.isNotEmpty()) {
+            Timber.d("Skipping noise re-clustering: ${noisePoints.size} noise points, ${initialClusters.size} initial clusters")
         }
 
         // Stage 3: Merge similar clusters
@@ -278,79 +311,79 @@ class SpeakersViewModel @Inject constructor(
         }
 
         // Stage 4: Filter by size and format output
-        val result = mergedClusters
-            .filter { it.value.size >= MIN_CLUSTER_SIZE }
-            .entries
-            .sortedByDescending { it.value.size }
-            .mapIndexed { index, entry -> "speaker_${index + 1}" to entry.value }
-            .toMap()
+        val result =
+            mergedClusters.filter { it.value.size >= MIN_CLUSTER_SIZE }.entries.sortedByDescending { it.value.size }
+                .mapIndexed { index, entry -> "speaker_${index + 1}" to entry.value }.toMap()
 
         Timber.d("Clustering complete. Found ${result.size} final speakers.")
         return@withContext result
     }
 
     private fun findNeighbors(
-        segment: UnidentifiedSegment,
-        allSegments: List<UnidentifiedSegment>,
-        eps: Float
+        segment: UnidentifiedSegment, allSegments: List<UnidentifiedSegment>, eps: Float
     ): List<UnidentifiedSegment> {
         return allSegments.filter { other ->
-            val distance = 1.0f - speakerIdentifier.calculateCosineSimilarity(segment.embedding, other.embedding)
+            val distance = 1.0f - speakerIdentifier.calculateCosineSimilarity(
+                segment.embedding, other.embedding
+            )
             distance <= eps
         }
     }
 
     private suspend fun dbscanClusteringPass(
         segments: List<UnidentifiedSegment>, eps: Float, minPts: Int
-    ): Pair<Map<String, MutableList<UnidentifiedSegment>>, List<UnidentifiedSegment>> = withContext(Dispatchers.Default) {
-        val labels = mutableMapOf<UnidentifiedSegment, Int>() // 0=unvisited, -1=noise, >0=clusterId
-        var clusterId = 0
+    ): Pair<Map<String, MutableList<UnidentifiedSegment>>, List<UnidentifiedSegment>> =
+        withContext(Dispatchers.Default) {
+            val labels =
+                mutableMapOf<UnidentifiedSegment, Int>() // 0=unvisited, -1=noise, >0=clusterId
+            var clusterId = 0
 
-        for (segment in segments) {
-            if (labels.containsKey(segment)) continue
+            for (segment in segments) {
+                if (labels.containsKey(segment)) continue
 
-            val neighbors = findNeighbors(segment, segments, eps)
+                val neighbors = findNeighbors(segment, segments, eps)
 
-            if (neighbors.size < minPts) {
-                labels[segment] = -1 // Mark as noise
-                continue
-            }
+                if (neighbors.size < minPts) {
+                    labels[segment] = -1 // Mark as noise
+                    continue
+                }
 
-            clusterId++
-            labels[segment] = clusterId
-            val seedSet = neighbors.toMutableSet()
-            seedSet.remove(segment)
+                clusterId++
+                labels[segment] = clusterId
+                val seedSet = neighbors.toMutableSet()
+                seedSet.remove(segment)
 
-            while (seedSet.isNotEmpty()) {
-                val current = seedSet.first()
-                seedSet.remove(current)
+                while (seedSet.isNotEmpty()) {
+                    val current = seedSet.first()
+                    seedSet.remove(current)
 
-                val currentLabel = labels.getOrDefault(current, 0)
-                if (currentLabel == -1) labels[current] = clusterId // Change from noise to border point
-                if (currentLabel != 0) continue // Already processed
+                    val currentLabel = labels.getOrDefault(current, 0)
+                    if (currentLabel == -1) labels[current] =
+                        clusterId // Change from noise to border point
+                    if (currentLabel != 0) continue // Already processed
 
-                labels[current] = clusterId
-                val currentNeighbors = findNeighbors(current, segments, eps)
-                if (currentNeighbors.size >= minPts) {
-                    seedSet.addAll(currentNeighbors)
+                    labels[current] = clusterId
+                    val currentNeighbors = findNeighbors(current, segments, eps)
+                    if (currentNeighbors.size >= minPts) {
+                        seedSet.addAll(currentNeighbors)
+                    }
                 }
             }
-        }
 
-        val clusters = mutableMapOf<String, MutableList<UnidentifiedSegment>>()
-        val noise = mutableListOf<UnidentifiedSegment>()
+            val clusters = mutableMapOf<String, MutableList<UnidentifiedSegment>>()
+            val noise = mutableListOf<UnidentifiedSegment>()
 
-        labels.entries.groupBy { it.value }.forEach { (id, segmentEntries) ->
-            val segmentList = segmentEntries.map { it.key }.toMutableList()
-            if (id == -1) {
-                noise.addAll(segmentList)
-            } else if (id > 0) {
-                clusters["cluster_pass_$id"] = segmentList
+            labels.entries.groupBy { it.value }.forEach { (id, segmentEntries) ->
+                val segmentList = segmentEntries.map { it.key }.toMutableList()
+                if (id == -1) {
+                    noise.addAll(segmentList)
+                } else if (id > 0) {
+                    clusters["cluster_pass_$id"] = segmentList
+                }
             }
-        }
 
-        return@withContext Pair(clusters, noise)
-    }
+            return@withContext Pair(clusters, noise)
+        }
 
     private fun mergeSimilarClusters(
         clusters: Map<String, MutableList<UnidentifiedSegment>>, threshold: Float
@@ -408,6 +441,7 @@ class SpeakersViewModel @Inject constructor(
         val finalSpeakers = mutableListOf<UnknownSpeaker>()
         val audioDataCache = mutableMapOf<String, Pair<ByteArray, AudioConfig>>()
 
+        // Pre-load audio data
         for (segments in clusteredSegments.values) {
             for (segment in segments) {
                 if (!audioDataCache.containsKey(segment.fileUriString)) {
@@ -426,12 +460,15 @@ class SpeakersViewModel @Inject constructor(
         for ((id, segments) in clusteredSegments) {
             coroutineContext.ensureActive()
 
-            // ** NEW CLUSTER PURITY CHECK **
-            if (segments.size < 2) continue // Can't check purity on a single segment
+            if (segments.size < MIN_CLUSTER_SIZE) continue
 
+            // Calculate cluster centroid
             val clusterCentroid = speakerIdentifier.averageEmbeddings(segments.map { it.embedding })
+
+            // ENHANCED PURITY CHECK with variance calculation
             val pureSegments = segments.filter {
-                val similarityToCentroid = speakerIdentifier.calculateCosineSimilarity(it.embedding, clusterCentroid)
+                val similarityToCentroid =
+                    speakerIdentifier.calculateCosineSimilarity(it.embedding, clusterCentroid)
                 similarityToCentroid >= CLUSTER_PURITY_THRESHOLD
             }
 
@@ -444,8 +481,20 @@ class SpeakersViewModel @Inject constructor(
                 Timber.d("Cluster $id discarded as it has too few pure segments (${pureSegments.size}).")
                 continue
             }
-            // ** END PURITY CHECK **
 
+            // NEW: Calculate and check cluster variance
+            val variance = calculateClusterVariance(
+                pureSegments.map { it.embedding }, clusterCentroid
+            )
+
+            if (variance > MAX_CLUSTER_VARIANCE) {
+                Timber.d("Cluster $id discarded due to high variance: $variance (max allowed: $MAX_CLUSTER_VARIANCE)")
+                continue
+            }
+
+            Timber.d("Cluster $id accepted with variance: $variance and ${pureSegments.size} pure segments")
+
+            // Extract audio chunks for sample creation
             val audioChunksWithConfig = pureSegments.mapNotNull { segment ->
                 audioDataCache[segment.fileUriString]?.let { (audioBytes, config) ->
                     val chunk = audioBytes.copyOfRange(
@@ -459,6 +508,7 @@ class SpeakersViewModel @Inject constructor(
                 val sampleUri = createImprovedSpeakerSample(audioChunksWithConfig)
                 val avgEmbedding =
                     speakerIdentifier.averageEmbeddings(pureSegments.map { it.embedding })
+
                 finalSpeakers.add(
                     UnknownSpeaker(
                         id = id,
@@ -469,6 +519,8 @@ class SpeakersViewModel @Inject constructor(
                 )
             }
         }
+
+        Timber.d("Created ${finalSpeakers.size} final speaker objects from ${clusteredSegments.size} clusters")
         return finalSpeakers
     }
 
