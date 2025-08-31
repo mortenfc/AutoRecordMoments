@@ -201,4 +201,3 @@ class OnnxSpeakerIdentifier @Inject constructor(
         session.close()
     }
 }
-

@@ -368,18 +368,22 @@ fun SpeakersScreenContent(
                     is SpeakerDiscoveryUiState.Scanning -> {
                         val animatedProgress by animateFloatAsState(
                             targetValue = state.progress,
-                            animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
+                            animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
+                            label = "Scan Progress"
                         )
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             LinearProgressIndicator(
-                                modifier = Modifier.height(5.dp).fillMaxWidth(),
+                                modifier = Modifier
+                                    .height(6.dp)
+                                    .fillMaxWidth(fraction = 0.9f),
                                 progress = { animatedProgress },
                                 color = colorResource(id = R.color.purple_accent),
                                 trackColor = colorResource(id = R.color.purple_accent).copy(alpha = 0.25f),
-                                gapSize = 0.dp
+                                strokeCap = DefaultStrokeLineCap,
+                                gapSize = 4.dp
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(

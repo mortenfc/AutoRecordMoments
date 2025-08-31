@@ -79,22 +79,19 @@ class SpeakersViewModel @Inject constructor(
 
     companion object {
         // DBSCAN parameters
-        // DBSCAN parameters - STRICTER for cleaner initial clusters
-        const val DBSCAN_EPS = 0.55f                    // Tightened from 0.58f
+        const val DBSCAN_EPS = 0.55f
         const val DBSCAN_MIN_PTS = 3
 
-        // Noise re-clustering - MUCH STRICTER to avoid trash clusters
-        const val NOISE_EPS = 0.45f                     // Requires 55% similarity (was 0.85f!)
-        const val NOISE_MIN_PTS = 5                     // Requires 5+ segments (was 2!)
-        const val MIN_NOISE_FOR_RECLUSTERING =
-            10       // Only recluster if we have substantial noise
+        // Noise re-clustering
+        const val NOISE_EPS = 0.45f
+        const val NOISE_MIN_PTS = 5
+        const val MIN_NOISE_FOR_RECLUSTERING = 10
 
         // Post-processing
-        const val FINAL_MERGE_THRESHOLD = 0.45f         // Slightly raised from 0.4f
-        const val MIN_CLUSTER_SIZE = 2                  // Raised from 2
-        const val CLUSTER_PURITY_THRESHOLD = 0.55f      // Raised from 0.45f for higher purity
-        const val MAX_CLUSTER_VARIANCE = 0.0025f        // Lowered from 0.35f for tighter clusters
-
+        const val FINAL_MERGE_THRESHOLD = 0.4f          // Lowered from 0.45f to merge speech/laugh clusters
+        const val MIN_CLUSTER_SIZE = 2
+        const val CLUSTER_PURITY_THRESHOLD = 0.55f
+        const val MAX_CLUSTER_VARIANCE = 0.0030f        // Raised from 0.0025f to allow for more variance (e.g., laughter)
 
         // Sample generation
         const val SAMPLE_MIN_DURATION_SEC = 7
@@ -279,11 +276,17 @@ class SpeakersViewModel @Inject constructor(
         )
         Timber.d("Primary pass found ${initialClusters.size} clusters and ${noisePoints.size} noise points.")
 
-        // Stage 2: Only re-cluster noise if we have few speakers and substantial noise
+        // Stage 2: Re-cluster noise if it's a significant portion of the data, or if initial clustering was weak.
         val finalClusters = initialClusters.toMutableMap()
-        if (noisePoints.size >= MIN_NOISE_FOR_RECLUSTERING && initialClusters.size <= 2) {
+        val noiseToTotalRatio = if (validSegments.isNotEmpty()) noisePoints.size.toFloat() / validSegments.size else 0f
+
+        // Re-cluster if noise makes up > 30% of segments, OR if we found 5 or fewer initial clusters.
+        val shouldReclusterNoise = noisePoints.size >= MIN_NOISE_FOR_RECLUSTERING &&
+                (noiseToTotalRatio > 0.3f || initialClusters.size <= 5)
+
+        if (shouldReclusterNoise) {
             // Much stricter parameters for noise clustering
-            Timber.d("Re-clustering ${noisePoints.size} noise points with eps=$NOISE_EPS, minPts=$NOISE_MIN_PTS")
+            Timber.d("Re-clustering ${noisePoints.size} noise points (ratio: %.2f) with eps=$NOISE_EPS, minPts=$NOISE_MIN_PTS".format(noiseToTotalRatio))
             val (noiseClusters, remainingNoise) = dbscanClusteringPass(
                 noisePoints, eps = NOISE_EPS, minPts = NOISE_MIN_PTS
             )
@@ -292,15 +295,16 @@ class SpeakersViewModel @Inject constructor(
             // Only add noise clusters that meet minimum size requirements
             noiseClusters.values.forEach { newCluster ->
                 if (newCluster.size >= MIN_CLUSTER_SIZE) {
-                    val newId = "cluster_noise_${finalClusters.size}"
+                    val newId = "cluster_noise_${UUID.randomUUID()}"
                     finalClusters[newId] = newCluster
                 } else {
                     Timber.d("Rejected noise cluster with only ${newCluster.size} segments")
                 }
             }
         } else if (noisePoints.isNotEmpty()) {
-            Timber.d("Skipping noise re-clustering: ${noisePoints.size} noise points, ${initialClusters.size} initial clusters")
+            Timber.d("Skipping noise re-clustering: ${noisePoints.size} noise points (ratio: %.2f), ${initialClusters.size} initial clusters".format(noiseToTotalRatio))
         }
+
 
         // Stage 3: Merge similar clusters
         val mergedClusters = if (finalClusters.size > 1) {
@@ -734,4 +738,3 @@ class SpeakersViewModel @Inject constructor(
         scanningJob?.cancel()
     }
 }
-

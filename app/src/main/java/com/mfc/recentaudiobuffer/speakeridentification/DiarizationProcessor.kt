@@ -53,25 +53,19 @@ class DiarizationProcessor @Inject constructor(
 
     // Update the companion object constants in DiarizationProcessor:
     companion object {
-        // Lowered to 1.0s to capture more speakers, but still filter very short noise
-        const val MIN_SEGMENT_DURATION_SEC = 1.0f  // Was 1.5f
-
-        // Process in chunks up to 3s to get varied speech
+        const val MIN_SEGMENT_DURATION_SEC = 1.0f
         const val MAX_SEGMENT_DURATION_SEC = 3.0f
+        const val SEGMENT_OVERLAP_WINDOW_S = 0.15f
 
-        // Overlap when splitting long segments to avoid cutting words
-        const val SEGMENT_OVERLAP_WINDOW_S = 0.15f  // Increased from 0.1f for better continuity
+        // VAD parameters tuned for sensitivity
+        const val MERGE_GAP_MS = 300           // Increased from 200 to group quieter speech with longer pauses
+        const val PADDING_MS = 100
+        const val IS_SPEECH_THRESHOLD = 0.5f   // Lowered from 0.55f to be more sensitive
 
-        // Tighter VAD parameters to filter out non-speech
-        const val MERGE_GAP_MS = 200  // Increased from 150 to allow natural pauses
-        const val PADDING_MS = 100    // Increased from 50 for better context
-        const val IS_SPEECH_THRESHOLD = 0.55f  // RAISED from 0.3f to filter kitchen noise
-
-        // NEW: Energy threshold to filter out quiet/noise segments
-        const val MIN_SPEECH_ENERGY_RMS = 0.002f  // Minimum RMS energy for speech
+        // Energy threshold lowered to catch quiet speakers
+        const val MIN_SPEECH_ENERGY_RMS = 0.001f  // Lowered from 0.002f
     }
 
-    // Add this helper function after the companion object:
     private fun calculateRMS(audioBytes: ByteArray): Float {
         if (audioBytes.isEmpty() || audioBytes.size % 2 != 0) return 0f
 
@@ -89,7 +83,6 @@ class DiarizationProcessor @Inject constructor(
         return kotlin.math.sqrt(sumOfSquares / sampleCount).toFloat()
     }
 
-    // Replace the process function with this enhanced version:
     suspend fun process(
         fullBuffer: ByteBuffer,
         fileUriString: String,
@@ -105,13 +98,13 @@ class DiarizationProcessor @Inject constructor(
             VADProcessor.VAD_MIN_SAMPLE_RATE
         }
 
-        // 1. Get all speech timestamps from VAD with stricter threshold
+        // 1. Get all speech timestamps from VAD with tuned thresholds
         val speechTimestamps = vadProcessor.getSpeechTimestamps(
             fullBuffer,
             audioConfig,
             paddingMs = PADDING_MS,
             mergeGapMs = MERGE_GAP_MS,
-            speechThreshold = IS_SPEECH_THRESHOLD  // Now 0.55f instead of 0.3f
+            speechThreshold = IS_SPEECH_THRESHOLD
         )
 
         if (speechTimestamps.isEmpty()) {
@@ -127,7 +120,6 @@ class DiarizationProcessor @Inject constructor(
         var rejectedForEnergy = 0
         var rejectedForDuration = 0
 
-        // Track adjacent short segments for concatenation
         val shortSegmentsBuffer = mutableListOf<VADProcessor.SpeechTimestamp>()
 
         // 2. Process each speech segment with enhanced filtering
@@ -142,14 +134,11 @@ class DiarizationProcessor @Inject constructor(
             if (durationSec < MIN_SEGMENT_DURATION_SEC) {
                 shortSegmentsBuffer.add(segment)
 
-                // Check if we should process accumulated short segments
-                val totalDuration = shortSegmentsBuffer.sumOf { segment ->
-                    ((segment.end - segment.start).toFloat() / vadSampleRate).toDouble()
+                val totalDuration = shortSegmentsBuffer.sumOf { seg ->
+                    ((seg.end - seg.start).toFloat() / vadSampleRate).toDouble()
                 }.toFloat()
 
-                // If we have enough accumulated duration OR this is the last segment
                 if (totalDuration >= MIN_SEGMENT_DURATION_SEC || index == speechTimestamps.size - 1) {
-                    // Process concatenated segments
                     val concatenatedSegment = processConcatenatedSegments(
                         shortSegmentsBuffer,
                         vadSampleRate,
@@ -168,15 +157,12 @@ class DiarizationProcessor @Inject constructor(
                 continue
             }
 
-            // Clear any remaining short segments buffer when we hit a long segment
             shortSegmentsBuffer.clear()
-
             validSegmentsCount++
 
             val startSampleOriginal = floor(startVad * scaleFactor).toInt()
             val endSampleOriginal = ceil(endVad * scaleFactor).toInt()
 
-            // Split the chunk if it's longer than our max duration
             val subSegments =
                 splitLongSegment(startSampleOriginal, endSampleOriginal, audioConfig.sampleRateHz)
 
@@ -190,7 +176,6 @@ class DiarizationProcessor @Inject constructor(
                 val segmentBytes = originalArray.copyOfRange(startByte, endByte)
                 if (segmentBytes.isEmpty()) continue
 
-                // NEW: Check audio energy to filter out non-speech noise
                 val rms = calculateRMS(segmentBytes)
                 if (rms < MIN_SPEECH_ENERGY_RMS) {
                     rejectedForEnergy++
@@ -234,7 +219,6 @@ class DiarizationProcessor @Inject constructor(
         return@withContext unidentified
     }
 
-    // NEW: Function to handle concatenated short segments
     private suspend fun processConcatenatedSegments(
         segments: List<VADProcessor.SpeechTimestamp>,
         vadSampleRate: Int,
@@ -247,11 +231,9 @@ class DiarizationProcessor @Inject constructor(
     ): UnidentifiedSegment? {
         if (segments.isEmpty()) return null
 
-        // Find the overall span of these segments
         val firstStart = segments.first().start
         val lastEnd = segments.last().end
 
-        // Convert to original sample rate
         val startSampleOriginal = floor(firstStart * scaleFactor).toInt()
         val endSampleOriginal = ceil(lastEnd * scaleFactor).toInt()
 
@@ -262,7 +244,6 @@ class DiarizationProcessor @Inject constructor(
 
         val concatenatedBytes = originalArray.copyOfRange(startByte, endByte)
 
-        // Check energy
         val rms = calculateRMS(concatenatedBytes)
         if (rms < MIN_SPEECH_ENERGY_RMS) {
             Timber.d("Concatenated segments rejected for low energy: RMS=$rms")
@@ -323,4 +304,3 @@ class DiarizationProcessor @Inject constructor(
         return segments
     }
 }
-
