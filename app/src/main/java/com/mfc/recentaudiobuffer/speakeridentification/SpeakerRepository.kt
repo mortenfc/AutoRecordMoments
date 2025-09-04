@@ -20,125 +20,55 @@ package com.mfc.recentaudiobuffer.speakeridentification
 
 import android.content.Context
 import androidx.core.net.toUri
+import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.WriteBatch
-import com.google.firebase.storage.FirebaseStorage
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
-import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageReference
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.tasks.await  // For coroutine support
+import java.io.File
 
-data class FirestoreClusteringConfig(
-    // DBSCAN
-    val dbscanEps: Float = DEFAULTS.dbscanEps,
-    val highConfidenceMinPts: Int = DEFAULTS.highConfidenceMinPts,
-    // AHC
-    val leftoverAhcThreshold: Float = DEFAULTS.leftoverAhcThreshold,
-    // Quality
-    val minClusterSize: Int = DEFAULTS.minClusterSize,
-    val clusterPurityThreshold: Float = DEFAULTS.clusterPurityThreshold,
-    val maxClusterVariance: Float = DEFAULTS.maxClusterVariance,
-    // Sample Generation
-    val sampleMinDurationSec: Int = DEFAULTS.sampleMinDurationSec,
-    val sampleMaxDurationSec: Int = DEFAULTS.sampleMaxDurationSec,
-    val sampleTargetSegments: Int = DEFAULTS.sampleTargetSegments,
-    val minChunkDurationSec: Float = DEFAULTS.minChunkDurationSec,
-    val sampleSilenceDurationMs: Int = DEFAULTS.sampleSilenceDurationMs,
-    // Diarization
-    val minSegmentDurationSec: Float = DEFAULTS.minSegmentDurationSec,
-    val maxSegmentDurationSec: Float = DEFAULTS.maxSegmentDurationSec,
-    val minSpeechEnergyRms: Float = DEFAULTS.minSpeechEnergyRms,
-    // VAD
-    val vadMergeGapMs: Int = DEFAULTS.vadMergeGapMs,
-    val vadPaddingMs: Int = DEFAULTS.vadPaddingMs,
-    val vadSpeechThreshold: Float = DEFAULTS.vadSpeechThreshold
-) {
-    // No-arg constructor for Firestore
-    constructor() : this(DEFAULTS.dbscanEps)
-
-    fun toParameters(): SpeakerClusteringConfig.Parameters {
-        return SpeakerClusteringConfig.Parameters(
-            dbscanEps,
-            highConfidenceMinPts,
-            leftoverAhcThreshold,
-            minClusterSize,
-            clusterPurityThreshold,
-            maxClusterVariance,
-            sampleMinDurationSec,
-            sampleMaxDurationSec,
-            sampleTargetSegments,
-            minChunkDurationSec,
-            sampleSilenceDurationMs,
-            minSegmentDurationSec,
-            maxSegmentDurationSec,
-            minSpeechEnergyRms,
-            vadMergeGapMs,
-            vadPaddingMs,
-            vadSpeechThreshold
-        )
-    }
-
-    companion object {
-        private val DEFAULTS = SpeakerClusteringConfig.Parameters()
-
-        fun fromParameters(params: SpeakerClusteringConfig.Parameters): FirestoreClusteringConfig {
-            return FirestoreClusteringConfig(
-                params.dbscanEps,
-                params.highConfidenceMinPts,
-                params.leftoverAhcThreshold,
-                params.minClusterSize,
-                params.clusterPurityThreshold,
-                params.maxClusterVariance,
-                params.sampleMinDurationSec,
-                params.sampleMaxDurationSec,
-                params.sampleTargetSegments,
-                params.minChunkDurationSec,
-                params.sampleSilenceDurationMs,
-                params.minSegmentDurationSec,
-                params.maxSegmentDurationSec,
-                params.minSpeechEnergyRms,
-                params.vadMergeGapMs,
-                params.vadPaddingMs,
-                params.vadSpeechThreshold
-            )
-        }
-    }
-}
-
+/**
+ * Data class for Firestore serialization.
+ * Firestore can't directly serialize FloatArray or Uri, so we use simpler types.
+ */
 data class FirestoreSpeaker(
     val id: String = "",
     val name: String = "",
-    val embedding: List<Float> = emptyList(),
-    val sampleUri: String? = null,
+    val embedding: List<Float> = emptyList(),  // List instead of FloatArray
+    val sampleUri: String? = null,  // String instead of Uri
     val createdAt: Long = System.currentTimeMillis(),
     val lastUsedAt: Long = System.currentTimeMillis()
 ) {
+    // Convert to Room Speaker entity
     fun toSpeaker(): Speaker {
         return Speaker(
             id = id,
             name = name,
             embedding = embedding.toFloatArray(),
-            sampleUri = sampleUri?.toUri(),
+            sampleUri = sampleUri?.let { android.net.Uri.parse(it) },
             createdAt = createdAt,
             lastUsedAt = lastUsedAt
         )
     }
 
     companion object {
+        // Convert from Room Speaker entity
         fun fromSpeaker(speaker: Speaker): FirestoreSpeaker {
             return FirestoreSpeaker(
                 id = speaker.id,
@@ -161,39 +91,49 @@ class SpeakerRepository @Inject constructor(
 ) {
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    private val _clusteringConfig = MutableStateFlow<FirestoreClusteringConfig?>(null)
-    val clusteringConfig = _clusteringConfig.asStateFlow()
-
     init {
+        // Listen for authentication changes to trigger data sync
         auth.addAuthStateListener { firebaseAuth ->
             val user = firebaseAuth.currentUser
             if (user != null) {
+                // User logged in, pull data from Firestore
                 repositoryScope.launch {
                     pullFromFirestore(user.uid)
                 }
             } else {
+                // User logged out, clear local data to prevent mixing profiles
                 repositoryScope.launch {
                     speakerDao.clearAll()
-                    _clusteringConfig.value = null
                 }
             }
         }
     }
 
+    /**
+     * The single source of truth for the UI. Always reads from the local Room database.
+     */
     fun getAllSpeakers(): Flow<List<Speaker>> = speakerDao.getAllSpeakers()
 
     suspend fun getSpeakersByIds(ids: List<String>): List<Speaker> =
         speakerDao.getSpeakersByIds(ids)
 
     suspend fun addSpeaker(speaker: Speaker) {
+        // 1. Always write to the local database first for immediate UI update
         speakerDao.insertSpeaker(speaker)
 
+        // 2. If logged in, also write to Firestore
         auth.currentUser?.uid?.let { userId ->
             try {
+                // Upload audio sample to Cloud Storage if it exists
                 val cloudSampleUrl = uploadSampleToStorage(speaker)
 
+                // Create Firestore speaker with cloud URL (or keep local if upload failed)
                 val firestoreSpeaker = if (cloudSampleUrl != null) {
-                    FirestoreSpeaker.fromSpeaker(speaker.copy(sampleUri = cloudSampleUrl.toUri()))
+                    FirestoreSpeaker.fromSpeaker(
+                        speaker.copy(
+                            sampleUri = cloudSampleUrl.toUri()
+                        )
+                    )
                 } else {
                     FirestoreSpeaker.fromSpeaker(speaker)
                 }
@@ -208,7 +148,10 @@ class SpeakerRepository @Inject constructor(
     }
 
     suspend fun updateSpeaker(speaker: Speaker) {
+        // 1. Update local database
         speakerDao.updateSpeaker(speaker)
+
+        // 2. Update Firestore if logged in
         auth.currentUser?.uid?.let { userId ->
             try {
                 val firestoreSpeaker = FirestoreSpeaker.fromSpeaker(speaker)
@@ -222,7 +165,10 @@ class SpeakerRepository @Inject constructor(
     }
 
     suspend fun deleteSpeaker(speaker: Speaker) {
+        // 1. Delete from local database
         speakerDao.deleteSpeaker(speaker)
+
+        // 2. Delete local sample file if exists
         speaker.sampleUri?.path?.let { path ->
             try {
                 File(path).delete()
@@ -230,10 +176,15 @@ class SpeakerRepository @Inject constructor(
                 Timber.e(e, "Failed to delete local sample file")
             }
         }
+
+        // 3. Delete from Firestore and Cloud Storage if logged in
         auth.currentUser?.uid?.let { userId ->
             try {
+                // Delete from Firestore
                 firestore.collection("users").document(userId).collection("speakers")
                     .document(speaker.id).delete().await()
+
+                // Delete from Cloud Storage
                 try {
                     val storage = FirebaseStorage.getInstance()
                     val storageRef =
@@ -241,8 +192,10 @@ class SpeakerRepository @Inject constructor(
                     storageRef.delete().await()
                     Timber.d("Deleted speaker sample from cloud storage")
                 } catch (e: Exception) {
+                    // Sample might not exist in cloud storage
                     Timber.w("No cloud sample to delete for speaker ${speaker.name}")
                 }
+
                 Timber.d("Successfully deleted speaker ${speaker.name} from Firestore")
             } catch (e: Exception) {
                 Timber.e(e, "Failed to delete speaker from Firestore")
@@ -251,8 +204,13 @@ class SpeakerRepository @Inject constructor(
     }
 
     suspend fun deleteAllSpeakers() {
+        // 1. Get all speakers before deleting from the local DB
         val speakers = getAllSpeakers().first()
+
+        // 2. Delete all from local database
         speakerDao.clearAll()
+
+        // 3. Delete local sample files
         speakers.forEach { speaker ->
             speaker.sampleUri?.path?.let { path ->
                 try {
@@ -263,9 +221,11 @@ class SpeakerRepository @Inject constructor(
             }
         }
 
+        // 4. Delete from Firestore and Cloud Storage if logged in
         auth.currentUser?.uid?.let { userId ->
             if (speakers.isNotEmpty()) {
                 try {
+                    // Batch delete from Firestore
                     val batch: WriteBatch = firestore.batch()
                     val collectionRef =
                         firestore.collection("users").document(userId).collection("speakers")
@@ -275,6 +235,7 @@ class SpeakerRepository @Inject constructor(
                     batch.commit().await()
                     Timber.d("Successfully deleted all speakers from Firestore")
 
+                    // Delete from Cloud Storage in parallel (can't batch these)
                     val storage = FirebaseStorage.getInstance()
                     coroutineScope {
                         speakers.map { speaker ->
@@ -290,6 +251,7 @@ class SpeakerRepository @Inject constructor(
                         }.awaitAll()
                     }
                     Timber.d("Deleted all speaker samples from cloud storage")
+
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to delete all speakers from Firestore/Storage")
                 }
@@ -297,19 +259,10 @@ class SpeakerRepository @Inject constructor(
         }
     }
 
-    suspend fun updateClusteringConfig(config: SpeakerClusteringConfig.Parameters) {
-        auth.currentUser?.uid?.let { userId ->
-            try {
-                val firestoreConfig = FirestoreClusteringConfig.fromParameters(config)
-                firestore.collection("users").document(userId).collection("configs")
-                    .document("clustering").set(firestoreConfig).await()
-                Timber.d("Successfully synced clustering config to Firestore.")
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to sync clustering config to Firestore.")
-            }
-        }
-    }
-
+    /**
+     * Pulls all speaker profiles from Firestore and overwrites the local Room database.
+     * This is the main sync mechanism when a user logs in.
+     */
     private suspend fun pullFromFirestore(userId: String) {
         try {
             val snapshot =
@@ -319,6 +272,8 @@ class SpeakerRepository @Inject constructor(
                 try {
                     doc.toObject(FirestoreSpeaker::class.java)?.let { firestoreSpeaker ->
                         var speaker = firestoreSpeaker.toSpeaker()
+
+                        // If sample URL is a cloud storage URL, download it
                         firestoreSpeaker.sampleUri?.let { url ->
                             if (url.startsWith("https://firebasestorage.googleapis.com")) {
                                 val localFile =
@@ -326,6 +281,7 @@ class SpeakerRepository @Inject constructor(
                                 localFile.parentFile?.mkdirs()
 
                                 if (downloadSampleFromStorage(url, localFile)) {
+                                    // Update speaker with local file URI
                                     speaker =
                                         speaker.copy(sampleUri = android.net.Uri.fromFile(localFile))
                                     Timber.d("Downloaded sample for speaker ${speaker.name}")
@@ -349,31 +305,23 @@ class SpeakerRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Timber.e(e, "Error pulling speakers from Firestore")
-        }
-
-        try {
-            val doc = firestore.collection("users").document(userId).collection("configs")
-                .document("clustering").get().await()
-
-            if (doc.exists()) {
-                val config = doc.toObject(FirestoreClusteringConfig::class.java)
-                _clusteringConfig.value = config
-                Timber.d("Pulled clustering config from Firestore.")
-            } else {
-                Timber.d("No clustering config found in Firestore for user. Will use local defaults.")
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "Error pulling clustering config from Firestore.")
+            // Don't crash - just use local data
         }
     }
 
     private suspend fun uploadSampleToStorage(speaker: Speaker): String? {
         return speaker.sampleUri?.let { localUri ->
             try {
+                // Get storage instance (main module API)
                 val storage = FirebaseStorage.getInstance()
                 val storageRef =
                     storage.reference.child("users/${auth.currentUser?.uid}/samples/${speaker.id}.wav")
-                storageRef.putFile(localUri).await()
+
+                // Upload file
+                val uploadTask = storageRef.putFile(localUri)
+                uploadTask.await()
+
+                // Get download URL
                 return storageRef.downloadUrl.await().toString()
             } catch (e: Exception) {
                 Timber.e(e, "Failed to upload sample")
@@ -382,6 +330,7 @@ class SpeakerRepository @Inject constructor(
         }
     }
 
+    // For downloading
     private suspend fun downloadSampleFromStorage(downloadUrl: String, localFile: File): Boolean {
         return try {
             val storage = FirebaseStorage.getInstance()
@@ -395,4 +344,3 @@ class SpeakerRepository @Inject constructor(
         }
     }
 }
-

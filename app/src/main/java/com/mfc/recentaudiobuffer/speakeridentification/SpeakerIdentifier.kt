@@ -1,3 +1,21 @@
+/*
+ * Auto Record Moments
+ * Copyright (C) 2025 Morten Fjord Christensen
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.mfc.recentaudiobuffer.speakeridentification
 
 import ai.onnxruntime.OnnxTensor
@@ -45,7 +63,8 @@ interface SpeakerIdentifier {
 
 @Singleton
 class OnnxSpeakerIdentifier @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val clusteringConfig: SpeakerClusteringConfig
 ) : SpeakerIdentifier, AutoCloseable {
 
     companion object {
@@ -54,9 +73,8 @@ class OnnxSpeakerIdentifier @Inject constructor(
         private const val DURATION_SECONDS = 1.5f
         private const val REQUIRED_SAMPLES = (SAMPLE_RATE * DURATION_SECONDS).toInt() // 24000
 
-        // Minimum audio quality thresholds
-        private const val MIN_RMS_ENERGY = 0.002f
-        // Reject any chunk that is less than 50% of the required duration
+        // Reject any chunk that is less than X% of the required duration
+        // (67% of 1.5s is 1.0 seconds)
         private const val MIN_REQUIRED_SAMPLES_RATIO = 0.5f
     }
 
@@ -130,6 +148,9 @@ class OnnxSpeakerIdentifier @Inject constructor(
                 floatBuffer.get().toFloat() / 32768.0f
             }
 
+
+            val params = clusteringConfig.parameters.value
+
             // 2. Hard reject chunks that are way too short
             if (floatArray.size < REQUIRED_SAMPLES * MIN_REQUIRED_SAMPLES_RATIO) {
                 Timber.w("Audio chunk too short to process: ${floatArray.size} samples.")
@@ -138,7 +159,7 @@ class OnnxSpeakerIdentifier @Inject constructor(
 
             // 3. Check for sufficient energy (i.e., not silence)
             val rms = sqrt(floatArray.sumOf { (it * it).toDouble() } / floatArray.size).toFloat()
-            if (rms < MIN_RMS_ENERGY) {
+            if (rms < params.minSpeechEnergyRms) {
                 return@withContext floatArrayOf() // Not enough energy
             }
 
@@ -199,4 +220,3 @@ class OnnxSpeakerIdentifier @Inject constructor(
         session.close()
     }
 }
-
