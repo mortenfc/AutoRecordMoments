@@ -1,3 +1,21 @@
+/*
+ * Auto Record Moments
+ * Copyright (C) 2025 Morten Fjord Christensen
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.mfc.recentaudiobuffer.speakeridentification
 
 import android.content.Context
@@ -77,11 +95,13 @@ abstract class AppDatabase : RoomDatabase() {
 // --- Migration from version 1 to 2 ---
 object DatabaseMigrations {
     val MIGRATION_1_2 = object : Migration(1, 2) {
-        override fun migrate(database: SupportSQLiteDatabase) {
+        override fun migrate(db: SupportSQLiteDatabase) {
             // Add the new columns with default values
-            database.execSQL("ALTER TABLE speakers ADD COLUMN sampleUri TEXT DEFAULT NULL")
-            database.execSQL("ALTER TABLE speakers ADD COLUMN createdAt INTEGER NOT NULL DEFAULT ${System.currentTimeMillis()}")
-            database.execSQL("ALTER TABLE speakers ADD COLUMN lastUsedAt INTEGER NOT NULL DEFAULT ${System.currentTimeMillis()}")
+            db.execSQL("ALTER TABLE speakers ADD COLUMN sampleUri TEXT DEFAULT NULL")
+            db.execSQL("ALTER TABLE speakers ADD COLUMN createdAt INTEGER NOT NULL DEFAULT ${System.currentTimeMillis()}")
+            db.execSQL("ALTER TABLE speakers ADD COLUMN lastUsedAt INTEGER NOT NULL DEFAULT ${System.currentTimeMillis()}")
+            db.execSQL("UPDATE speakers SET createdAt = ${System.currentTimeMillis()} WHERE createdAt IS NULL")
+            db.execSQL("UPDATE speakers SET lastUsedAt = ${System.currentTimeMillis()} WHERE lastUsedAt IS NULL")
         }
     }
 }

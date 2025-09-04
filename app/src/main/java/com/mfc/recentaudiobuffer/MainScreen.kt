@@ -49,6 +49,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -1043,7 +1044,7 @@ fun RewardStatusCard(
                 horizontalArrangement = Arrangement.Center
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ad_off_24),
+                    painter = painterResource(id = R.drawable.rewarded_ads_24px),
                     contentDescription = "Reward Active",
                     tint = colorResource(id = R.color.purple_accent),
                     modifier = Modifier.size(24.dp)
@@ -1204,7 +1205,7 @@ fun ThankYouButton(
             contentPadding = PaddingValues(0.dp)
         ) {
             Icon(
-                painter = painterResource(id = R.drawable.volunteer_activism_24),
+                Icons.Outlined.VolunteerActivism,
                 contentDescription = "Thank you for your support",
                 modifier = Modifier.size(iconSize),
                 tint = colorResource(id = R.color.gold)
