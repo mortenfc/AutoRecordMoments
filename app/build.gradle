@@ -89,6 +89,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
+    // This CONSISTENTLY sets the target for the Kotlin compiler
+    kotlinOptions {
+        jvmTarget = '21'
+    }
+
     buildFeatures {
         compose = true
         viewBinding = true
@@ -186,8 +191,8 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout-compose:1.1.1")
 
     // Persistence
-    implementation 'com.google.firebase:firebase-firestore-ktx:25.1.4'
-    implementation 'com.google.firebase:firebase-firestore:26.0.0'
+    implementation 'com.google.firebase:firebase-firestore'
+    implementation 'com.google.firebase:firebase-storage'
     implementation 'androidx.datastore:datastore-preferences:1.1.7'
     implementation 'androidx.documentfile:documentfile:1.1.0'
 
