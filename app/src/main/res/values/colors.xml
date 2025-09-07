@@ -31,12 +31,13 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="red">#FFFF1111</color>
-    <color name="red_pause">#6B3030</color>
+    <color name="red_pause">#3A130F</color>
     <color name="gold">#FFD700</color>
     <color name="dark_gold">#E1B900</color>
     <color name="gold_premium_bg">#FFF8E1</color>
     <color name="gold_premium_border">#FFD700</color> ```
     <color name="green_start">#8ADCBD</color>
+    <color name="green_debug">#005D3A</color>
     <color name="light_grey">#727D85</color>
 
     <color name="colorPrimary">@color/teal_500</color>

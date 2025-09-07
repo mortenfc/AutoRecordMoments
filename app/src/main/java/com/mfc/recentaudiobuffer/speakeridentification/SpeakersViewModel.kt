@@ -149,8 +149,7 @@ class SpeakersViewModel @Inject constructor(
     private var scanningJob: Job? = null
     private val processedFiles = mutableSetOf<String>()
 
-    // Add ability to re-run with new config
-    fun rescanWithCurrentConfig() {
+    fun rescanWithCurrentFiles() {
         viewModelScope.launch {
             when (val currentState = _uiState.value) {
                 is SpeakerDiscoveryUiState.FileSelection -> {
@@ -306,12 +305,12 @@ class SpeakersViewModel @Inject constructor(
                 segment to similarity
             }
 
-            val pureSegments =
+            val pureSegmentSimilarities =
                 segmentSimilarities.filter { it.second >= params.clusterPurityThreshold }
-                    .map { it.first }
+            val pureSegments = pureSegmentSimilarities.map { it.first }
 
             val avgSimilarity =
-                if (segmentSimilarities.isNotEmpty()) segmentSimilarities.map { it.second }
+                if (pureSegmentSimilarities.isNotEmpty()) pureSegmentSimilarities.map { it.second }
                     .average().toFloat() else 0f
 
             val discardedCount = segments.size - pureSegments.size

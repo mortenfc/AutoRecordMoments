@@ -25,7 +25,9 @@ import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -55,16 +57,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.HideImage
-import androidx.compose.material.icons.filled.HideSource
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Troubleshoot
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.CloseFullscreen
 import androidx.compose.material.icons.outlined.StopCircle
@@ -80,15 +78,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -97,15 +94,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.vector.DefaultStrokeLineCap
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -150,7 +152,7 @@ fun SpeakersScreen(
         onNavigateBack = onNavigateBack,
         onExportDebugReport = viewModel::exportDebugReport,
         config = viewModel.config,
-        onRescanWithCurrentConfig = viewModel::rescanWithCurrentConfig,
+        onRescanWithCurrentFiles = viewModel::rescanWithCurrentFiles,
         isPreview = false
     )
 }
@@ -175,7 +177,7 @@ fun SpeakersScreenContent(
     onNavigateBack: () -> Unit,
     onExportDebugReport: () -> String,
     config: SpeakerClusteringConfig,
-    onRescanWithCurrentConfig: () -> Unit,
+    onRescanWithCurrentFiles: () -> Unit,
     isPreview: Boolean = true
 ) {
     var showRenameDialog by remember { mutableStateOf<Speaker?>(null) }
@@ -186,7 +188,7 @@ fun SpeakersScreenContent(
     val identifiedSpeakers = remember { mutableStateListOf<String>() }
 
     var debugMode by remember { mutableStateOf(false) }
-    var showDebugReportDialog by remember { mutableStateOf(false) }
+    val showDebugReportDialog = remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     var currentlyPlayingSpeakerId by remember { mutableStateOf<String?>(null) }
@@ -217,7 +219,7 @@ fun SpeakersScreenContent(
             config = config,
             onDismiss = { showTuningDialog = false },
             onApply = {
-                onRescanWithCurrentConfig()
+                onRescanWithCurrentFiles()
                 showTuningDialog = false
             })
     }
@@ -286,75 +288,15 @@ fun SpeakersScreenContent(
     showNameDialogFor?.let { speakerToIdentify ->
         AddOrRenameSpeakerDialog(
             onDismiss = { showNameDialogFor = null }, onConfirm = { name ->
-            onIdentifySpeaker(name, speakerToIdentify)
-            identifiedSpeakers.add(speakerToIdentify.id)
-            showNameDialogFor = null
-        }, title = "Identify New Speaker"
+                onIdentifySpeaker(name, speakerToIdentify)
+                identifiedSpeakers.add(speakerToIdentify.id)
+                showNameDialogFor = null
+            }, title = "Identify New Speaker"
         )
     }
 
-    if (showDebugReportDialog) {
-        val debugReport = onExportDebugReport()
-        Dialog(onDismissRequest = { showDebugReportDialog = false }) {
-            Card(
-                shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "Debug Report",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    // Scrollable report content
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(400.dp).background(
-                            color = colorResource(id = R.color.teal_100),
-                            shape = RoundedCornerShape(8.dp)
-                        ).padding(8.dp).border(2.dp, colorResource(id = R.color.purple_accent))
-                    ) {
-                        SelectionContainer {
-                            Text(
-                                debugReport,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.verticalScroll(rememberScrollState()),
-                                color = colorResource(id = R.color.teal_900),
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = {
-                            // Copy to clipboard
-                            val clipboard =
-                                context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("Debug Report", debugReport)
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(
-                                context, "Report copied to clipboard", Toast.LENGTH_SHORT
-                            ).show()
-                        }) {
-                            Icon(
-                                Icons.Default.ContentCopy,
-                                contentDescription = "Copy",
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text("Copy")
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Button(onClick = { showDebugReportDialog = false }) {
-                            Text("Close")
-                        }
-                    }
-                }
-            }
-        }
+    if (showDebugReportDialog.value) {
+        DebugReportDialog(onExportDebugReport, showDebugReportDialog, context)
     }
 
     Scaffold(
@@ -431,7 +373,7 @@ fun SpeakersScreenContent(
                             if (debugMode) Icons.Outlined.CloseFullscreen else Icons.Filled.BugReport,
                             contentDescription = "Toggle Debug",
                             modifier = Modifier.size(20.dp),
-                            tint = colorResource(id = R.color.black)
+                            tint = colorResource(id = R.color.green_debug)
                         )
                     }
 
@@ -450,7 +392,7 @@ fun SpeakersScreenContent(
 
                         // Export debug report button
                         IconButton(
-                            onClick = { showDebugReportDialog = true },
+                            onClick = { showDebugReportDialog.value = true },
                             modifier = Modifier.size(36.dp),
                             enabled = uiState is SpeakerDiscoveryUiState.Success
                         ) {
@@ -529,7 +471,6 @@ fun SpeakersScreenContent(
             }
 
             item {
-                Spacer(Modifier.height(16.dp))
                 HorizontalDivider(color = colorResource(id = R.color.purple_accent).copy(alpha = 0.5f))
                 Spacer(Modifier.height(16.dp))
                 Text(
@@ -581,24 +522,12 @@ fun SpeakersScreenContent(
                     }
 
                     is SpeakerDiscoveryUiState.Scanning -> {
-                        val animatedProgress by animateFloatAsState(
-                            targetValue = state.progress,
-                            animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
-                            label = "Scan Progress"
-                        )
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            LinearProgressIndicator(
-                                modifier = Modifier.height(6.dp).fillMaxWidth(fraction = 0.9f),
-                                progress = { animatedProgress },
-                                color = colorResource(id = R.color.purple_accent),
-                                trackColor = colorResource(id = R.color.purple_accent).copy(
-                                    alpha = 0.25f
-                                ),
-                                strokeCap = DefaultStrokeLineCap,
-                                gapSize = 4.dp
+                            GradientProgressBar(
+                                Modifier.height(6.dp).fillMaxWidth(), progress = state.progress
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
@@ -657,19 +586,19 @@ fun SpeakersScreenContent(
                                 2.dp, color = colorResource(id = R.color.purple_accent)
                             )
                         ) {
-                            Text("Scan Again")
+                            Text("Select files for scanning")
                         }
 
                         if (debugMode) {
                             Button(
-                                onClick = { onRescanWithCurrentConfig() },
+                                onClick = { onRescanWithCurrentFiles() },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = colorResource(id = R.color.purple_accent)
                                 )
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Re-scan with Settings")
+                                Text("Re-scan current files")
                             }
                         }
                     }
@@ -727,6 +656,148 @@ fun SpeakersScreenContent(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun DebugReportDialogContent(
+    debugReport: String, onCopy: (String) -> Unit, onDismiss: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.teal_350)) // Adjusted color for better preview
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "Debug Report",
+                style = MaterialTheme.typography.titleLarge,
+                color = colorResource(id = R.color.teal_900), // Adjusted color
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+
+            // Scrollable report content
+            Box(
+                modifier = Modifier.fillMaxWidth().height(400.dp).background(
+                    color = colorResource(id = R.color.teal_100), // Adjusted color
+                    shape = RoundedCornerShape(8.dp)
+                ).border(
+                    1.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(8.dp)
+                ).padding(8.dp)
+            ) {
+                SelectionContainer {
+                    Text(
+                        debugReport,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        color = colorResource(id = R.color.teal_900),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(
+                    onClick = { onCopy(debugReport) }, colors = appButtonColors()
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Copy",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Copy")
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = onDismiss, colors = appButtonColors()
+                ) {
+                    Text("Close")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DebugReportDialog(
+    onExportDebugReport: () -> String,
+    showDebugReportDialog: MutableState<Boolean>,
+    context: Context
+) {
+    Dialog(onDismissRequest = { showDebugReportDialog.value = false }) {
+        DebugReportDialogContent(
+            debugReport = onExportDebugReport(),
+            onDismiss = { showDebugReportDialog.value = false },
+            onCopy = { report ->
+                val clipboard =
+                    context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("Debug Report", report)
+                clipboard.setPrimaryClip(clip)
+                Toast.makeText(context, "Report copied to clipboard", Toast.LENGTH_SHORT).show()
+            })
+    }
+}
+
+/**
+ * A custom, visually appealing progress bar with a gradient and rounded corners.
+ *
+ * @param modifier The modifier to be applied to the progress bar.
+ * @param progress The progress value between 0.0f and 1.0f.
+ * @param progressColorStart The starting color of the progress gradient.
+ * @param progressColorEnd The ending color of the progress gradient.
+ * @param trackColor The color of the background track.
+ * @param strokeWidth The height of the progress bar.
+ */
+@Composable
+fun GradientProgressBar(
+    modifier: Modifier = Modifier,
+    progress: Float,
+    progressColorStart: Color = Color(0xFF6A11CB),
+    progressColorEnd: Color = Color(0xFF2575FC),
+    trackColor: Color = Color.LightGray.copy(alpha = 0.3f),
+    strokeWidth: Dp = 12.dp
+) {
+    // Animate the progress value to provide a smooth transition.
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 1000, delayMillis = 0),
+        label = "ProgressBarAnimation"
+    )
+
+    // A gradient brush for the progress indicator.
+    val progressGradient = Brush.horizontalGradient(
+        colors = listOf(progressColorStart, progressColorEnd)
+    )
+
+    Canvas(
+        modifier = modifier.height(strokeWidth)
+    ) {
+        val cornerRadius = CornerRadius(size.height / 2, size.height / 2)
+
+        // Draw the background track
+        drawRoundRect(
+            color = trackColor, topLeft = Offset.Zero, size = size, cornerRadius = cornerRadius
+        )
+
+        // Calculate the width of the progress indicator
+        val progressWidth = size.width * animatedProgress.coerceIn(0f, 1f)
+
+        // Draw the progress indicator with a gradient
+        // We use clipRect to ensure the progress bar doesn't draw outside its bounds,
+        // which is important for the rounding at the end.
+        clipRect(right = progressWidth) {
+            drawRoundRect(
+                brush = progressGradient,
+                topLeft = Offset.Zero,
+                size = Size(width = size.width, height = size.height),
+                cornerRadius = cornerRadius
+            )
         }
     }
 }
@@ -1012,7 +1083,6 @@ fun FileSelectionDialog(
     onResetProcessedFiles: () -> Unit
 ) {
     val (allFiles, selectedUris, processedUris, isLoading) = fileSelectionState
-    val allSelected = selectedUris.size == allFiles.size && allFiles.isNotEmpty()
     val unprocessedFiles = allFiles.filter { !processedUris.contains(it.uri.toString()) }
 
     Dialog(onDismissRequest = { if (!isLoading) onDismiss() }) {
@@ -1033,7 +1103,6 @@ fun FileSelectionDialog(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TextButton(
@@ -1041,16 +1110,20 @@ fun FileSelectionDialog(
                             enabled = !isLoading
                         ) {
                             Text(
-                                if (allSelected) "Deselect All" else "Select All",
-                                color = colorResource(id = R.color.teal_900)
+                                "Toggle All", color = colorResource(id = R.color.teal_900)
                             )
                         }
+                        Spacer(Modifier.weight(0.5f))
+
                         TextButton(
                             onClick = { unprocessedFiles.forEach { onToggleFile(it.uri) } },
                             enabled = !isLoading
                         ) {
-                            Text("Select New", color = colorResource(id = R.color.teal_900))
+                            Text("Toggle New", color = colorResource(id = R.color.teal_900))
                         }
+
+                        Spacer(Modifier.weight(0.5f))
+
                         TextButton(onClick = onResetProcessedFiles, enabled = !isLoading) {
                             Icon(
                                 Icons.Default.Refresh,
@@ -1127,7 +1200,11 @@ fun FileRow(
             enabled = enabled,
             colors = CheckboxDefaults.colors(
                 checkedColor = colorResource(id = R.color.purple_accent),
-                uncheckedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                uncheckedColor = colorResource(id = R.color.teal_700),
+                checkmarkColor = colorResource(id = R.color.teal_100),
+                disabledCheckedColor = Color.Unspecified,
+                disabledUncheckedColor = Color.Unspecified,
+                disabledIndeterminateColor = Color.Unspecified
             )
         )
         Column(modifier = Modifier.weight(1f)) {
@@ -1180,7 +1257,7 @@ fun SpeakersScreenIdlePreview() {
         onNavigateBack = {},
         onToggleFileSelection = {},
         onExportDebugReport = { -> "" },
-        onRescanWithCurrentConfig = {},
+        onRescanWithCurrentFiles = {},
         config = SpeakerClusteringConfig(LocalContext.current),
         onResetProcessedFiles = {},
     )
@@ -1204,7 +1281,7 @@ fun SpeakersScreenScanningPreview() {
         onNavigateBack = {},
         onToggleFileSelection = {},
         onExportDebugReport = { -> "" },
-        onRescanWithCurrentConfig = {},
+        onRescanWithCurrentFiles = {},
         config = SpeakerClusteringConfig(LocalContext.current),
         onResetProcessedFiles = {},
     )
@@ -1227,8 +1304,35 @@ fun FileSelectionDialogPreview() {
     )
     FileSelectionDialog(
         fileSelectionState = SpeakerDiscoveryUiState.FileSelection(
-        allFiles = files,
-        selectedFileUris = setOf(files[0].uri),
-        processedFileUris = setOf(files[2].uri.toString())
-    ), onDismiss = {}, onConfirm = {}, onToggleFile = {}, onResetProcessedFiles = {})
+            allFiles = files,
+            selectedFileUris = setOf(files[0].uri),
+            processedFileUris = setOf(files[2].uri.toString())
+        ), onDismiss = {}, onConfirm = {}, onToggleFile = {}, onResetProcessedFiles = {})
+}
+
+@Preview(showBackground = true, name = "Debug Report Dialog")
+@Composable
+fun DebugReportDialogPreview() {
+    DebugReportDialogContent(
+        debugReport = """
+                === SPEAKER DISCOVERY DEBUG REPORT ===
+                Generated: Fri Sep 05 17:25:00 CEST 2025
+                
+                DBSCAN Primary:
+                  eps: 0.65
+                  minPts: 3
+                  
+                Quality Filters:
+                  minClusterSize: 2
+                  clusterPurityThreshold: 0.6
+                  maxClusterVariance: 0.0025
+                ========================================
+                === DISCOVERED SPEAKERS ===
+                
+                Speaker: speaker_1
+                  Confidence: 82%
+                  Cluster Size: 45
+                  Purity: 0.821
+                  Variance: 0.00150
+            """.trimIndent(), onCopy = {}, onDismiss = {})
 }
