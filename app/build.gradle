@@ -189,7 +189,6 @@ dependencies {
     implementation 'androidx.activity:activity-compose:1.11.0'
     implementation "androidx.lifecycle:lifecycle-viewmodel-compose"
     implementation("androidx.constraintlayout:constraintlayout-compose:1.1.1")
-
     // Persistence
     implementation 'com.google.firebase:firebase-firestore'
     implementation 'com.google.firebase:firebase-storage'
