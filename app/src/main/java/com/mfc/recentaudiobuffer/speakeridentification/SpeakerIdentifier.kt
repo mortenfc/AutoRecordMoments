@@ -75,7 +75,7 @@ class OnnxSpeakerIdentifier @Inject constructor(
 
         // Reject any chunk that is less than X% of the required duration
         // (67% of 1.5s is 1.0 seconds)
-        private const val MIN_REQUIRED_SAMPLES_RATIO = 0.5f
+        private const val MIN_REQUIRED_SAMPLES_RATIO = 0.67f
     }
 
     private val ortEnvironment = OrtEnvironment.getEnvironment()
@@ -147,7 +147,6 @@ class OnnxSpeakerIdentifier @Inject constructor(
             val floatArray = FloatArray(floatBuffer.remaining()) {
                 floatBuffer.get().toFloat() / 32768.0f
             }
-
 
             val params = clusteringConfig.parameters.value
 

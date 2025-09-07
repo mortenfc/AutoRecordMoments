@@ -40,8 +40,100 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await  // For coroutine support
 import java.io.File
+
+// Add this data class at the top of the file, near FirestoreSpeaker
+data class FirestoreClusteringConfig(
+    // DBSCAN Primary
+    val dbscanEps: Float = DEFAULTS.dbscanEps,
+    val dbscanMinPts: Int = DEFAULTS.dbscanMinPts,
+    // Noise Re-clustering
+    val noiseEps: Float = DEFAULTS.noiseEps,
+    val noiseMinPts: Int = DEFAULTS.noiseMinPts,
+    val minNoiseForReclustering: Int = DEFAULTS.minNoiseForReclustering,
+    val noiseRatioThreshold: Float = DEFAULTS.noiseRatioThreshold,
+    // Merging
+    val finalMergeThreshold: Float = DEFAULTS.finalMergeThreshold,
+    // Quality Filters
+    val minClusterSize: Int = DEFAULTS.minClusterSize,
+    val clusterPurityThreshold: Float = DEFAULTS.clusterPurityThreshold,
+    val maxClusterVariance: Float = DEFAULTS.maxClusterVariance,
+    // Sample Generation
+    val sampleMinDurationSec: Int = DEFAULTS.sampleMinDurationSec,
+    val sampleMaxDurationSec: Int = DEFAULTS.sampleMaxDurationSec,
+    val sampleTargetSegments: Int = DEFAULTS.sampleTargetSegments,
+    val minChunkDurationSec: Float = DEFAULTS.minChunkDurationSec,
+    val sampleSilenceDurationMs: Int = DEFAULTS.sampleSilenceDurationMs,
+    // Diarization
+    val minSegmentDurationSec: Float = DEFAULTS.minSegmentDurationSec,
+    val maxSegmentDurationSec: Float = DEFAULTS.maxSegmentDurationSec,
+    val minSpeechEnergyRms: Float = DEFAULTS.minSpeechEnergyRms,
+    // VAD
+    val vadMergeGapMs: Int = DEFAULTS.vadMergeGapMs,
+    val vadPaddingMs: Int = DEFAULTS.vadPaddingMs,
+    val vadSpeechThreshold: Float = DEFAULTS.vadSpeechThreshold
+) {
+    // Conversion function to the main Parameters class
+    fun toParameters(): SpeakerClusteringConfig.Parameters {
+        return SpeakerClusteringConfig.Parameters(
+            dbscanEps,
+            dbscanMinPts,
+            noiseEps,
+            noiseMinPts,
+            minNoiseForReclustering,
+            noiseRatioThreshold,
+            finalMergeThreshold,
+            minClusterSize,
+            clusterPurityThreshold,
+            maxClusterVariance,
+            sampleMinDurationSec,
+            sampleMaxDurationSec,
+            sampleTargetSegments,
+            minChunkDurationSec,
+            sampleSilenceDurationMs,
+            minSegmentDurationSec,
+            maxSegmentDurationSec,
+            minSpeechEnergyRms,
+            vadMergeGapMs,
+            vadPaddingMs,
+            vadSpeechThreshold
+        )
+    }
+
+    companion object {
+        private val DEFAULTS = SpeakerClusteringConfig.Parameters()
+
+        // This companion object method is also unchanged
+        fun fromParameters(params: SpeakerClusteringConfig.Parameters): FirestoreClusteringConfig {
+            return FirestoreClusteringConfig(
+                params.dbscanEps,
+                params.dbscanMinPts,
+                params.noiseEps,
+                params.noiseMinPts,
+                params.minNoiseForReclustering,
+                params.noiseRatioThreshold,
+                params.finalMergeThreshold,
+                params.minClusterSize,
+                params.clusterPurityThreshold,
+                params.maxClusterVariance,
+                params.sampleMinDurationSec,
+                params.sampleMaxDurationSec,
+                params.sampleTargetSegments,
+                params.minChunkDurationSec,
+                params.sampleSilenceDurationMs,
+                params.minSegmentDurationSec,
+                params.maxSegmentDurationSec,
+                params.minSpeechEnergyRms,
+                params.vadMergeGapMs,
+                params.vadPaddingMs,
+                params.vadSpeechThreshold
+            )
+        }
+    }
+}
 
 /**
  * Data class for Firestore serialization.
@@ -61,7 +153,7 @@ data class FirestoreSpeaker(
             id = id,
             name = name,
             embedding = embedding.toFloatArray(),
-            sampleUri = sampleUri?.let { android.net.Uri.parse(it) },
+            sampleUri = sampleUri?.toUri(),
             createdAt = createdAt,
             lastUsedAt = lastUsedAt
         )
@@ -91,19 +183,21 @@ class SpeakerRepository @Inject constructor(
 ) {
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    // Expose the synced config as a Flow that other classes can observe
+    private val _clusteringConfig = MutableStateFlow<FirestoreClusteringConfig?>(null)
+    val clusteringConfig = _clusteringConfig.asStateFlow()
+
     init {
-        // Listen for authentication changes to trigger data sync
         auth.addAuthStateListener { firebaseAuth ->
             val user = firebaseAuth.currentUser
             if (user != null) {
-                // User logged in, pull data from Firestore
                 repositoryScope.launch {
-                    pullFromFirestore(user.uid)
+                    pullFromFirestore(user.uid) // This will now pull speakers AND config
                 }
             } else {
-                // User logged out, clear local data to prevent mixing profiles
                 repositoryScope.launch {
                     speakerDao.clearAll()
+                    _clusteringConfig.value = null // Clear config on logout
                 }
             }
         }
@@ -259,6 +353,19 @@ class SpeakerRepository @Inject constructor(
         }
     }
 
+    suspend fun updateClusteringConfig(config: SpeakerClusteringConfig.Parameters) {
+        auth.currentUser?.uid?.let { userId ->
+            try {
+                val firestoreConfig = FirestoreClusteringConfig.fromParameters(config)
+                firestore.collection("users").document(userId).collection("configs")
+                    .document("clustering").set(firestoreConfig).await()
+                Timber.d("Successfully synced clustering config to Firestore.")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to sync clustering config to Firestore.")
+            }
+        }
+    }
+
     /**
      * Pulls all speaker profiles from Firestore and overwrites the local Room database.
      * This is the main sync mechanism when a user logs in.
@@ -306,6 +413,23 @@ class SpeakerRepository @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Error pulling speakers from Firestore")
             // Don't crash - just use local data
+        }
+
+
+        try {
+            val doc = firestore.collection("users").document(userId).collection("configs")
+                .document("clustering").get().await()
+
+            if (doc.exists()) {
+                val config = doc.toObject(FirestoreClusteringConfig::class.java)
+                _clusteringConfig.value = config
+                Timber.d("Pulled clustering config from Firestore.")
+            } else {
+                Timber.d("No clustering config found in Firestore for user. Will use local defaults.")
+                // Optionally, you could upload the local defaults on first pull
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error pulling clustering config from Firestore.")
         }
     }
 
