@@ -111,6 +111,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mfc.recentaudiobuffer.AuthViewModel
@@ -122,7 +123,6 @@ import com.mfc.recentaudiobuffer.appButtonColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.core.net.toUri
 
 @Composable
 fun SpeakersScreen(
@@ -211,17 +211,9 @@ fun SpeakersScreenContent(
         }
     }
 
-    // --- Dialogs ---
-
-    // Tuning Settings Dialog
     if (showTuningDialog) {
         ClusteringSettingsDialog(
-            config = config,
-            onDismiss = { showTuningDialog = false },
-            onApply = {
-                onRescanWithCurrentFiles()
-                showTuningDialog = false
-            })
+            config = config, onDismiss = { showTuningDialog = false })
     }
 
     if (uiState is SpeakerDiscoveryUiState.FileSelection) {
@@ -305,7 +297,6 @@ fun SpeakersScreenContent(
             if (isPreview) TopAppBarContent(
                 title = "Manage Speakers",
                 onBackButtonClicked = { onNavigateBack() },
-                // Dummy values for preview-ability, the real TopAppBar will supply real ones
                 signInButtonText = if (isUserSignedIn) "Sign Out" else "Sign In",
                 isSigningIn = false,
                 authError = null,
@@ -339,7 +330,6 @@ fun SpeakersScreenContent(
                         color = colorResource(id = R.color.teal_900)
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Existing delete all button
                         if (speakers.isNotEmpty()) {
                             IconButton(onClick = { showDeleteAllConfirmDialog = true }) {
                                 Icon(
@@ -359,13 +349,11 @@ fun SpeakersScreenContent(
                         }
                     }
                 }
-                // Debug row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Debug mode toggle
                     IconButton(
                         onClick = { debugMode = !debugMode }, modifier = Modifier.size(36.dp)
                     ) {
@@ -377,7 +365,6 @@ fun SpeakersScreenContent(
                         )
                     }
 
-                    // Tuning settings button (only show when debugging)
                     if (debugMode) {
                         IconButton(
                             onClick = { showTuningDialog = true }, modifier = Modifier.size(36.dp)
@@ -390,7 +377,6 @@ fun SpeakersScreenContent(
                             )
                         }
 
-                        // Export debug report button
                         IconButton(
                             onClick = { showDebugReportDialog.value = true },
                             modifier = Modifier.size(36.dp),
@@ -409,7 +395,6 @@ fun SpeakersScreenContent(
                     }
                 }
 
-                // Debug info banner when in debug mode
                 if (debugMode) {
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -667,22 +652,20 @@ fun DebugReportDialogContent(
     Card(
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.teal_350)) // Adjusted color for better preview
+        colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.teal_350))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 "Debug Report",
                 style = MaterialTheme.typography.titleLarge,
-                color = colorResource(id = R.color.teal_900), // Adjusted color
+                color = colorResource(id = R.color.teal_900),
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(8.dp))
 
-            // Scrollable report content
             Box(
                 modifier = Modifier.fillMaxWidth().height(400.dp).background(
-                    color = colorResource(id = R.color.teal_100), // Adjusted color
-                    shape = RoundedCornerShape(8.dp)
+                    color = colorResource(id = R.color.teal_100), shape = RoundedCornerShape(8.dp)
                 ).border(
                     1.dp, colorResource(id = R.color.purple_accent), RoundedCornerShape(8.dp)
                 ).padding(8.dp)
@@ -744,16 +727,6 @@ fun DebugReportDialog(
     }
 }
 
-/**
- * A custom, visually appealing progress bar with a gradient and rounded corners.
- *
- * @param modifier The modifier to be applied to the progress bar.
- * @param progress The progress value between 0.0f and 1.0f.
- * @param progressColorStart The starting color of the progress gradient.
- * @param progressColorEnd The ending color of the progress gradient.
- * @param trackColor The color of the background track.
- * @param strokeWidth The height of the progress bar.
- */
 @Composable
 fun GradientProgressBar(
     modifier: Modifier = Modifier,
@@ -763,14 +736,12 @@ fun GradientProgressBar(
     trackColor: Color = Color.LightGray.copy(alpha = 0.3f),
     strokeWidth: Dp = 12.dp
 ) {
-    // Animate the progress value to provide a smooth transition.
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
         animationSpec = tween(durationMillis = 1000, delayMillis = 0),
         label = "ProgressBarAnimation"
     )
 
-    // A gradient brush for the progress indicator.
     val progressGradient = Brush.horizontalGradient(
         colors = listOf(progressColorStart, progressColorEnd)
     )
@@ -779,18 +750,10 @@ fun GradientProgressBar(
         modifier = modifier.height(strokeWidth)
     ) {
         val cornerRadius = CornerRadius(size.height / 2, size.height / 2)
-
-        // Draw the background track
         drawRoundRect(
             color = trackColor, topLeft = Offset.Zero, size = size, cornerRadius = cornerRadius
         )
-
-        // Calculate the width of the progress indicator
         val progressWidth = size.width * animatedProgress.coerceIn(0f, 1f)
-
-        // Draw the progress indicator with a gradient
-        // We use clipRect to ensure the progress bar doesn't draw outside its bounds,
-        // which is important for the rounding at the end.
         clipRect(right = progressWidth) {
             drawRoundRect(
                 brush = progressGradient,
@@ -863,7 +826,7 @@ fun UnknownSpeakerCard(
     isPlaying: Boolean,
     onPlayClick: () -> Unit,
     onIdentifyClick: () -> Unit,
-    showDebugInfo: Boolean = false // Add toggle for debug mode
+    showDebugInfo: Boolean = false
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -884,7 +847,6 @@ fun UnknownSpeakerCard(
                     color = colorResource(id = R.color.teal_900)
                 )
 
-                // Show confidence/similarity score
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = when {
@@ -901,7 +863,7 @@ fun UnknownSpeakerCard(
                     ), shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
-                        "Confidence: ${(unknownSpeaker.debugInfo.averageSimilarityToCentroid * 100).toInt()}%",
+                        "Purity: ${(unknownSpeaker.debugInfo.averageSimilarityToCentroid * 100).toInt()}%",
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
@@ -910,7 +872,6 @@ fun UnknownSpeakerCard(
                 }
             }
 
-            // Debug Information Section (collapsible)
             if (showDebugInfo) {
                 Spacer(Modifier.height(8.dp))
                 Card(
@@ -1232,9 +1193,6 @@ fun FileRow(
     }
 }
 
-
-// --- Previews ---
-
 @Preview(showBackground = true, name = "Idle State")
 @Composable
 fun SpeakersScreenIdlePreview() {
@@ -1316,23 +1274,25 @@ fun DebugReportDialogPreview() {
     DebugReportDialogContent(
         debugReport = """
                 === SPEAKER DISCOVERY DEBUG REPORT ===
-                Generated: Fri Sep 05 17:25:00 CEST 2025
+                Generated: Fri Sep 12 21:15:00 CEST 2025
                 
                 DBSCAN Primary:
-                  eps: 0.65
-                  minPts: 3
+                  eps: 0.625
+                  minPts: 2
                   
                 Quality Filters:
                   minClusterSize: 2
-                  clusterPurityThreshold: 0.6
+                  clusterPurityThreshold: 0.515
                   maxClusterVariance: 0.0025
+                  minPurityForSmallCluster: 0.85
                 ========================================
                 === DISCOVERED SPEAKERS ===
                 
                 Speaker: speaker_1
-                  Confidence: 82%
-                  Cluster Size: 45
-                  Purity: 0.821
-                  Variance: 0.00150
+                  Purity: 92%
+                  Cluster Size: 15
+                  Purity Score: 0.921
+                  Variance: 0.00110
             """.trimIndent(), onCopy = {}, onDismiss = {})
 }
+

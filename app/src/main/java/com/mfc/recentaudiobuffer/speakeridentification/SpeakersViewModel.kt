@@ -133,8 +133,6 @@ class SpeakersViewModel @Inject constructor(
     private val clusteringConfig: SpeakerClusteringConfig
 ) : ViewModel() {
 
-    // Remove companion object constants - now using config
-
     private var lastScannedFileUris: Set<Uri> = emptySet()
 
     val speakers: StateFlow<List<Speaker>> = speakerRepository.getAllSpeakers()
@@ -143,7 +141,6 @@ class SpeakersViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<SpeakerDiscoveryUiState>(SpeakerDiscoveryUiState.Idle)
     val uiState = _uiState.asStateFlow()
 
-    // Expose config for UI
     val config = clusteringConfig
 
     private var scanningJob: Job? = null
@@ -155,34 +152,26 @@ class SpeakersViewModel @Inject constructor(
                 is SpeakerDiscoveryUiState.FileSelection -> {
                     startScan(currentState.selectedFileUris)
                 }
-
                 is SpeakerDiscoveryUiState.Success -> {
-                    // Re-scan the same files that produced current results
                     if (lastScannedFileUris.isNotEmpty()) {
-                        // Clear processed files to force re-scan
                         processedFiles.removeAll(lastScannedFileUris.map { it.toString() })
                         startScan(lastScannedFileUris)
                     } else {
-                        prepareFileSelection() // Fallback
+                        prepareFileSelection()
                     }
                 }
-
                 else -> prepareFileSelection()
             }
         }
     }
 
-    // Updated improvedClusterSegments to use config
     private suspend fun improvedClusterSegments(
         segments: List<UnidentifiedSegment>
     ): Map<String, List<UnidentifiedSegment>> = withContext(Dispatchers.Default) {
         val params = clusteringConfig.parameters.value
-
-        // Log current configuration
         Timber.d("\n${clusteringConfig.exportCurrentConfig()}")
 
         val validSegments = segments.filter { it.embedding.isNotEmpty() }
-
         Timber.d("=== CLUSTERING START ===")
         Timber.d("Total segments: ${segments.size}, Valid segments: ${validSegments.size}")
 
@@ -191,54 +180,49 @@ class SpeakersViewModel @Inject constructor(
             return@withContext emptyMap()
         }
 
-        // Stage 1: Primary Clustering with config params
-        Timber.d("\n📊 STAGE 1: PRIMARY CLUSTERING")
-        Timber.d("Parameters: eps=${params.dbscanEps}, minPts=${params.dbscanMinPts}")
-        val (initialClusters, noisePoints) = dbscanClusteringPass(
+        // --- HIERARCHICAL CLUSTERING LOGIC ---
+
+        // 1. High-Confidence Pass: Find prominent speakers first.
+        Timber.d("\n📊 STAGE 1: HIGH-CONFIDENCE PASS")
+        Timber.d("Parameters: eps=${params.dbscanEps}, minPts=${params.highConfidenceMinPts}")
+        val (highConfidenceClusters, firstPassLeftovers) = dbscanClusteringPass(
             validSegments,
             eps = params.dbscanEps,
-            minPts = params.dbscanMinPts,
-            passName = "PRIMARY"
+            minPts = params.highConfidenceMinPts,
+            passName = "HIGH_CONF"
         )
+        Timber.d("✅ High-Confidence Results: ${highConfidenceClusters.size} clusters, ${firstPassLeftovers.size} segments leftover.")
 
-        // Continue with rest of clustering using params...
-        // (Same logic but replace constants with params.xxx)
-
-        Timber.d("✅ Primary Results: ${initialClusters.size} clusters, ${noisePoints.size} noise points")
-
-        // Stage 2: Re-cluster noise with config params
-        val finalClusters = initialClusters.toMutableMap()
-        val noiseToTotalRatio =
-            if (validSegments.isNotEmpty()) noisePoints.size.toFloat() / validSegments.size else 0f
-
-        val shouldReclusterNoise =
-            noisePoints.size >= params.minNoiseForReclustering && (noiseToTotalRatio > params.noiseRatioThreshold || initialClusters.size <= 5)
-
-        if (shouldReclusterNoise) {
-            Timber.d("🔄 Re-clustering noise with stricter params: eps=${params.noiseEps}, minPts=${params.noiseMinPts}")
-            val (noiseClusters, remainingNoise) = dbscanClusteringPass(
-                noisePoints, eps = params.noiseEps, minPts = params.noiseMinPts, passName = "NOISE"
+        // 2. Discovery Pass: Find sparse speakers from the leftovers.
+        var discoveryClusters = mapOf<String, MutableList<UnidentifiedSegment>>()
+        if (firstPassLeftovers.size >= params.dbscanMinPts) {
+            Timber.d("\n📊 STAGE 2: DISCOVERY PASS on ${firstPassLeftovers.size} leftover segments")
+            Timber.d("Parameters: eps=${params.dbscanEps}, minPts=${params.dbscanMinPts}")
+            val (foundClusters, _) = dbscanClusteringPass( // We ignore final noise here
+                firstPassLeftovers,
+                eps = params.dbscanEps,
+                minPts = params.dbscanMinPts,
+                passName = "DISCOVERY"
             )
-
-            noiseClusters.values.forEach { newCluster ->
-                if (newCluster.size >= params.minClusterSize) {
-                    val newId = "cluster_noise_${UUID.randomUUID().toString().take(8)}"
-                    finalClusters[newId] = newCluster
-                    Timber.d("  ✅ Added noise cluster $newId with ${newCluster.size} segments")
-                } else {
-                    Timber.d("  ❌ Rejected noise cluster with only ${newCluster.size} segments (min: ${params.minClusterSize})")
-                }
-            }
-        }
-
-        // Stage 3: Merge similar clusters with config threshold
-        val mergedClusters = if (finalClusters.size > 1) {
-            mergeSimilarClusters(finalClusters, params.finalMergeThreshold)
+            discoveryClusters = foundClusters
+            Timber.d("✅ Discovery Results: ${discoveryClusters.size} new clusters found.")
         } else {
-            finalClusters
+            Timber.d("\n📊 STAGE 2: DISCOVERY PASS - Skipped, not enough leftover segments.")
         }
 
-        // Stage 4: Filter and format
+
+        // 3. Combine clusters from both passes
+        val allClusters = (highConfidenceClusters + discoveryClusters).toMutableMap()
+        Timber.d("\n📊 STAGE 3: COMBINED ${allClusters.size} clusters before merging.")
+
+        // 4. Merge similar clusters
+        val mergedClusters = if (allClusters.size > 1) {
+            mergeSimilarClusters(allClusters, params.finalMergeThreshold)
+        } else {
+            allClusters
+        }
+
+        // 5. Final filtering and formatting
         val result = mergedClusters.filter { (id, segments) ->
             val keep = segments.size >= params.minClusterSize
             if (!keep) {
@@ -249,11 +233,10 @@ class SpeakersViewModel @Inject constructor(
             "speaker_${index + 1}" to entry.value
         }.toMap()
 
-        Timber.d("\n=== CLUSTERING COMPLETE ===")
+        Timber.d("\n=== CLUSTERING COMPLETE: ${result.size} final speakers before quality checks ===")
         return@withContext result
     }
 
-    // Updated createUnknownSpeakerObjects with detailed debug info
     private suspend fun createUnknownSpeakerObjects(
         clusteredSegments: Map<String, List<UnidentifiedSegment>>
     ): List<UnknownSpeaker> {
@@ -263,7 +246,6 @@ class SpeakersViewModel @Inject constructor(
         val finalSpeakers = mutableListOf<UnknownSpeaker>()
         val audioDataCache = mutableMapOf<String, Pair<ByteArray, AudioConfig>>()
 
-        // Pre-load audio data
         for (segments in clusteredSegments.values) {
             for (segment in segments) {
                 if (!audioDataCache.containsKey(segment.fileUriString)) {
@@ -284,20 +266,22 @@ class SpeakersViewModel @Inject constructor(
 
             val debugInfo = SpeakerDebugInfo(
                 originalClusterSize = segments.size,
-                clusteringMethod = if (id.contains("noise")) "NOISE_PASS" else "PRIMARY_PASS",
+                clusteringMethod = when {
+                    id.contains("HIGH_CONF") -> "HIGH_CONFIDENCE_PASS"
+                    id.contains("DISCOVERY") -> "DISCOVERY_PASS"
+                    else -> "UNKNOWN"
+                },
                 filterReasons = mutableListOf(),
-                mergeHistory = mutableListOf() // Track merges if available
+                mergeHistory = mutableListOf()
             )
 
             if (segments.size < params.minClusterSize) {
                 continue
             }
 
-            // Calculate cluster centroid
             val clusterCentroid = speakerIdentifier.averageEmbeddings(segments.map { it.embedding })
 
-            // Purity check with config threshold
-            Timber.d("  🧹 Purity check (threshold: ${params.clusterPurityThreshold})")
+            Timber.d("  🧹 Purity check for $id (threshold: ${params.clusterPurityThreshold})")
             val segmentSimilarities = segments.map { segment ->
                 val similarity = speakerIdentifier.calculateCosineSimilarity(
                     segment.embedding, clusterCentroid
@@ -312,31 +296,37 @@ class SpeakersViewModel @Inject constructor(
             val avgSimilarity =
                 if (pureSegmentSimilarities.isNotEmpty()) pureSegmentSimilarities.map { it.second }
                     .average().toFloat() else 0f
-
             val discardedCount = segments.size - pureSegments.size
 
             if (pureSegments.size < params.minClusterSize) {
                 val reason =
                     "Too few pure segments after filtering (${pureSegments.size} < ${params.minClusterSize})"
                 (debugInfo.filterReasons as MutableList).add(reason)
-                Timber.d("  ❌ REJECTED: $reason")
+                Timber.d("  ❌ REJECTED $id: $reason")
                 continue
             }
 
-            // Calculate variance with config threshold
+            if (pureSegments.size <= params.dbscanMinPts && avgSimilarity < params.minPurityForSmallCluster) {
+                val reason =
+                    "Small cluster failed purity check: size=${pureSegments.size}, purity=%.2f < %.2f".format(
+                        avgSimilarity, params.minPurityForSmallCluster
+                    )
+                (debugInfo.filterReasons as MutableList).add(reason)
+                Timber.d("  ❌ REJECTED $id: $reason")
+                continue
+            }
+
             val variance = calculateClusterVariance(
                 pureSegments.map { it.embedding }, clusterCentroid
             )
-
             if (variance > params.maxClusterVariance) {
                 val reason =
                     "High variance: %.5f > %.5f".format(variance, params.maxClusterVariance)
                 (debugInfo.filterReasons as MutableList).add(reason)
-                Timber.d("  ❌ REJECTED: $reason")
+                Timber.d("  ❌ REJECTED $id: $reason")
                 continue
             }
 
-            // Extract audio chunks
             val audioChunksWithConfig = pureSegments.mapNotNull { segment ->
                 audioDataCache[segment.fileUriString]?.let { (audioBytes, config) ->
                     val chunk = audioBytes.copyOfRange(
@@ -366,10 +356,9 @@ class SpeakersViewModel @Inject constructor(
                         )
                     )
                 )
-
                 Timber.d("  ✅ ACCEPTED: Speaker $id")
                 Timber.d("    - Final segments: ${pureSegments.size}")
-                Timber.d("    - Avg similarity: ${(avgSimilarity * 100).toInt()}%")
+                Timber.d("    - Avg purity: ${(avgSimilarity * 100).toInt()}%")
                 Timber.d("    - Variance: %.5f".format(variance))
             }
         }
@@ -377,7 +366,6 @@ class SpeakersViewModel @Inject constructor(
         return finalSpeakers
     }
 
-    // Add method to export debug report
     fun exportDebugReport(): String {
         val state = _uiState.value
         val report = StringBuilder()
@@ -392,11 +380,10 @@ class SpeakersViewModel @Inject constructor(
             report.appendLine("=== DISCOVERED SPEAKERS ===")
             state.unknownSpeakers.forEach { speaker ->
                 report.appendLine("\nSpeaker: ${speaker.id}")
-                report.appendLine("  Confidence: ${(speaker.debugInfo.averageSimilarityToCentroid * 100).toInt()}%")
+                report.appendLine("  Purity Score: ${(speaker.debugInfo.averageSimilarityToCentroid * 100).toInt()}%")
                 report.appendLine("  Cluster Size: ${speaker.debugInfo.clusterSize}")
                 report.appendLine("  Original Size: ${speaker.debugInfo.originalClusterSize}")
                 report.appendLine("  Discarded: ${speaker.debugInfo.discardedSegments}")
-                report.appendLine("  Purity: %.3f".format(speaker.debugInfo.purityScore))
                 report.appendLine("  Variance: %.5f".format(speaker.debugInfo.variance))
                 report.appendLine("  Method: ${speaker.debugInfo.clusteringMethod}")
 
@@ -561,7 +548,6 @@ class SpeakersViewModel @Inject constructor(
         return variance
     }
 
-    // Enhanced dbscanClusteringPass with better logging
     private suspend fun dbscanClusteringPass(
         segments: List<UnidentifiedSegment>, eps: Float, minPts: Int, passName: String = "UNNAMED"
     ): Pair<Map<String, MutableList<UnidentifiedSegment>>, List<UnidentifiedSegment>> =
@@ -580,7 +566,7 @@ class SpeakersViewModel @Inject constructor(
                 if (neighbors.size < minPts) {
                     labels[segment] = -1
                     noiseCount++
-                    if (index % 10 == 0) { // Log every 10th noise point to avoid spam
+                    if (index % 10 == 0) {
                         Timber.v("    Segment $index marked as noise (${neighbors.size} neighbors < $minPts minPts)")
                     }
                     continue
@@ -632,7 +618,6 @@ class SpeakersViewModel @Inject constructor(
             return@withContext Pair(clusters, noise)
         }
 
-    // Enhanced mergeSimilarClusters with detailed logging
     private fun mergeSimilarClusters(
         clusters: Map<String, MutableList<UnidentifiedSegment>>, threshold: Float
     ): Map<String, List<UnidentifiedSegment>> {
@@ -751,12 +736,10 @@ class SpeakersViewModel @Inject constructor(
 
             val params = clusteringConfig.parameters.value
 
-            // Filter out very short chunks
-
             val filteredChunks = audioChunksWithConfig.filter { (chunk, config, _) ->
                 val durationSec =
                     chunk.size.toFloat() / (config.sampleRateHz * (config.bitDepth.bits / 8))
-                durationSec >= params.minChunkDurationSec  // Use constant
+                durationSec >= params.minChunkDurationSec
             }
 
             val chunksToUse = filteredChunks.ifEmpty { audioChunksWithConfig }
@@ -768,7 +751,7 @@ class SpeakersViewModel @Inject constructor(
             val maxBytes = targetConfig.sampleRateHz * bytesPerSample * params.sampleMaxDurationSec
 
             val silenceBytes =
-                ByteArray((targetSampleRate * params.sampleSilenceDurationMs / 1000) * bytesPerSample)  // Use constant
+                ByteArray((targetSampleRate * params.sampleSilenceDurationMs / 1000) * bytesPerSample)
 
             for ((chunk, _, originalRate) in selectedChunks) {
                 val processedChunk = if (originalRate != targetSampleRate) {
@@ -778,7 +761,7 @@ class SpeakersViewModel @Inject constructor(
                 }
 
                 if (sampleStream.size() > 0) {
-                    sampleStream.write(silenceBytes)  // Using the variable here
+                    sampleStream.write(silenceBytes)
                 }
                 sampleStream.write(processedChunk)
                 if (sampleStream.size() >= maxBytes) break

@@ -20,47 +20,45 @@ package com.mfc.recentaudiobuffer.speakeridentification
 
 import android.content.Context
 import androidx.core.net.toUri
-import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.WriteBatch
+import com.google.firebase.storage.FirebaseStorage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
-import com.google.firebase.storage.FirebaseStorage
-import com.google.firebase.storage.StorageReference
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.tasks.await  // For coroutine support
-import java.io.File
 
-// Add this data class at the top of the file, near FirestoreSpeaker
 data class FirestoreClusteringConfig(
     // DBSCAN Primary
-    val dbscanEps: Float = DEFAULTS.dbscanEps,
+    val highConfidenceMinPts: Int = DEFAULTS.highConfidenceMinPts,
     val dbscanMinPts: Int = DEFAULTS.dbscanMinPts,
-    // Noise Re-clustering
-    val noiseEps: Float = DEFAULTS.noiseEps,
-    val noiseMinPts: Int = DEFAULTS.noiseMinPts,
-    val minNoiseForReclustering: Int = DEFAULTS.minNoiseForReclustering,
-    val noiseRatioThreshold: Float = DEFAULTS.noiseRatioThreshold,
+    val dbscanEps: Float = DEFAULTS.dbscanEps,
     // Merging
     val finalMergeThreshold: Float = DEFAULTS.finalMergeThreshold,
     // Quality Filters
     val minClusterSize: Int = DEFAULTS.minClusterSize,
     val clusterPurityThreshold: Float = DEFAULTS.clusterPurityThreshold,
     val maxClusterVariance: Float = DEFAULTS.maxClusterVariance,
+    val minPurityForSmallCluster: Float = DEFAULTS.minPurityForSmallCluster,
+    // Noise Re-clustering
+    val noiseEps: Float = DEFAULTS.noiseEps,
+    val noiseMinPts: Int = DEFAULTS.noiseMinPts,
+    val minNoiseForReclustering: Int = DEFAULTS.minNoiseForReclustering,
+    val noiseRatioThreshold: Float = DEFAULTS.noiseRatioThreshold,
     // Sample Generation
     val sampleMinDurationSec: Int = DEFAULTS.sampleMinDurationSec,
     val sampleMaxDurationSec: Int = DEFAULTS.sampleMaxDurationSec,
@@ -76,19 +74,23 @@ data class FirestoreClusteringConfig(
     val vadPaddingMs: Int = DEFAULTS.vadPaddingMs,
     val vadSpeechThreshold: Float = DEFAULTS.vadSpeechThreshold
 ) {
-    // Conversion function to the main Parameters class
+    // No-arg constructor for Firestore
+    constructor() : this(DEFAULTS.highConfidenceMinPts)
+
     fun toParameters(): SpeakerClusteringConfig.Parameters {
         return SpeakerClusteringConfig.Parameters(
-            dbscanEps,
+            highConfidenceMinPts,
             dbscanMinPts,
-            noiseEps,
-            noiseMinPts,
-            minNoiseForReclustering,
-            noiseRatioThreshold,
+            dbscanEps,
             finalMergeThreshold,
             minClusterSize,
             clusterPurityThreshold,
             maxClusterVariance,
+            minPurityForSmallCluster,
+            noiseEps,
+            noiseMinPts,
+            minNoiseForReclustering,
+            noiseRatioThreshold,
             sampleMinDurationSec,
             sampleMaxDurationSec,
             sampleTargetSegments,
@@ -106,19 +108,20 @@ data class FirestoreClusteringConfig(
     companion object {
         private val DEFAULTS = SpeakerClusteringConfig.Parameters()
 
-        // This companion object method is also unchanged
         fun fromParameters(params: SpeakerClusteringConfig.Parameters): FirestoreClusteringConfig {
             return FirestoreClusteringConfig(
-                params.dbscanEps,
+                params.highConfidenceMinPts,
                 params.dbscanMinPts,
-                params.noiseEps,
-                params.noiseMinPts,
-                params.minNoiseForReclustering,
-                params.noiseRatioThreshold,
+                params.dbscanEps,
                 params.finalMergeThreshold,
                 params.minClusterSize,
                 params.clusterPurityThreshold,
                 params.maxClusterVariance,
+                params.minPurityForSmallCluster,
+                params.noiseEps,
+                params.noiseMinPts,
+                params.minNoiseForReclustering,
+                params.noiseRatioThreshold,
                 params.sampleMinDurationSec,
                 params.sampleMaxDurationSec,
                 params.sampleTargetSegments,
@@ -142,12 +145,11 @@ data class FirestoreClusteringConfig(
 data class FirestoreSpeaker(
     val id: String = "",
     val name: String = "",
-    val embedding: List<Float> = emptyList(),  // List instead of FloatArray
-    val sampleUri: String? = null,  // String instead of Uri
+    val embedding: List<Float> = emptyList(),
+    val sampleUri: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val lastUsedAt: Long = System.currentTimeMillis()
 ) {
-    // Convert to Room Speaker entity
     fun toSpeaker(): Speaker {
         return Speaker(
             id = id,
@@ -183,7 +185,6 @@ class SpeakerRepository @Inject constructor(
 ) {
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // Expose the synced config as a Flow that other classes can observe
     private val _clusteringConfig = MutableStateFlow<FirestoreClusteringConfig?>(null)
     val clusteringConfig = _clusteringConfig.asStateFlow()
 
@@ -192,42 +193,31 @@ class SpeakerRepository @Inject constructor(
             val user = firebaseAuth.currentUser
             if (user != null) {
                 repositoryScope.launch {
-                    pullFromFirestore(user.uid) // This will now pull speakers AND config
+                    pullFromFirestore(user.uid)
                 }
             } else {
                 repositoryScope.launch {
                     speakerDao.clearAll()
-                    _clusteringConfig.value = null // Clear config on logout
+                    _clusteringConfig.value = null
                 }
             }
         }
     }
 
-    /**
-     * The single source of truth for the UI. Always reads from the local Room database.
-     */
     fun getAllSpeakers(): Flow<List<Speaker>> = speakerDao.getAllSpeakers()
 
     suspend fun getSpeakersByIds(ids: List<String>): List<Speaker> =
         speakerDao.getSpeakersByIds(ids)
 
     suspend fun addSpeaker(speaker: Speaker) {
-        // 1. Always write to the local database first for immediate UI update
         speakerDao.insertSpeaker(speaker)
 
-        // 2. If logged in, also write to Firestore
         auth.currentUser?.uid?.let { userId ->
             try {
-                // Upload audio sample to Cloud Storage if it exists
                 val cloudSampleUrl = uploadSampleToStorage(speaker)
 
-                // Create Firestore speaker with cloud URL (or keep local if upload failed)
                 val firestoreSpeaker = if (cloudSampleUrl != null) {
-                    FirestoreSpeaker.fromSpeaker(
-                        speaker.copy(
-                            sampleUri = cloudSampleUrl.toUri()
-                        )
-                    )
+                    FirestoreSpeaker.fromSpeaker(speaker.copy(sampleUri = cloudSampleUrl.toUri()))
                 } else {
                     FirestoreSpeaker.fromSpeaker(speaker)
                 }
@@ -286,10 +276,8 @@ class SpeakerRepository @Inject constructor(
                     storageRef.delete().await()
                     Timber.d("Deleted speaker sample from cloud storage")
                 } catch (e: Exception) {
-                    // Sample might not exist in cloud storage
                     Timber.w("No cloud sample to delete for speaker ${speaker.name}")
                 }
-
                 Timber.d("Successfully deleted speaker ${speaker.name} from Firestore")
             } catch (e: Exception) {
                 Timber.e(e, "Failed to delete speaker from Firestore")
@@ -345,7 +333,6 @@ class SpeakerRepository @Inject constructor(
                         }.awaitAll()
                     }
                     Timber.d("Deleted all speaker samples from cloud storage")
-
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to delete all speakers from Firestore/Storage")
                 }
@@ -415,7 +402,6 @@ class SpeakerRepository @Inject constructor(
             // Don't crash - just use local data
         }
 
-
         try {
             val doc = firestore.collection("users").document(userId).collection("configs")
                 .document("clustering").get().await()
@@ -436,16 +422,12 @@ class SpeakerRepository @Inject constructor(
     private suspend fun uploadSampleToStorage(speaker: Speaker): String? {
         return speaker.sampleUri?.let { localUri ->
             try {
-                // Get storage instance (main module API)
                 val storage = FirebaseStorage.getInstance()
                 val storageRef =
                     storage.reference.child("users/${auth.currentUser?.uid}/samples/${speaker.id}.wav")
 
                 // Upload file
-                val uploadTask = storageRef.putFile(localUri)
-                uploadTask.await()
-
-                // Get download URL
+                storageRef.putFile(localUri).await()
                 return storageRef.downloadUrl.await().toString()
             } catch (e: Exception) {
                 Timber.e(e, "Failed to upload sample")
@@ -454,7 +436,6 @@ class SpeakerRepository @Inject constructor(
         }
     }
 
-    // For downloading
     private suspend fun downloadSampleFromStorage(downloadUrl: String, localFile: File): Boolean {
         return try {
             val storage = FirebaseStorage.getInstance()
