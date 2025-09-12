@@ -84,9 +84,9 @@ class SpeakerClusteringConfig @Inject constructor(
     data class Parameters(
         // --- HIERARCHICAL CLUSTERING ---
         val highConfidenceMinPts: Int = 5,
-        val dbscanEps: Float = 0.625f,              // Eps for High-Confidence Pass
-        val discoveryMinPts: Int = 2,               // MinPts for Discovery Pass
-        val discoveryEps: Float = 0.75f,            // Eps for Discovery Pass (more lenient)
+        val dbscanEps: Float = 0.625f,
+        val discoveryMinPts: Int = 2,
+        val discoveryEps: Float = 0.70f, // Reduced from 0.75
 
         // Cluster merging
         val finalMergeThreshold: Float = 0.35f,
@@ -94,7 +94,7 @@ class SpeakerClusteringConfig @Inject constructor(
         // Cluster quality filters
         val minClusterSize: Int = 2,
         val clusterPurityThreshold: Float = 0.52f,
-        val minPurityForSmallCluster: Float = 0.85f,
+        val smallClusterPurityBoost: Float = 0.30f, // Replaces fixed threshold
         val maxClusterVariance: Float = 0.0025f,
 
         // Sample generation
@@ -163,7 +163,7 @@ class SpeakerClusteringConfig @Inject constructor(
             |Quality Filters:
             |  minClusterSize: ${p.minClusterSize}
             |  clusterPurityThreshold: ${p.clusterPurityThreshold}
-            |  minPurityForSmallCluster: ${p.minPurityForSmallCluster}
+            |  smallClusterPurityBoost: ${p.smallClusterPurityBoost}
             |  maxClusterVariance: ${p.maxClusterVariance}
             |
             |Sample Generation:
@@ -232,7 +232,8 @@ fun ClusteringSettingsDialog(
                 )
 
                 Text(
-                    "Pass 2: Discovery", style = MaterialTheme.typography.titleMedium
+                    "Pass 2: Discovery",
+                    style = MaterialTheme.typography.titleMedium
                 )
                 Text(
                     "Takes all leftover segments and runs a second, more sensitive scan (lower 'Min Points', higher 'Eps') to find less frequent speakers, including those who only spoke twice.",
@@ -264,9 +265,7 @@ fun ClusteringSettingsDialog(
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
-                    IconButton(
-                        onClick = { showInfoDialog = true }, modifier = Modifier.size(24.dp)
-                    ) {
+                    IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.size(24.dp)) {
                         Icon(
                             Icons.Default.Info,
                             contentDescription = "About clustering",
@@ -289,9 +288,7 @@ fun ClusteringSettingsDialog(
                     SliderSetting(
                         label = "High Confidence Min Pts",
                         value = tempParams.highConfidenceMinPts.toFloat(),
-                        onValueChange = {
-                            tempParams = tempParams.copy(highConfidenceMinPts = it.toInt())
-                        },
+                        onValueChange = { tempParams = tempParams.copy(highConfidenceMinPts = it.toInt()) },
                         valueRange = 3f..15f,
                         steps = 12,
                         description = "Pass 1: Finds prominent speakers."
@@ -308,9 +305,7 @@ fun ClusteringSettingsDialog(
                     SliderSetting(
                         label = "Discovery Min Pts",
                         value = tempParams.discoveryMinPts.toFloat(),
-                        onValueChange = {
-                            tempParams = tempParams.copy(discoveryMinPts = it.toInt())
-                        },
+                        onValueChange = { tempParams = tempParams.copy(discoveryMinPts = it.toInt()) },
                         valueRange = 2f..5f,
                         steps = 3,
                         description = "Pass 2: Finds sparse speakers (like pairs)."
@@ -321,30 +316,24 @@ fun ClusteringSettingsDialog(
                     SliderSetting(
                         label = "Purity Threshold",
                         value = tempParams.clusterPurityThreshold,
-                        onValueChange = {
-                            tempParams = tempParams.copy(clusterPurityThreshold = it)
-                        },
+                        onValueChange = { tempParams = tempParams.copy(clusterPurityThreshold = it) },
                         valueRange = 0.3f..0.8f,
                         steps = 50,
                         description = "General filter for all clusters."
                     )
                     SliderSetting(
-                        label = "Small Cluster Purity",
-                        value = tempParams.minPurityForSmallCluster,
-                        onValueChange = {
-                            tempParams = tempParams.copy(minPurityForSmallCluster = it)
-                        },
-                        valueRange = 0.7f..0.98f,
-                        steps = 28,
-                        displayFormatter = { "%.0f%%".format(it * 100) },
-                        description = "Stricter filter for clusters with ≤ ${tempParams.discoveryMinPts} segments."
+                        label = "Small Cluster Purity Boost",
+                        value = tempParams.smallClusterPurityBoost,
+                        onValueChange = { tempParams = tempParams.copy(smallClusterPurityBoost = it) },
+                        valueRange = 0.1f..0.5f,
+                        steps = 40,
+                        displayFormatter = { "+%.0f%%".format(it * 100) },
+                        description = "Additional purity required for small clusters."
                     )
                     SliderSetting(
                         label = "Max Variance",
                         value = tempParams.maxClusterVariance * 1000,
-                        onValueChange = {
-                            tempParams = tempParams.copy(maxClusterVariance = it / 1000)
-                        },
+                        onValueChange = { tempParams = tempParams.copy(maxClusterVariance = it / 1000) },
                         valueRange = 1f..10f,
                         steps = 90,
                         displayFormatter = { "%.1f‰".format(it) },
@@ -374,14 +363,16 @@ fun ClusteringSettingsDialog(
                         Text("Reset")
                     }
                     Button(
-                        modifier = Modifier.weight(1f), onClick = {
+                        modifier = Modifier.weight(1f),
+                        onClick = {
                             config.updateParameters { tempParams }
                             onDismiss()
-                        }, colors = appButtonColors()
+                        },
+                        colors = appButtonColors()
                     ) {
                         Icon(Icons.Default.Save, contentDescription = "Save")
                         Spacer(Modifier.width(8.dp))
-                        Text("Save")
+                        Text("Save & Scan")
                     }
                 }
             }

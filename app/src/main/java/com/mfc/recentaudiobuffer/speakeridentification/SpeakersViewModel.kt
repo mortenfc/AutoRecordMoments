@@ -152,7 +152,6 @@ class SpeakersViewModel @Inject constructor(
                 is SpeakerDiscoveryUiState.FileSelection -> {
                     startScan(currentState.selectedFileUris)
                 }
-
                 is SpeakerDiscoveryUiState.Success -> {
                     if (lastScannedFileUris.isNotEmpty()) {
                         processedFiles.removeAll(lastScannedFileUris.map { it.toString() })
@@ -161,7 +160,6 @@ class SpeakersViewModel @Inject constructor(
                         prepareFileSelection()
                     }
                 }
-
                 else -> prepareFileSelection()
             }
         }
@@ -182,9 +180,6 @@ class SpeakersViewModel @Inject constructor(
             return@withContext emptyMap()
         }
 
-        // --- HIERARCHICAL CLUSTERING LOGIC ---
-
-        // 1. High-Confidence Pass: Find prominent speakers first.
         Timber.d("\n📊 STAGE 1: HIGH-CONFIDENCE PASS")
         Timber.d("Parameters: eps=${params.dbscanEps}, minPts=${params.highConfidenceMinPts}")
         val (highConfidenceClusters, firstPassLeftovers) = dbscanClusteringPass(
@@ -195,7 +190,6 @@ class SpeakersViewModel @Inject constructor(
         )
         Timber.d("✅ High-Confidence Results: ${highConfidenceClusters.size} clusters, ${firstPassLeftovers.size} segments leftover.")
 
-        // 2. Discovery Pass: Find sparse speakers from the leftovers.
         var discoveryClusters = mapOf<String, MutableList<UnidentifiedSegment>>()
         if (firstPassLeftovers.size >= params.discoveryMinPts) {
             Timber.d("\n📊 STAGE 2: DISCOVERY PASS on ${firstPassLeftovers.size} leftover segments")
@@ -213,18 +207,15 @@ class SpeakersViewModel @Inject constructor(
         }
 
 
-        // 3. Combine clusters from both passes
         val allClusters = (highConfidenceClusters + discoveryClusters).toMutableMap()
         Timber.d("\n📊 STAGE 3: COMBINED ${allClusters.size} clusters before merging.")
 
-        // 4. Merge similar clusters
         val mergedClusters = if (allClusters.size > 1) {
             mergeSimilarClusters(allClusters, params.finalMergeThreshold)
         } else {
             allClusters
         }
 
-        // 5. Final filtering and formatting
         val result = mergedClusters.filter { (id, segments) ->
             val keep = segments.size >= params.minClusterSize
             if (!keep) {
@@ -267,11 +258,14 @@ class SpeakersViewModel @Inject constructor(
             coroutineContext.ensureActive()
 
             val debugInfo = SpeakerDebugInfo(
-                originalClusterSize = segments.size, clusteringMethod = when {
+                originalClusterSize = segments.size,
+                clusteringMethod = when {
                     id.contains("HIGH_CONF") -> "HIGH_CONFIDENCE_PASS"
                     id.contains("DISCOVERY") -> "DISCOVERY_PASS"
                     else -> "UNKNOWN"
-                }, filterReasons = mutableListOf(), mergeHistory = mutableListOf()
+                },
+                filterReasons = mutableListOf(),
+                mergeHistory = mutableListOf()
             )
 
             if (segments.size < params.minClusterSize) {
@@ -305,14 +299,20 @@ class SpeakersViewModel @Inject constructor(
                 continue
             }
 
-            if (pureSegments.size <= params.discoveryMinPts && avgSimilarity < params.minPurityForSmallCluster) {
-                val reason =
-                    "Small cluster failed purity check: size=${pureSegments.size}, purity=%.2f < %.2f".format(
-                        avgSimilarity, params.minPurityForSmallCluster
-                    )
-                (debugInfo.filterReasons as MutableList).add(reason)
-                Timber.d("  ❌ REJECTED $id: $reason")
-                continue
+            if (pureSegments.size <= params.discoveryMinPts) {
+                val requiredPurity = params.clusterPurityThreshold + params.smallClusterPurityBoost
+                if (avgSimilarity < requiredPurity) {
+                    val reason =
+                        "Small cluster failed purity check: size=${pureSegments.size}, purity=%.2f < %.2f (base: %.2f + boost: %.2f)".format(
+                            avgSimilarity,
+                            requiredPurity,
+                            params.clusterPurityThreshold,
+                            params.smallClusterPurityBoost
+                        )
+                    (debugInfo.filterReasons as MutableList).add(reason)
+                    Timber.d("  ❌ REJECTED $id: $reason")
+                    continue
+                }
             }
 
             val variance = calculateClusterVariance(
