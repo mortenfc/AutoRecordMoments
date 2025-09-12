@@ -152,7 +152,10 @@ fun SpeakersScreen(
         onNavigateBack = onNavigateBack,
         onExportDebugReport = viewModel::exportDebugReport,
         config = viewModel.config,
-        onRescanWithCurrentFiles = viewModel::rescanWithCurrentFiles,
+        onRescanWithCurrentFiles = {
+            viewModel.stopScanning()
+            viewModel.rescanWithCurrentFiles()
+        },
         isPreview = false
     )
 }
@@ -280,10 +283,10 @@ fun SpeakersScreenContent(
     showNameDialogFor?.let { speakerToIdentify ->
         AddOrRenameSpeakerDialog(
             onDismiss = { showNameDialogFor = null }, onConfirm = { name ->
-                onIdentifySpeaker(name, speakerToIdentify)
-                identifiedSpeakers.add(speakerToIdentify.id)
-                showNameDialogFor = null
-            }, title = "Identify New Speaker"
+            onIdentifySpeaker(name, speakerToIdentify)
+            identifiedSpeakers.add(speakerToIdentify.id)
+            showNameDialogFor = null
+        }, title = "Identify New Speaker"
         )
     }
 
@@ -1262,10 +1265,10 @@ fun FileSelectionDialogPreview() {
     )
     FileSelectionDialog(
         fileSelectionState = SpeakerDiscoveryUiState.FileSelection(
-            allFiles = files,
-            selectedFileUris = setOf(files[0].uri),
-            processedFileUris = setOf(files[2].uri.toString())
-        ), onDismiss = {}, onConfirm = {}, onToggleFile = {}, onResetProcessedFiles = {})
+        allFiles = files,
+        selectedFileUris = setOf(files[0].uri),
+        processedFileUris = setOf(files[2].uri.toString())
+    ), onDismiss = {}, onConfirm = {}, onToggleFile = {}, onResetProcessedFiles = {})
 }
 
 @Preview(showBackground = true, name = "Debug Report Dialog")
@@ -1274,7 +1277,7 @@ fun DebugReportDialogPreview() {
     DebugReportDialogContent(
         debugReport = """
                 === SPEAKER DISCOVERY DEBUG REPORT ===
-                Generated: Fri Sep 12 21:15:00 CEST 2025
+                Generated: Fri Sep 12 21:32:00 CEST 2025
                 
                 DBSCAN Primary:
                   eps: 0.625
@@ -1289,10 +1292,10 @@ fun DebugReportDialogPreview() {
                 === DISCOVERED SPEAKERS ===
                 
                 Speaker: speaker_1
-                  Purity: 92%
-                  Cluster Size: 15
-                  Purity Score: 0.921
-                  Variance: 0.00110
+                  Purity: 82%
+                  Cluster Size: 45
+                  Purity: 0.821
+                  Variance: 0.00150
             """.trimIndent(), onCopy = {}, onDismiss = {})
 }
 

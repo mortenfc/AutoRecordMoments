@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -82,24 +83,19 @@ class SpeakerClusteringConfig @Inject constructor(
 ) {
     data class Parameters(
         // --- HIERARCHICAL CLUSTERING ---
-        val highConfidenceMinPts: Int = 5,          // First pass to find prominent speakers
-        val dbscanMinPts: Int = 2,                  // Second pass on leftovers to find sparse speakers
-        val dbscanEps: Float = 0.625f,              // Shared sensitivity for both passes
+        val highConfidenceMinPts: Int = 5,
+        val dbscanEps: Float = 0.625f,              // Eps for High-Confidence Pass
+        val discoveryMinPts: Int = 2,               // MinPts for Discovery Pass
+        val discoveryEps: Float = 0.75f,            // Eps for Discovery Pass (more lenient)
 
         // Cluster merging
-        val finalMergeThreshold: Float = 0.347f,    // Lower = more merges
+        val finalMergeThreshold: Float = 0.35f,
 
         // Cluster quality filters
-        val minClusterSize: Int = 2,                // Minimum segments per cluster
-        val clusterPurityThreshold: Float = 0.515f, // Min similarity to centroid for ALL clusters
-        val minPurityForSmallCluster: Float = 0.85f, // Stricter purity for small clusters
-        val maxClusterVariance: Float = 0.0025f,    // Max allowed variance
-
-        // --- These are now less critical but kept for edge cases ---
-        val noiseEps: Float = 0.3967213f,
-        val noiseMinPts: Int = 5,
-        val minNoiseForReclustering: Int = 10,
-        val noiseRatioThreshold: Float = 0.3f,
+        val minClusterSize: Int = 2,
+        val clusterPurityThreshold: Float = 0.52f,
+        val minPurityForSmallCluster: Float = 0.85f,
+        val maxClusterVariance: Float = 0.0025f,
 
         // Sample generation
         val sampleMinDurationSec: Int = 7,
@@ -156,9 +152,10 @@ class SpeakerClusteringConfig @Inject constructor(
             |=== CURRENT CLUSTERING CONFIGURATION ===
             |
             |Hierarchical DBSCAN:
-            |  eps: ${p.dbscanEps}
             |  High Confidence Pass (minPts): ${p.highConfidenceMinPts}
-            |  Discovery Pass (minPts): ${p.dbscanMinPts}
+            |  High Confidence Eps: ${p.dbscanEps}
+            |  Discovery Pass (minPts): ${p.discoveryMinPts}
+            |  Discovery Eps: ${p.discoveryEps}
             |
             |Merging:
             |  finalMergeThreshold: ${p.finalMergeThreshold}
@@ -230,16 +227,15 @@ fun ClusteringSettingsDialog(
                     modifier = Modifier.padding(top = 8.dp)
                 )
                 Text(
-                    "Uses a higher 'Min Points' setting to find the most obvious, frequently-speaking people first. This creates stable 'anchor' clusters.",
+                    "Uses a higher 'Min Points' and stricter 'Eps' to find the most obvious, frequently-speaking people first. This creates stable 'anchor' clusters.",
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
                 Text(
-                    "Pass 2: Discovery",
-                    style = MaterialTheme.typography.titleMedium
+                    "Pass 2: Discovery", style = MaterialTheme.typography.titleMedium
                 )
                 Text(
-                    "Takes all the leftover audio segments and runs a second, more sensitive scan (with a lower 'Min Points') to find less frequent speakers, including those who only spoke twice.",
+                    "Takes all leftover segments and runs a second, more sensitive scan (lower 'Min Points', higher 'Eps') to find less frequent speakers, including those who only spoke twice.",
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
                 Text(
@@ -254,7 +250,7 @@ fun ClusteringSettingsDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 700.dp),
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
@@ -268,7 +264,9 @@ fun ClusteringSettingsDialog(
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
-                    IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.size(24.dp)) {
+                    IconButton(
+                        onClick = { showInfoDialog = true }, modifier = Modifier.size(24.dp)
+                    ) {
                         Icon(
                             Icons.Default.Info,
                             contentDescription = "About clustering",
@@ -281,36 +279,51 @@ fun ClusteringSettingsDialog(
 
                 SettingsSection("Hierarchical DBSCAN") {
                     SliderSetting(
-                        label = "Sensitivity (eps)",
+                        label = "High Confidence Eps",
                         value = tempParams.dbscanEps,
                         onValueChange = { tempParams = tempParams.copy(dbscanEps = it) },
-                        valueRange = 0.3f..1.0f,
-                        steps = 70,
-                        description = "Shared for both passes. Lower → Stricter | Higher → Looser"
+                        valueRange = 0.4f..0.8f,
+                        steps = 40,
+                        description = "Pass 1 Sensitivity. Lower is stricter."
                     )
                     SliderSetting(
                         label = "High Confidence Min Pts",
                         value = tempParams.highConfidenceMinPts.toFloat(),
-                        onValueChange = { tempParams = tempParams.copy(highConfidenceMinPts = it.toInt()) },
+                        onValueChange = {
+                            tempParams = tempParams.copy(highConfidenceMinPts = it.toInt())
+                        },
                         valueRange = 3f..15f,
                         steps = 12,
                         description = "Pass 1: Finds prominent speakers."
                     )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    SliderSetting(
+                        label = "Discovery Eps",
+                        value = tempParams.discoveryEps,
+                        onValueChange = { tempParams = tempParams.copy(discoveryEps = it) },
+                        valueRange = 0.6f..1.0f,
+                        steps = 40,
+                        description = "Pass 2 Sensitivity. Higher finds more."
+                    )
                     SliderSetting(
                         label = "Discovery Min Pts",
-                        value = tempParams.dbscanMinPts.toFloat(),
-                        onValueChange = { tempParams = tempParams.copy(dbscanMinPts = it.toInt()) },
+                        value = tempParams.discoveryMinPts.toFloat(),
+                        onValueChange = {
+                            tempParams = tempParams.copy(discoveryMinPts = it.toInt())
+                        },
                         valueRange = 2f..5f,
                         steps = 3,
                         description = "Pass 2: Finds sparse speakers (like pairs)."
                     )
                 }
 
-                SettingsSection("Quality Filters") {
+                SettingsSection("Quality & Merging") {
                     SliderSetting(
                         label = "Purity Threshold",
                         value = tempParams.clusterPurityThreshold,
-                        onValueChange = { tempParams = tempParams.copy(clusterPurityThreshold = it) },
+                        onValueChange = {
+                            tempParams = tempParams.copy(clusterPurityThreshold = it)
+                        },
                         valueRange = 0.3f..0.8f,
                         steps = 50,
                         description = "General filter for all clusters."
@@ -318,16 +331,20 @@ fun ClusteringSettingsDialog(
                     SliderSetting(
                         label = "Small Cluster Purity",
                         value = tempParams.minPurityForSmallCluster,
-                        onValueChange = { tempParams = tempParams.copy(minPurityForSmallCluster = it) },
+                        onValueChange = {
+                            tempParams = tempParams.copy(minPurityForSmallCluster = it)
+                        },
                         valueRange = 0.7f..0.98f,
                         steps = 28,
                         displayFormatter = { "%.0f%%".format(it * 100) },
-                        description = "Stricter filter for clusters with ≤ ${tempParams.dbscanMinPts} segments."
+                        description = "Stricter filter for clusters with ≤ ${tempParams.discoveryMinPts} segments."
                     )
                     SliderSetting(
                         label = "Max Variance",
                         value = tempParams.maxClusterVariance * 1000,
-                        onValueChange = { tempParams = tempParams.copy(maxClusterVariance = it / 1000) },
+                        onValueChange = {
+                            tempParams = tempParams.copy(maxClusterVariance = it / 1000)
+                        },
                         valueRange = 1f..10f,
                         steps = 90,
                         displayFormatter = { "%.1f‰".format(it) },
@@ -357,12 +374,10 @@ fun ClusteringSettingsDialog(
                         Text("Reset")
                     }
                     Button(
-                        modifier = Modifier.weight(1f),
-                        onClick = {
+                        modifier = Modifier.weight(1f), onClick = {
                             config.updateParameters { tempParams }
                             onDismiss()
-                        },
-                        colors = appButtonColors()
+                        }, colors = appButtonColors()
                     ) {
                         Icon(Icons.Default.Save, contentDescription = "Save")
                         Spacer(Modifier.width(8.dp))

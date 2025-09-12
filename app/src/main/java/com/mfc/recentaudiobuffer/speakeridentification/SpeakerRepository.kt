@@ -45,8 +45,9 @@ import javax.inject.Singleton
 data class FirestoreClusteringConfig(
     // DBSCAN Primary
     val highConfidenceMinPts: Int = DEFAULTS.highConfidenceMinPts,
-    val dbscanMinPts: Int = DEFAULTS.dbscanMinPts,
     val dbscanEps: Float = DEFAULTS.dbscanEps,
+    val discoveryMinPts: Int = DEFAULTS.discoveryMinPts,
+    val discoveryEps: Float = DEFAULTS.discoveryEps,
     // Merging
     val finalMergeThreshold: Float = DEFAULTS.finalMergeThreshold,
     // Quality Filters
@@ -54,11 +55,6 @@ data class FirestoreClusteringConfig(
     val clusterPurityThreshold: Float = DEFAULTS.clusterPurityThreshold,
     val maxClusterVariance: Float = DEFAULTS.maxClusterVariance,
     val minPurityForSmallCluster: Float = DEFAULTS.minPurityForSmallCluster,
-    // Noise Re-clustering
-    val noiseEps: Float = DEFAULTS.noiseEps,
-    val noiseMinPts: Int = DEFAULTS.noiseMinPts,
-    val minNoiseForReclustering: Int = DEFAULTS.minNoiseForReclustering,
-    val noiseRatioThreshold: Float = DEFAULTS.noiseRatioThreshold,
     // Sample Generation
     val sampleMinDurationSec: Int = DEFAULTS.sampleMinDurationSec,
     val sampleMaxDurationSec: Int = DEFAULTS.sampleMaxDurationSec,
@@ -80,17 +76,14 @@ data class FirestoreClusteringConfig(
     fun toParameters(): SpeakerClusteringConfig.Parameters {
         return SpeakerClusteringConfig.Parameters(
             highConfidenceMinPts,
-            dbscanMinPts,
             dbscanEps,
+            discoveryMinPts,
+            discoveryEps,
             finalMergeThreshold,
             minClusterSize,
             clusterPurityThreshold,
             maxClusterVariance,
             minPurityForSmallCluster,
-            noiseEps,
-            noiseMinPts,
-            minNoiseForReclustering,
-            noiseRatioThreshold,
             sampleMinDurationSec,
             sampleMaxDurationSec,
             sampleTargetSegments,
@@ -111,17 +104,14 @@ data class FirestoreClusteringConfig(
         fun fromParameters(params: SpeakerClusteringConfig.Parameters): FirestoreClusteringConfig {
             return FirestoreClusteringConfig(
                 params.highConfidenceMinPts,
-                params.dbscanMinPts,
                 params.dbscanEps,
+                params.discoveryMinPts,
+                params.discoveryEps,
                 params.finalMergeThreshold,
                 params.minClusterSize,
                 params.clusterPurityThreshold,
                 params.maxClusterVariance,
                 params.minPurityForSmallCluster,
-                params.noiseEps,
-                params.noiseMinPts,
-                params.minNoiseForReclustering,
-                params.noiseRatioThreshold,
                 params.sampleMinDurationSec,
                 params.sampleMaxDurationSec,
                 params.sampleTargetSegments,
