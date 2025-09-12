@@ -104,7 +104,6 @@ class DiarizationProcessor @Inject constructor(
         val params = clusteringConfig.parameters.value
 
 
-        // 1. Get all speech timestamps from VAD with tuned thresholds
         val speechTimestamps = vadProcessor.getSpeechTimestamps(
             fullBuffer,
             audioConfig,
@@ -128,7 +127,6 @@ class DiarizationProcessor @Inject constructor(
 
         val shortSegmentsBuffer = mutableListOf<VADProcessor.SpeechTimestamp>()
 
-        // 2. Process each speech segment with enhanced filtering
         for ((index, segment) in speechTimestamps.withIndex()) {
             coroutineContext.ensureActive()
 
@@ -136,7 +134,6 @@ class DiarizationProcessor @Inject constructor(
             val endVad = segment.end
             val durationSec = (endVad - startVad).toFloat() / vadSampleRate
 
-            // Handle short segments by trying to concatenate with nearby segments
             if (durationSec < params.minSegmentDurationSec) {
                 shortSegmentsBuffer.add(segment)
 
@@ -310,5 +307,3 @@ class DiarizationProcessor @Inject constructor(
         return segments
     }
 }
-
-

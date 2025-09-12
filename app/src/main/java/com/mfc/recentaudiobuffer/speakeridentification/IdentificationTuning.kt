@@ -29,11 +29,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -54,68 +57,49 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.gson.Gson
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import javax.inject.Inject
-import javax.inject.Singleton
-import androidx.core.content.edit
 import com.mfc.recentaudiobuffer.R
 import com.mfc.recentaudiobuffer.appButtonColors
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import javax.inject.Inject
+import javax.inject.Singleton
 
-// How to Use for Tuning:
-//
-// Enable Debug Mode: Toggle "Show Debug" in the UI to see all metrics
-// Observe Current Behavior: Note which speakers appear and their confidence scores
-// Identify Issues:
-//
-// - Too many speakers? → Decrease dbscanEps or increase minPts
-// - Missing valid speakers? → Increase dbscanEps or decrease purityThreshold
-// - Speakers with low confidence? → Adjust clusterPurityThreshold
-// - Too much variation? → Lower maxClusterVariance
-//
-//
-// Live Tune: Open settings dialog and adjust parameters while watching the logs
-// Export Reports: Use exportDebugReport() to save configurations that work
-//
-// Key Parameters to Tune:
-//
-// - dbscanEps (0.3-1.0): Main clustering sensitivity
-// - clusterPurityThreshold (0.3-0.8): How similar segments must be to centroid
-// - maxClusterVariance (0.001-0.01): Maximum allowed spread in cluster
-// - finalMergeThreshold (0.2-0.8): When to merge similar clusters
 @Singleton
 class SpeakerClusteringConfig @Inject constructor(
     @ApplicationContext private val context: Context,
     private val speakerRepository: SpeakerRepository? = null
 ) {
     data class Parameters(
-        // DBSCAN parameters - Primary clustering
-        val dbscanEps: Float = 0.62535214f,              // Lower = stricter clustering
-        val dbscanMinPts: Int = 3,                 // Higher = fewer clusters
-
-        // Noise re-clustering
-        val noiseEps: Float = 0.3967213f,                // Stricter than primary
-        val noiseMinPts: Int = 5,                  // Higher requirement for noise
-        val minNoiseForReclustering: Int = 10,     // Min noise points to trigger reclustering
-        val noiseRatioThreshold: Float = 0.3f,     // Noise ratio to trigger reclustering
+        // --- HIERARCHICAL CLUSTERING ---
+        val highConfidenceMinPts: Int = 5,          // First pass to find prominent speakers
+        val dbscanMinPts: Int = 2,                  // Second pass on leftovers to find sparse speakers
+        val dbscanEps: Float = 0.625f,              // Shared sensitivity for both passes
 
         // Cluster merging
-        val finalMergeThreshold: Float = 0.34754097f,     // Lower = more merges
+        val finalMergeThreshold: Float = 0.347f,    // Lower = more merges
 
         // Cluster quality filters
-        val minClusterSize: Int = 2,               // Minimum segments per cluster
-        val clusterPurityThreshold: Float = 0.5156863f,  // Min similarity to centroid
-        val maxClusterVariance: Float = 0.0024835165f,    // Max allowed variance
+        val minClusterSize: Int = 2,                // Minimum segments per cluster
+        val clusterPurityThreshold: Float = 0.515f, // Min similarity to centroid for ALL clusters
+        val minPurityForSmallCluster: Float = 0.85f, // Stricter purity for small clusters
+        val maxClusterVariance: Float = 0.0025f,    // Max allowed variance
+
+        // --- These are now less critical but kept for edge cases ---
+        val noiseEps: Float = 0.3967213f,
+        val noiseMinPts: Int = 5,
+        val minNoiseForReclustering: Int = 10,
+        val noiseRatioThreshold: Float = 0.3f,
 
         // Sample generation
         val sampleMinDurationSec: Int = 7,
@@ -138,21 +122,17 @@ class SpeakerClusteringConfig @Inject constructor(
     private val _parameters = MutableStateFlow(Parameters())
     val parameters: StateFlow<Parameters> = _parameters.asStateFlow()
 
-    // Create a scope for this class
     private val configScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     init {
-        // 1. Load from local SharedPreferences immediately for a fast startup
         loadFromPreferences()
-
-        // 2. Listen for updates pulled from Firestore by the repository
         configScope.launch {
             speakerRepository?.clusteringConfig?.filterNotNull()?.collect { firestoreConfig ->
                 val newParams = firestoreConfig.toParameters()
                 if (newParams != _parameters.value) {
                     Timber.d("Firestore config received, updating local state.")
                     _parameters.value = newParams
-                    saveToPreferences() // Keep local SharedPreferences in sync
+                    saveToPreferences()
                 }
             }
         }
@@ -161,12 +141,8 @@ class SpeakerClusteringConfig @Inject constructor(
     fun updateParameters(update: Parameters.() -> Parameters) {
         val newParams = _parameters.value.update()
         _parameters.value = newParams
-        saveToPreferences() // Save locally
-
-        // Also save to Firestore
-        configScope.launch {
-            speakerRepository?.updateClusteringConfig(newParams)
-        }
+        saveToPreferences()
+        configScope.launch { speakerRepository?.updateClusteringConfig(newParams) }
     }
 
     fun resetToDefaults() {
@@ -179,15 +155,10 @@ class SpeakerClusteringConfig @Inject constructor(
         return """
             |=== CURRENT CLUSTERING CONFIGURATION ===
             |
-            |DBSCAN Primary:
+            |Hierarchical DBSCAN:
             |  eps: ${p.dbscanEps}
-            |  minPts: ${p.dbscanMinPts}
-            |
-            |Noise Reclustering:
-            |  eps: ${p.noiseEps}
-            |  minPts: ${p.noiseMinPts}
-            |  minNoiseForReclustering: ${p.minNoiseForReclustering}
-            |  noiseRatioThreshold: ${p.noiseRatioThreshold}
+            |  High Confidence Pass (minPts): ${p.highConfidenceMinPts}
+            |  Discovery Pass (minPts): ${p.dbscanMinPts}
             |
             |Merging:
             |  finalMergeThreshold: ${p.finalMergeThreshold}
@@ -195,6 +166,7 @@ class SpeakerClusteringConfig @Inject constructor(
             |Quality Filters:
             |  minClusterSize: ${p.minClusterSize}
             |  clusterPurityThreshold: ${p.clusterPurityThreshold}
+            |  minPurityForSmallCluster: ${p.minPurityForSmallCluster}
             |  maxClusterVariance: ${p.maxClusterVariance}
             |
             |Sample Generation:
@@ -236,54 +208,47 @@ class SpeakerClusteringConfig @Inject constructor(
 
 @Composable
 fun ClusteringSettingsDialog(
-    config: SpeakerClusteringConfig, onDismiss: () -> Unit, onApply: () -> Unit
+    config: SpeakerClusteringConfig, onDismiss: () -> Unit
 ) {
     val parameters by config.parameters.collectAsStateWithLifecycle()
     var tempParams by remember { mutableStateOf(parameters) }
     var showInfoDialog by remember { mutableStateOf(false) }
 
-    // Info Dialog
     if (showInfoDialog) {
         AlertDialog(onDismissRequest = { showInfoDialog = false }, title = {
-            Text(
-                "Understanding Clusters vs Speakers", style = MaterialTheme.typography.titleLarge
-            )
+            Text("About Hierarchical Clustering", style = MaterialTheme.typography.titleLarge)
         }, text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "What's a Cluster?",
+                    "This is a two-pass system designed to be more robust.",
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
                 Text(
-                    "A cluster is a group of audio segments (1-3 second chunks) that the algorithm believes come from the same voice based on mathematical similarity. It's a temporary grouping during processing.",
+                    "Pass 1: High-Confidence",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                Text(
+                    "Uses a higher 'Min Points' setting to find the most obvious, frequently-speaking people first. This creates stable 'anchor' clusters.",
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
                 Text(
-                    "What's a Speaker?",
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    "Pass 2: Discovery",
+                    style = MaterialTheme.typography.titleMedium
                 )
                 Text(
-                    "A speaker is the final output after all processing - a cleaned, verified cluster that passed quality checks and represents a distinct person's voice profile.",
+                    "Takes all the leftover audio segments and runs a second, more sensitive scan (with a lower 'Min Points') to find less frequent speakers, including those who only spoke twice.",
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
-
                 Text(
-                    "The Process:",
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                Text(
-                    "1. Audio segments are grouped into clusters\n" + "2. Clusters are filtered by purity/variance\n" + "3. Similar clusters may be merged\n" + "4. Final clusters become speakers\n\n" + "Low confidence scores or many discarded segments indicate mixed voices in a cluster.",
+                    "This prevents the system from creating duplicate speakers and helps find rare speakers without them being classified as noise.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
         }, confirmButton = {
-            TextButton(onClick = { showInfoDialog = false }) {
-                Text("Got it")
-            }
+            TextButton(onClick = { showInfoDialog = false }) { Text("Got it") }
         })
     }
 
@@ -292,9 +257,7 @@ fun ClusteringSettingsDialog(
             modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState())
-            ) {
+            Column(modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -305,11 +268,7 @@ fun ClusteringSettingsDialog(
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
-
-                    // Info button
-                    IconButton(
-                        onClick = { showInfoDialog = true }, modifier = Modifier.size(24.dp)
-                    ) {
+                    IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.size(24.dp)) {
                         Icon(
                             Icons.Default.Info,
                             contentDescription = "About clustering",
@@ -320,142 +279,94 @@ fun ClusteringSettingsDialog(
 
                 Spacer(Modifier.height(16.dp))
 
-                // DBSCAN Section
-                SettingsSection("Primary DBSCAN") {
-                    Text(
-                        "Controls initial speaker grouping",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
+                SettingsSection("Hierarchical DBSCAN") {
                     SliderSetting(
-                        label = "Epsilon (eps)",
+                        label = "Sensitivity (eps)",
                         value = tempParams.dbscanEps,
                         onValueChange = { tempParams = tempParams.copy(dbscanEps = it) },
                         valueRange = 0.3f..1.0f,
                         steps = 70,
-                        description = "Lower → Stricter (more speakers) | Higher → Looser (fewer speakers)"
+                        description = "Shared for both passes. Lower → Stricter | Higher → Looser"
                     )
-
                     SliderSetting(
-                        label = "Min Points",
-                        value = tempParams.dbscanMinPts.toFloat(),
-                        onValueChange = { tempParams = tempParams.copy(dbscanMinPts = it.toInt()) },
-                        valueRange = 2f..10f,
-                        steps = 8,
-                        description = "Lower → More clusters | Higher → Fewer, denser clusters"
-                    )
-                }
-
-                // Noise Reclustering Section
-                SettingsSection("Noise Reclustering") {
-                    Text(
-                        "Re-processes segments that didn't initially cluster",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    SliderSetting(
-                        label = "Noise Epsilon",
-                        value = tempParams.noiseEps,
-                        onValueChange = { tempParams = tempParams.copy(noiseEps = it) },
-                        valueRange = 0.2f..0.8f,
-                        steps = 60,
-                        description = "Lower → Very strict | Higher → More inclusive"
-                    )
-
-                    SliderSetting(
-                        label = "Noise Min Points",
-                        value = tempParams.noiseMinPts.toFloat(),
-                        onValueChange = { tempParams = tempParams.copy(noiseMinPts = it.toInt()) },
+                        label = "High Confidence Min Pts",
+                        value = tempParams.highConfidenceMinPts.toFloat(),
+                        onValueChange = { tempParams = tempParams.copy(highConfidenceMinPts = it.toInt()) },
                         valueRange = 3f..15f,
                         steps = 12,
-                        description = "Higher → Requires more evidence for noise clusters"
+                        description = "Pass 1: Finds prominent speakers."
                     )
-
                     SliderSetting(
-                        label = "Noise Ratio Threshold",
-                        value = tempParams.noiseRatioThreshold,
-                        onValueChange = { tempParams = tempParams.copy(noiseRatioThreshold = it) },
-                        valueRange = 0.1f..0.5f,
-                        steps = 40,
-                        description = "Min % of noise to trigger reclustering"
+                        label = "Discovery Min Pts",
+                        value = tempParams.dbscanMinPts.toFloat(),
+                        onValueChange = { tempParams = tempParams.copy(dbscanMinPts = it.toInt()) },
+                        valueRange = 2f..5f,
+                        steps = 3,
+                        description = "Pass 2: Finds sparse speakers (like pairs)."
                     )
                 }
 
-                // Quality Filters Section
                 SettingsSection("Quality Filters") {
-                    Text(
-                        "Filters out low-quality or mixed-speaker clusters",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
                     SliderSetting(
                         label = "Purity Threshold",
                         value = tempParams.clusterPurityThreshold,
-                        onValueChange = {
-                            tempParams = tempParams.copy(clusterPurityThreshold = it)
-                        },
+                        onValueChange = { tempParams = tempParams.copy(clusterPurityThreshold = it) },
                         valueRange = 0.3f..0.8f,
                         steps = 50,
-                        description = "Higher → Removes mixed/contaminated clusters"
+                        description = "General filter for all clusters."
                     )
-
+                    SliderSetting(
+                        label = "Small Cluster Purity",
+                        value = tempParams.minPurityForSmallCluster,
+                        onValueChange = { tempParams = tempParams.copy(minPurityForSmallCluster = it) },
+                        valueRange = 0.7f..0.98f,
+                        steps = 28,
+                        displayFormatter = { "%.0f%%".format(it * 100) },
+                        description = "Stricter filter for clusters with ≤ ${tempParams.dbscanMinPts} segments."
+                    )
                     SliderSetting(
                         label = "Max Variance",
                         value = tempParams.maxClusterVariance * 1000,
-                        onValueChange = {
-                            tempParams = tempParams.copy(maxClusterVariance = it / 1000)
-                        },
+                        onValueChange = { tempParams = tempParams.copy(maxClusterVariance = it / 1000) },
                         valueRange = 1f..10f,
                         steps = 90,
                         displayFormatter = { "%.1f‰".format(it) },
-                        description = "Lower → Tighter clusters | Higher → Allow more spread"
+                        description = "Lower → Tighter clusters."
                     )
-
                     SliderSetting(
                         label = "Merge Threshold",
                         value = tempParams.finalMergeThreshold,
                         onValueChange = { tempParams = tempParams.copy(finalMergeThreshold = it) },
                         valueRange = 0.2f..0.8f,
                         steps = 60,
-                        description = "Lower → Merge more | Higher → Merge less"
+                        description = "Lower → Merges more similar clusters."
                     )
                 }
-
                 Spacer(Modifier.height(16.dp))
-
-                // Action buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    TextButton(
-                        onClick = {
-                            tempParams = SpeakerClusteringConfig.Parameters()
-                        }, colors = appButtonColors()
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = { tempParams = SpeakerClusteringConfig.Parameters() },
+                        colors = appButtonColors()
                     ) {
+                        Icon(Icons.Default.Restore, contentDescription = "Reset")
+                        Spacer(Modifier.width(8.dp))
                         Text("Reset")
                     }
-
                     Button(
+                        modifier = Modifier.weight(1f),
                         onClick = {
                             config.updateParameters { tempParams }
                             onDismiss()
-                        }, colors = appButtonColors()
+                        },
+                        colors = appButtonColors()
                     ) {
-                        Text("Apply")
-                    }
-
-                    Button(
-                        onClick = {
-                            config.updateParameters { tempParams }
-                            onApply()
-                            onDismiss()
-                        }, colors = appButtonColors()
-                    ) {
-                        Text("Apply & Scan")
+                        Icon(Icons.Default.Save, contentDescription = "Save")
+                        Spacer(Modifier.width(8.dp))
+                        Text("Save")
                     }
                 }
             }
@@ -517,3 +428,4 @@ fun SettingsSection(
         Spacer(Modifier.height(8.dp))
     }
 }
+
