@@ -40,7 +40,6 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -82,34 +81,29 @@ class SpeakerClusteringConfig @Inject constructor(
     private val speakerRepository: SpeakerRepository? = null
 ) {
     data class Parameters(
-        // --- HIERARCHICAL CLUSTERING ---
-        val highConfidenceMinPts: Int = 5,
-        val dbscanEps: Float = 0.625f,
-        val discoveryMinPts: Int = 2,
-        val discoveryEps: Float = 0.70f, // Reduced from 0.75
+        // --- Agglomerative Hierarchical Clustering (AHC) ---
+        val ahcDistanceThreshold: Float = 0.65f,
 
-        // Cluster merging
-        val finalMergeThreshold: Float = 0.35f,
-
-        // Cluster quality filters
+        // --- Cluster Quality Filters ---
         val minClusterSize: Int = 2,
         val clusterPurityThreshold: Float = 0.52f,
-        val smallClusterPurityBoost: Float = 0.30f, // Replaces fixed threshold
-        val maxClusterVariance: Float = 0.0025f,
+        val minPurityForSmallCluster: Float = 0.85f,
+        val baseMaxClusterVariance: Float = 0.0025f,
+        val varianceSizeFactor: Float = 0.5f, // Logarithmic factor for dynamic variance
 
-        // Sample generation
+        // --- Sample Generation ---
         val sampleMinDurationSec: Int = 7,
         val sampleMaxDurationSec: Int = 20,
         val sampleTargetSegments: Int = 15,
         val minChunkDurationSec: Float = 1.0f,
         val sampleSilenceDurationMs: Int = 500,
 
-        // Diarization
+        // --- Diarization ---
         val minSegmentDurationSec: Float = 1.0f,
         val maxSegmentDurationSec: Float = 3.0f,
         val minSpeechEnergyRms: Float = 0.001f,
 
-        // VAD
+        // --- VAD ---
         val vadMergeGapMs: Int = 200,
         val vadPaddingMs: Int = 100,
         val vadSpeechThreshold: Float = 0.25f
@@ -151,20 +145,15 @@ class SpeakerClusteringConfig @Inject constructor(
         return """
             |=== CURRENT CLUSTERING CONFIGURATION ===
             |
-            |Hierarchical DBSCAN:
-            |  High Confidence Pass (minPts): ${p.highConfidenceMinPts}
-            |  High Confidence Eps: ${p.dbscanEps}
-            |  Discovery Pass (minPts): ${p.discoveryMinPts}
-            |  Discovery Eps: ${p.discoveryEps}
-            |
-            |Merging:
-            |  finalMergeThreshold: ${p.finalMergeThreshold}
+            |Agglomerative Clustering:
+            |  distanceThreshold: ${p.ahcDistanceThreshold}
             |
             |Quality Filters:
             |  minClusterSize: ${p.minClusterSize}
             |  clusterPurityThreshold: ${p.clusterPurityThreshold}
-            |  smallClusterPurityBoost: ${p.smallClusterPurityBoost}
-            |  maxClusterVariance: ${p.maxClusterVariance}
+            |  minPurityForSmallCluster: ${p.minPurityForSmallCluster}
+            |  baseMaxClusterVariance: ${p.baseMaxClusterVariance}
+            |  varianceSizeFactor: ${p.varianceSizeFactor}
             |
             |Sample Generation:
             |  duration: ${p.sampleMinDurationSec}-${p.sampleMaxDurationSec}s
@@ -205,7 +194,7 @@ class SpeakerClusteringConfig @Inject constructor(
 
 @Composable
 fun ClusteringSettingsDialog(
-    config: SpeakerClusteringConfig, onDismiss: () -> Unit
+    config: SpeakerClusteringConfig, onDismiss: () -> Unit, onApply: () -> Unit
 ) {
     val parameters by config.parameters.collectAsStateWithLifecycle()
     var tempParams by remember { mutableStateOf(parameters) }
@@ -213,34 +202,22 @@ fun ClusteringSettingsDialog(
 
     if (showInfoDialog) {
         AlertDialog(onDismissRequest = { showInfoDialog = false }, title = {
-            Text("About Hierarchical Clustering", style = MaterialTheme.typography.titleLarge)
+            Text("About Agglomerative Clustering", style = MaterialTheme.typography.titleLarge)
         }, text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "This is a two-pass system designed to be more robust.",
+                    "This algorithm builds speakers from the ground up.",
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
                 Text(
-                    "Pass 1: High-Confidence",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-                Text(
-                    "Uses a higher 'Min Points' and stricter 'Eps' to find the most obvious, frequently-speaking people first. This creates stable 'anchor' clusters.",
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                Text(
-                    "Pass 2: Discovery",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    "Takes all leftover segments and runs a second, more sensitive scan (lower 'Min Points', higher 'Eps') to find less frequent speakers, including those who only spoke twice.",
+                    "1. Each audio segment starts as its own speaker.\n" +
+                            "2. The algorithm finds the two most similar speakers and merges them.\n" +
+                            "3. This repeats until the most similar pair of speakers are still more different than the 'Distance Threshold'.",
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
                 Text(
-                    "This prevents the system from creating duplicate speakers and helps find rare speakers without them being classified as noise.",
+                    "This method is more computationally intensive but avoids many of the complex tuning parameters of other algorithms, relying on a single, intuitive distance setting.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -276,43 +253,18 @@ fun ClusteringSettingsDialog(
 
                 Spacer(Modifier.height(16.dp))
 
-                SettingsSection("Hierarchical DBSCAN") {
+                SettingsSection("Agglomerative Clustering") {
                     SliderSetting(
-                        label = "High Confidence Eps",
-                        value = tempParams.dbscanEps,
-                        onValueChange = { tempParams = tempParams.copy(dbscanEps = it) },
-                        valueRange = 0.4f..0.8f,
-                        steps = 40,
-                        description = "Pass 1 Sensitivity. Lower is stricter."
-                    )
-                    SliderSetting(
-                        label = "High Confidence Min Pts",
-                        value = tempParams.highConfidenceMinPts.toFloat(),
-                        onValueChange = { tempParams = tempParams.copy(highConfidenceMinPts = it.toInt()) },
-                        valueRange = 3f..15f,
-                        steps = 12,
-                        description = "Pass 1: Finds prominent speakers."
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    SliderSetting(
-                        label = "Discovery Eps",
-                        value = tempParams.discoveryEps,
-                        onValueChange = { tempParams = tempParams.copy(discoveryEps = it) },
-                        valueRange = 0.6f..1.0f,
-                        steps = 40,
-                        description = "Pass 2 Sensitivity. Higher finds more."
-                    )
-                    SliderSetting(
-                        label = "Discovery Min Pts",
-                        value = tempParams.discoveryMinPts.toFloat(),
-                        onValueChange = { tempParams = tempParams.copy(discoveryMinPts = it.toInt()) },
-                        valueRange = 2f..5f,
-                        steps = 3,
-                        description = "Pass 2: Finds sparse speakers (like pairs)."
+                        label = "Distance Threshold",
+                        value = tempParams.ahcDistanceThreshold,
+                        onValueChange = { tempParams = tempParams.copy(ahcDistanceThreshold = it) },
+                        valueRange = 0.4f..1.0f,
+                        steps = 60,
+                        description = "Higher = fewer speakers (more merging)"
                     )
                 }
 
-                SettingsSection("Quality & Merging") {
+                SettingsSection("Quality Filters") {
                     SliderSetting(
                         label = "Purity Threshold",
                         value = tempParams.clusterPurityThreshold,
@@ -322,30 +274,30 @@ fun ClusteringSettingsDialog(
                         description = "General filter for all clusters."
                     )
                     SliderSetting(
-                        label = "Small Cluster Purity Boost",
-                        value = tempParams.smallClusterPurityBoost,
-                        onValueChange = { tempParams = tempParams.copy(smallClusterPurityBoost = it) },
-                        valueRange = 0.1f..0.5f,
-                        steps = 40,
-                        displayFormatter = { "+%.0f%%".format(it * 100) },
-                        description = "Additional purity required for small clusters."
+                        label = "Small Cluster Purity",
+                        value = tempParams.minPurityForSmallCluster,
+                        onValueChange = { tempParams = tempParams.copy(minPurityForSmallCluster = it) },
+                        valueRange = 0.7f..0.98f,
+                        steps = 28,
+                        displayFormatter = { "%.0f%%".format(it * 100) },
+                        description = "Stricter filter for clusters with ≤ ${tempParams.minClusterSize} segments."
                     )
                     SliderSetting(
-                        label = "Max Variance",
-                        value = tempParams.maxClusterVariance * 1000,
-                        onValueChange = { tempParams = tempParams.copy(maxClusterVariance = it / 1000) },
+                        label = "Base Max Variance",
+                        value = tempParams.baseMaxClusterVariance * 1000,
+                        onValueChange = { tempParams = tempParams.copy(baseMaxClusterVariance = it / 1000) },
                         valueRange = 1f..10f,
                         steps = 90,
                         displayFormatter = { "%.1f‰".format(it) },
-                        description = "Lower → Tighter clusters."
+                        description = "Base variance allowed for a cluster."
                     )
                     SliderSetting(
-                        label = "Merge Threshold",
-                        value = tempParams.finalMergeThreshold,
-                        onValueChange = { tempParams = tempParams.copy(finalMergeThreshold = it) },
-                        valueRange = 0.2f..0.8f,
-                        steps = 60,
-                        description = "Lower → Merges more similar clusters."
+                        label = "Variance Size Factor",
+                        value = tempParams.varianceSizeFactor,
+                        onValueChange = { tempParams = tempParams.copy(varianceSizeFactor = it) },
+                        valueRange = 0.1f..1.0f,
+                        steps = 18,
+                        description = "Allows larger clusters more variance."
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -366,7 +318,7 @@ fun ClusteringSettingsDialog(
                         modifier = Modifier.weight(1f),
                         onClick = {
                             config.updateParameters { tempParams }
-                            onDismiss()
+                            onApply()
                         },
                         colors = appButtonColors()
                     ) {

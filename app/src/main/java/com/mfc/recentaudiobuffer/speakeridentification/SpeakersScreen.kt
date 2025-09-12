@@ -216,7 +216,13 @@ fun SpeakersScreenContent(
 
     if (showTuningDialog) {
         ClusteringSettingsDialog(
-            config = config, onDismiss = { showTuningDialog = false })
+            config = config,
+            onDismiss = { showTuningDialog = false },
+            onApply = {
+                onRescanWithCurrentFiles()
+                showTuningDialog = false
+            }
+        )
     }
 
     if (uiState is SpeakerDiscoveryUiState.FileSelection) {

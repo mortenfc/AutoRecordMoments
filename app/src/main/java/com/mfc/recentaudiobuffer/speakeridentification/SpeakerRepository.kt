@@ -43,15 +43,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 data class FirestoreClusteringConfig(
-    val highConfidenceMinPts: Int = DEFAULTS.highConfidenceMinPts,
-    val dbscanEps: Float = DEFAULTS.dbscanEps,
-    val discoveryMinPts: Int = DEFAULTS.discoveryMinPts,
-    val discoveryEps: Float = DEFAULTS.discoveryEps,
-    val finalMergeThreshold: Float = DEFAULTS.finalMergeThreshold,
+    val ahcDistanceThreshold: Float = DEFAULTS.ahcDistanceThreshold,
     val minClusterSize: Int = DEFAULTS.minClusterSize,
     val clusterPurityThreshold: Float = DEFAULTS.clusterPurityThreshold,
-    val smallClusterPurityBoost: Float = DEFAULTS.smallClusterPurityBoost,
-    val maxClusterVariance: Float = DEFAULTS.maxClusterVariance,
+    val minPurityForSmallCluster: Float = DEFAULTS.minPurityForSmallCluster,
+    val baseMaxClusterVariance: Float = DEFAULTS.baseMaxClusterVariance,
+    val varianceSizeFactor: Float = DEFAULTS.varianceSizeFactor,
     // Sample Generation
     val sampleMinDurationSec: Int = DEFAULTS.sampleMinDurationSec,
     val sampleMaxDurationSec: Int = DEFAULTS.sampleMaxDurationSec,
@@ -68,23 +65,16 @@ data class FirestoreClusteringConfig(
     val vadSpeechThreshold: Float = DEFAULTS.vadSpeechThreshold
 ) {
     // No-arg constructor for Firestore
-    constructor() : this(DEFAULTS.highConfidenceMinPts)
+    constructor() : this(DEFAULTS.ahcDistanceThreshold)
 
     fun toParameters(): SpeakerClusteringConfig.Parameters {
-        // Find a way to handle missing fields for backward compatibility
-        val purityBoost =
-            this.smallClusterPurityBoost ?: SpeakerClusteringConfig.Parameters().smallClusterPurityBoost
-
         return SpeakerClusteringConfig.Parameters(
-            highConfidenceMinPts,
-            dbscanEps,
-            discoveryMinPts,
-            discoveryEps,
-            finalMergeThreshold,
+            ahcDistanceThreshold,
             minClusterSize,
             clusterPurityThreshold,
-            purityBoost, // Use the safe value
-            maxClusterVariance,
+            minPurityForSmallCluster,
+            baseMaxClusterVariance,
+            varianceSizeFactor,
             sampleMinDurationSec,
             sampleMaxDurationSec,
             sampleTargetSegments,
@@ -104,15 +94,12 @@ data class FirestoreClusteringConfig(
 
         fun fromParameters(params: SpeakerClusteringConfig.Parameters): FirestoreClusteringConfig {
             return FirestoreClusteringConfig(
-                params.highConfidenceMinPts,
-                params.dbscanEps,
-                params.discoveryMinPts,
-                params.discoveryEps,
-                params.finalMergeThreshold,
+                params.ahcDistanceThreshold,
                 params.minClusterSize,
                 params.clusterPurityThreshold,
-                params.maxClusterVariance,
-                params.smallClusterPurityBoost, // Updated
+                params.minPurityForSmallCluster,
+                params.baseMaxClusterVariance,
+                params.varianceSizeFactor,
                 params.sampleMinDurationSec,
                 params.sampleMaxDurationSec,
                 params.sampleTargetSegments,
