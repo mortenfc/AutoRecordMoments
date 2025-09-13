@@ -43,12 +43,18 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 data class FirestoreClusteringConfig(
-    val ahcDistanceThreshold: Float = DEFAULTS.ahcDistanceThreshold,
+    // DBSCAN
+    val dbscanEps: Float = DEFAULTS.dbscanEps,
+    val highConfidenceMinPts: Int = DEFAULTS.highConfidenceMinPts,
+    // AHC
+    val leftoverAhcThreshold: Float = DEFAULTS.leftoverAhcThreshold,
+    // Quality
     val minClusterSize: Int = DEFAULTS.minClusterSize,
+    val smallClusterSizeThreshold: Int = DEFAULTS.smallClusterSizeThreshold,
     val clusterPurityThreshold: Float = DEFAULTS.clusterPurityThreshold,
     val minPurityForSmallCluster: Float = DEFAULTS.minPurityForSmallCluster,
     val baseMaxClusterVariance: Float = DEFAULTS.baseMaxClusterVariance,
-    val varianceSizeFactor: Float = DEFAULTS.varianceSizeFactor,
+    val varianceGrowthFactor: Float = DEFAULTS.varianceGrowthFactor,
     // Sample Generation
     val sampleMinDurationSec: Int = DEFAULTS.sampleMinDurationSec,
     val sampleMaxDurationSec: Int = DEFAULTS.sampleMaxDurationSec,
@@ -65,16 +71,19 @@ data class FirestoreClusteringConfig(
     val vadSpeechThreshold: Float = DEFAULTS.vadSpeechThreshold
 ) {
     // No-arg constructor for Firestore
-    constructor() : this(DEFAULTS.ahcDistanceThreshold)
+    constructor() : this(DEFAULTS.dbscanEps)
 
     fun toParameters(): SpeakerClusteringConfig.Parameters {
         return SpeakerClusteringConfig.Parameters(
-            ahcDistanceThreshold,
+            dbscanEps,
+            highConfidenceMinPts,
+            leftoverAhcThreshold,
             minClusterSize,
+            smallClusterSizeThreshold,
             clusterPurityThreshold,
             minPurityForSmallCluster,
             baseMaxClusterVariance,
-            varianceSizeFactor,
+            varianceGrowthFactor,
             sampleMinDurationSec,
             sampleMaxDurationSec,
             sampleTargetSegments,
@@ -94,12 +103,15 @@ data class FirestoreClusteringConfig(
 
         fun fromParameters(params: SpeakerClusteringConfig.Parameters): FirestoreClusteringConfig {
             return FirestoreClusteringConfig(
-                params.ahcDistanceThreshold,
+                params.dbscanEps,
+                params.highConfidenceMinPts,
+                params.leftoverAhcThreshold,
                 params.minClusterSize,
+                params.smallClusterSizeThreshold,
                 params.clusterPurityThreshold,
                 params.minPurityForSmallCluster,
                 params.baseMaxClusterVariance,
-                params.varianceSizeFactor,
+                params.varianceGrowthFactor,
                 params.sampleMinDurationSec,
                 params.sampleMaxDurationSec,
                 params.sampleTargetSegments,

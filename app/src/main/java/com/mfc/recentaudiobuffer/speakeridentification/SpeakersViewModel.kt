@@ -33,6 +33,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -40,6 +43,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -50,10 +54,12 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
+import kotlin.math.log10
 import kotlin.math.sqrt
 
 data class UnknownSpeaker(
@@ -144,7 +150,8 @@ class SpeakersViewModel @Inject constructor(
     val config = clusteringConfig
 
     private var scanningJob: Job? = null
-    private val processedFiles = mutableSetOf<String>()
+    private val processedFiles = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
 
     fun rescanWithCurrentFiles() {
         viewModelScope.launch {
@@ -152,14 +159,16 @@ class SpeakersViewModel @Inject constructor(
                 is SpeakerDiscoveryUiState.FileSelection -> {
                     startScan(currentState.selectedFileUris)
                 }
+
                 is SpeakerDiscoveryUiState.Success -> {
                     if (lastScannedFileUris.isNotEmpty()) {
-                        processedFiles.removeAll(lastScannedFileUris.map { it.toString() })
+                        processedFiles.removeAll(lastScannedFileUris.map { it.toString() }.toSet())
                         startScan(lastScannedFileUris)
                     } else {
                         prepareFileSelection()
                     }
                 }
+
                 else -> prepareFileSelection()
             }
         }
@@ -172,7 +181,7 @@ class SpeakersViewModel @Inject constructor(
         Timber.d("\n${clusteringConfig.exportCurrentConfig()}")
 
         val validSegments = segments.filter { it.embedding.isNotEmpty() }
-        Timber.d("=== CLUSTERING START (AHC) ===")
+        Timber.d("=== CLUSTERING START (Hybrid) ===")
         Timber.d("Total segments: ${segments.size}, Valid segments: ${validSegments.size}")
 
         if (validSegments.size < params.minClusterSize) {
@@ -180,9 +189,27 @@ class SpeakersViewModel @Inject constructor(
             return@withContext emptyMap()
         }
 
-        val clusters = agglomerativeClustering(validSegments, params.ahcDistanceThreshold)
+        Timber.d("\n📊 STAGE 1: PRIMARY CLUSTERING (DBSCAN)")
+        val (dbscanClusters, leftovers) = dbscanClusteringPass(
+            validSegments,
+            eps = params.dbscanEps,
+            minPts = params.highConfidenceMinPts,
+            passName = "DBSCAN"
+        )
+        Timber.d("✅ DBSCAN Pass Results: ${dbscanClusters.size} clusters, ${leftovers.size} segments leftover.")
 
-        val result = clusters.filter { (_, segments) ->
+        var ahcClusters: Map<String, List<UnidentifiedSegment>> = emptyMap()
+        if (leftovers.size >= params.minClusterSize) {
+            Timber.d("\n📊 STAGE 2: LEFTOVER CLUSTERING (AHC) on ${leftovers.size} segments")
+            ahcClusters = agglomerativeClustering(
+                leftovers, params.leftoverAhcThreshold
+            )
+            Timber.d("✅ AHC Pass Results: ${ahcClusters.size} new clusters found.")
+        }
+
+        val allClusters = dbscanClusters + ahcClusters
+
+        val result = allClusters.filter { (_, segments) ->
             val keep = segments.size >= params.minClusterSize
             if (!keep) {
                 Timber.d("  ❌ Filtered out small cluster: only ${segments.size} segments (min: ${params.minClusterSize})")
@@ -192,15 +219,12 @@ class SpeakersViewModel @Inject constructor(
             "speaker_${index + 1}" to entry.value
         }.toMap()
 
-
         Timber.d("\n=== CLUSTERING COMPLETE: ${result.size} final speakers before quality checks ===")
         return@withContext result
     }
 
-
     private suspend fun agglomerativeClustering(
-        segments: List<UnidentifiedSegment>,
-        distanceThreshold: Float
+        segments: List<UnidentifiedSegment>, distanceThreshold: Float
     ): Map<String, List<UnidentifiedSegment>> = withContext(Dispatchers.Default) {
 
         if (segments.isEmpty()) return@withContext emptyMap()
@@ -227,8 +251,7 @@ class SpeakersViewModel @Inject constructor(
             for (i in 0 until centroids.size) {
                 for (j in (i + 1) until centroids.size) {
                     val dist = 1.0f - speakerIdentifier.calculateCosineSimilarity(
-                        centroids[i],
-                        centroids[j]
+                        centroids[i], centroids[j]
                     )
                     if (dist < minDistance) {
                         minDistance = dist
@@ -238,7 +261,11 @@ class SpeakersViewModel @Inject constructor(
             }
 
             if (minDistance > distanceThreshold || bestPair.first == -1) {
-                Timber.d("✅ Halting merge: Min distance %.3f > threshold %.3f".format(minDistance, distanceThreshold))
+                Timber.d(
+                    "✅ Halting merge: Min distance %.3f > threshold %.3f".format(
+                        minDistance, distanceThreshold
+                    )
+                )
                 break
             }
 
@@ -251,8 +278,7 @@ class SpeakersViewModel @Inject constructor(
 
             clusters[i].addAll(clusters[j])
             centroids[i] = speakerIdentifier.averageEmbeddings(
-                clusters[i].map { it.embedding }
-            )
+                clusters[i].map { it.embedding })
 
             clusters.removeAt(j)
             centroids.removeAt(j)
@@ -294,7 +320,7 @@ class SpeakersViewModel @Inject constructor(
 
             val debugInfo = SpeakerDebugInfo(
                 originalClusterSize = segments.size,
-                clusteringMethod = "AHC",
+                clusteringMethod = if (id.contains("DBSCAN")) "DBSCAN" else "AHC",
                 filterReasons = mutableListOf(),
                 mergeHistory = emptyList()
             )
@@ -330,7 +356,7 @@ class SpeakersViewModel @Inject constructor(
                 continue
             }
 
-            if (pureSegments.size <= params.minClusterSize && avgSimilarity < params.minPurityForSmallCluster) {
+            if (pureSegments.size <= params.smallClusterSizeThreshold && avgSimilarity < params.minPurityForSmallCluster) {
                 val reason =
                     "Small cluster failed purity check: size=${pureSegments.size}, purity=%.2f < %.2f".format(
                         avgSimilarity, params.minPurityForSmallCluster
@@ -344,14 +370,16 @@ class SpeakersViewModel @Inject constructor(
                 pureSegments.map { it.embedding }, clusterCentroid
             )
 
-            val dynamicMaxVariance = params.baseMaxClusterVariance * (1.0f + params.varianceSizeFactor * kotlin.math.log10(
-                pureSegments.size.toFloat()
-            ))
+            val dynamicMaxVariance =
+                params.baseMaxClusterVariance * (1.0f + params.varianceGrowthFactor * log10(
+                    pureSegments.size.toFloat()
+                ))
 
 
             if (variance > dynamicMaxVariance) {
-                val reason =
-                    "High variance: %.5f > %.5f (dynamic threshold)".format(variance, dynamicMaxVariance)
+                val reason = "High variance: %.5f > %.5f (dynamic threshold)".format(
+                    variance, dynamicMaxVariance
+                )
                 (debugInfo.filterReasons as MutableList).add(reason)
                 Timber.d("  ❌ REJECTED $id: $reason")
                 continue
@@ -394,6 +422,80 @@ class SpeakersViewModel @Inject constructor(
         }
 
         return finalSpeakers
+    }
+
+    private suspend fun dbscanClusteringPass(
+        segments: List<UnidentifiedSegment>, eps: Float, minPts: Int, passName: String = "UNNAMED"
+    ): Pair<Map<String, MutableList<UnidentifiedSegment>>, List<UnidentifiedSegment>> =
+        withContext(Dispatchers.Default) {
+            Timber.d("  🔍 DBSCAN Pass '$passName' starting with ${segments.size} segments")
+
+            val labels = mutableMapOf<UnidentifiedSegment, Int>()
+            var clusterId = 0
+
+            for ((index, segment) in segments.withIndex()) {
+                if (labels.containsKey(segment)) continue
+
+                val neighbors = findNeighbors(segment, segments, eps)
+
+                if (neighbors.size < minPts) {
+                    labels[segment] = -1 // Mark as noise
+                    continue
+                }
+
+                clusterId++
+                labels[segment] = clusterId
+
+                val seedSet = neighbors.toMutableSet()
+                seedSet.remove(segment)
+
+                while (seedSet.isNotEmpty()) {
+                    val current = seedSet.first()
+                    seedSet.remove(current)
+
+                    val currentLabel = labels.getOrDefault(current, 0)
+                    if (currentLabel == -1) {
+                        labels[current] = clusterId
+                    }
+                    if (currentLabel != 0) continue
+
+                    labels[current] = clusterId
+                    val currentNeighbors = findNeighbors(current, segments, eps)
+                    if (currentNeighbors.size >= minPts) {
+                        seedSet.addAll(currentNeighbors)
+                    }
+                }
+            }
+
+            val clusters = mutableMapOf<String, MutableList<UnidentifiedSegment>>()
+            val noise = mutableListOf<UnidentifiedSegment>()
+
+            labels.entries.groupBy { it.value }.forEach { (id, segmentEntries) ->
+                val segmentList = segmentEntries.map { it.key }.toMutableList()
+                if (id == -1) {
+                    noise.addAll(segmentList)
+                } else if (id > 0) {
+                    clusters["cluster_${passName}_$id"] = segmentList
+                }
+            }
+
+            return@withContext Pair(clusters, noise)
+        }
+
+    private suspend fun findNeighbors(
+        segment: UnidentifiedSegment, allSegments: List<UnidentifiedSegment>, eps: Float
+    ): List<UnidentifiedSegment> {
+        val neighbors = mutableListOf<UnidentifiedSegment>()
+        for (other in allSegments) {
+            coroutineContext.ensureActive()
+            val distance = 1.0f - speakerIdentifier.calculateCosineSimilarity(
+                segment.embedding, other.embedding
+            )
+            if (distance <= eps) {
+                neighbors.add(other)
+            }
+        }
+        return neighbors
     }
 
     fun exportDebugReport(): String {
@@ -454,7 +556,7 @@ class SpeakersViewModel @Inject constructor(
                 _uiState.value = SpeakerDiscoveryUiState.FileSelection(
                     allFiles = allWavFiles,
                     selectedFileUris = unprocessedFiles.map { it.uri }.toSet(),
-                    processedFileUris = processedFiles
+                    processedFileUris = processedFiles.toSet()
                 )
             } catch (e: Exception) {
                 Timber.e(e, "Error preparing file list")
@@ -482,12 +584,12 @@ class SpeakersViewModel @Inject constructor(
     fun startScan(selectedFileUris: Set<Uri>) {
         lastScannedFileUris = selectedFileUris
         scanningJob?.cancel()
-        scanningJob = viewModelScope.launch(Dispatchers.IO) {
-            val allUnidentifiedSegments = mutableListOf<UnidentifiedSegment>()
+        scanningJob = viewModelScope.launch {
+            var allUnidentifiedSegments: List<UnidentifiedSegment> = emptyList()
 
             try {
                 _uiState.value = SpeakerDiscoveryUiState.Scanning(0f, 0, selectedFileUris.size)
-                collectAllUnidentifiedSegments(allUnidentifiedSegments, selectedFileUris)
+                allUnidentifiedSegments = collectAllUnidentifiedSegmentsParallel(selectedFileUris)
             } catch (e: CancellationException) {
                 Timber.i("Scanning was cancelled by the user. Proceeding with partial results.")
             } catch (e: Exception) {
@@ -502,62 +604,64 @@ class SpeakersViewModel @Inject constructor(
                         val finalUnknownSpeakers = createUnknownSpeakerObjects(clusteredSpeakers)
                         _uiState.value = SpeakerDiscoveryUiState.Success(finalUnknownSpeakers)
                     }
-                } else {
+                } else if (coroutineContext.isActive) {
                     _uiState.value = SpeakerDiscoveryUiState.Success(emptyList())
                 }
             }
         }
     }
 
-    private suspend fun collectAllUnidentifiedSegments(
-        targetList: MutableList<UnidentifiedSegment>, filesToProcessUris: Set<Uri>
-    ) {
-        if (filesToProcessUris.isEmpty()) return
+    private suspend fun collectAllUnidentifiedSegmentsParallel(
+        filesToProcessUris: Set<Uri>
+    ): List<UnidentifiedSegment> = coroutineScope {
+        if (filesToProcessUris.isEmpty()) return@coroutineScope emptyList()
 
         val knownSpeakers = speakers.value
-        val filesToProcess = filesToProcessUris.mapNotNull { uri ->
-            try {
-                DocumentFile.fromSingleUri(context, uri)
-            } catch (e: Exception) {
-                null
-            }
-        }
+        val totalFiles = filesToProcessUris.size
+        val filesCompleted = AtomicInteger(0)
 
-        for ((index, file) in filesToProcess.withIndex()) {
-            coroutineContext.ensureActive()
-            val fileUri = file.uri.toString()
-            try {
-                val audioBytes =
-                    context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }
-                if (audioBytes != null) {
-                    val audioBuffer = ByteBuffer.wrap(audioBytes)
-                    val audioConfig = WavUtils.readWavHeader(audioBytes) ?: continue
-                    val unidentifiedFromFile = diarizationProcessor.process(
-                        audioBuffer, fileUri, knownSpeakers, audioConfig
-                    )
-                    targetList.addAll(unidentifiedFromFile)
+        val deferredResults = filesToProcessUris.map { uri ->
+            async(Dispatchers.IO) {
+                val fileUri = uri.toString()
+                try {
+                    val audioBytes =
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    if (audioBytes != null) {
+                        val audioBuffer = ByteBuffer.wrap(audioBytes)
+                        val audioConfig = WavUtils.readWavHeader(audioBytes)
+                        if (audioConfig != null) {
+                            val segments = diarizationProcessor.process(
+                                audioBuffer, fileUri, knownSpeakers, audioConfig
+                            )
+                            processedFiles.add(fileUri)
+                            return@async segments
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    Timber.d("Cancelled while processing file: $fileUri")
+                    throw e
+                } catch (e: Exception) {
+                    Timber.e(e, "Error processing file: $fileUri")
                     processedFiles.add(fileUri)
+                } finally {
+                    val completedCount = filesCompleted.incrementAndGet()
+                    withContext(Dispatchers.Main) {
+                        _uiState.update {
+                            if (it is SpeakerDiscoveryUiState.Scanning) {
+                                it.copy(
+                                    progress = completedCount.toFloat() / totalFiles,
+                                    currentFile = completedCount,
+                                    totalFiles = totalFiles
+                                )
+                            } else it
+                        }
+                    }
                 }
-            } catch (e: CancellationException) {
-                Timber.d("Cancelled while processing file: ${file.name}")
-                throw e
-            } catch (e: Exception) {
-                Timber.e(e, "Error processing file: ${file.name}")
-                processedFiles.add(fileUri)
-            }
-
-            withContext(Dispatchers.Main) {
-                _uiState.update {
-                    if (it is SpeakerDiscoveryUiState.Scanning) {
-                        it.copy(
-                            progress = (index + 1).toFloat() / filesToProcess.size,
-                            currentFile = index + 1,
-                            totalFiles = filesToProcess.size
-                        )
-                    } else it
-                }
+                emptyList<UnidentifiedSegment>()
             }
         }
+
+        deferredResults.awaitAll().flatten()
     }
 
     private fun calculateClusterVariance(
@@ -630,11 +734,13 @@ class SpeakersViewModel @Inject constructor(
 
             val sampleStream = ByteArrayOutputStream()
             val bytesPerSample = targetConfig.bitDepth.bits / 8
-            val minBytes = targetConfig.sampleRateHz * bytesPerSample * params.sampleMinDurationSec
-            val maxBytes = targetConfig.sampleRateHz * bytesPerSample * params.sampleMaxDurationSec
+            val minBytes =
+                (targetConfig.sampleRateHz * bytesPerSample * params.sampleMinDurationSec).toInt()
+            val maxBytes =
+                (targetConfig.sampleRateHz * bytesPerSample * params.sampleMaxDurationSec).toInt()
 
             val silenceBytes =
-                ByteArray((targetSampleRate * params.sampleSilenceDurationMs / 1000) * bytesPerSample)
+                ByteArray(((targetSampleRate * params.sampleSilenceDurationMs / 1000.0).toInt()) * bytesPerSample)
 
             for ((chunk, _, originalRate) in selectedChunks) {
                 val processedChunk = if (originalRate != targetSampleRate) {
@@ -653,7 +759,7 @@ class SpeakersViewModel @Inject constructor(
             var audioData = sampleStream.toByteArray()
 
             if (audioData.size < minBytes && audioData.isNotEmpty()) {
-                val repeatCount = (minBytes / audioData.size) + 1
+                val repeatCount = (minBytes.toFloat() / audioData.size).toInt() + 1
                 val repeatedStream = ByteArrayOutputStream()
                 repeat(repeatCount) {
                     repeatedStream.write(audioData)

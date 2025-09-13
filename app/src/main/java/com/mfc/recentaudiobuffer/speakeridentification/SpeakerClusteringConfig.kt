@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -81,15 +82,20 @@ class SpeakerClusteringConfig @Inject constructor(
     private val speakerRepository: SpeakerRepository? = null
 ) {
     data class Parameters(
-        // --- Agglomerative Hierarchical Clustering (AHC) ---
-        val ahcDistanceThreshold: Float = 0.65f,
+        // --- Primary Clustering (DBSCAN for prominent speakers) ---
+        val dbscanEps: Float = 0.625f,
+        val highConfidenceMinPts: Int = 5,
+
+        // --- Leftover Clustering (AHC for sparse speakers) ---
+        val leftoverAhcThreshold: Float = 0.70f,
 
         // --- Cluster Quality Filters ---
         val minClusterSize: Int = 2,
+        val smallClusterSizeThreshold: Int = 3,
         val clusterPurityThreshold: Float = 0.52f,
         val minPurityForSmallCluster: Float = 0.85f,
         val baseMaxClusterVariance: Float = 0.0025f,
-        val varianceSizeFactor: Float = 0.5f, // Logarithmic factor for dynamic variance
+        val varianceGrowthFactor: Float = 0.5f,
 
         // --- Sample Generation ---
         val sampleMinDurationSec: Int = 7,
@@ -145,15 +151,20 @@ class SpeakerClusteringConfig @Inject constructor(
         return """
             |=== CURRENT CLUSTERING CONFIGURATION ===
             |
-            |Agglomerative Clustering:
-            |  distanceThreshold: ${p.ahcDistanceThreshold}
+            |Primary Clustering (DBSCAN):
+            |  eps: ${p.dbscanEps}
+            |  minPts: ${p.highConfidenceMinPts}
+            |
+            |Leftover Clustering (AHC):
+            |  distanceThreshold: ${p.leftoverAhcThreshold}
             |
             |Quality Filters:
             |  minClusterSize: ${p.minClusterSize}
+            |  smallClusterSizeThreshold: ${p.smallClusterSizeThreshold}
             |  clusterPurityThreshold: ${p.clusterPurityThreshold}
             |  minPurityForSmallCluster: ${p.minPurityForSmallCluster}
             |  baseMaxClusterVariance: ${p.baseMaxClusterVariance}
-            |  varianceSizeFactor: ${p.varianceSizeFactor}
+            |  varianceGrowthFactor: ${p.varianceGrowthFactor}
             |
             |Sample Generation:
             |  duration: ${p.sampleMinDurationSec}-${p.sampleMaxDurationSec}s
@@ -202,22 +213,43 @@ fun ClusteringSettingsDialog(
 
     if (showInfoDialog) {
         AlertDialog(onDismissRequest = { showInfoDialog = false }, title = {
-            Text("About Agglomerative Clustering", style = MaterialTheme.typography.titleLarge)
+            Text("About Hybrid Clustering", style = MaterialTheme.typography.titleLarge)
         }, text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "This algorithm builds speakers from the ground up.",
+                    "Key Terms:",
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
                 Text(
-                    "1. Each audio segment starts as its own speaker.\n" +
-                            "2. The algorithm finds the two most similar speakers and merges them.\n" +
-                            "3. This repeats until the most similar pair of speakers are still more different than the 'Distance Threshold'.",
+                    "• Segment: A short (1-3s) chunk of audio.\n" +
+                            "• Cluster: A group of segments the algorithm thinks belong to the same person.\n" +
+                            "• Speaker: A final, quality-checked cluster that is presented as a result.",
+                    modifier = Modifier.padding(bottom = 16.dp),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp))
+
+                Text(
+                    "This uses a two-stage process to get the best of both worlds: speed and accuracy.",
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
                 Text(
-                    "This method is more computationally intensive but avoids many of the complex tuning parameters of other algorithms, relying on a single, intuitive distance setting.",
+                    "1. DBSCAN Pass",
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    "A fast scan finds the obvious, prominent speakers who talk a lot.",
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                Text(
+                    "2. AHC Pass",
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    "A slower, more precise scan is run on the 'leftover' segments to find rarer speakers without getting confused by the main ones.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -250,17 +282,36 @@ fun ClusteringSettingsDialog(
                         )
                     }
                 }
-
                 Spacer(Modifier.height(16.dp))
 
-                SettingsSection("Agglomerative Clustering") {
+                SettingsSection("Primary Clustering (DBSCAN)") {
+                    SliderSetting(
+                        label = "Epsilon (eps)",
+                        value = tempParams.dbscanEps,
+                        onValueChange = { tempParams = tempParams.copy(dbscanEps = it) },
+                        valueRange = 0.4f..0.8f,
+                        steps = 40,
+                        description = "Similarity needed to group segments. Higher: More grouping (fewer, larger clusters). Lower: Stricter (more, smaller clusters)."
+                    )
+                    SliderSetting(
+                        label = "Min Points",
+                        value = tempParams.highConfidenceMinPts.toFloat(),
+                        onValueChange = { tempParams = tempParams.copy(highConfidenceMinPts = it.toInt()) },
+                        valueRange = 3f..10f,
+                        steps = 7,
+                        displayFormatter = { "%.0f".format(it) },
+                        description = "Minimum segments to form a prominent speaker cluster. Higher: Requires more speech. Lower: Finds smaller groups."
+                    )
+                }
+
+                SettingsSection("Leftover Clustering (AHC)") {
                     SliderSetting(
                         label = "Distance Threshold",
-                        value = tempParams.ahcDistanceThreshold,
-                        onValueChange = { tempParams = tempParams.copy(ahcDistanceThreshold = it) },
+                        value = tempParams.leftoverAhcThreshold,
+                        onValueChange = { tempParams = tempParams.copy(leftoverAhcThreshold = it) },
                         valueRange = 0.4f..1.0f,
                         steps = 60,
-                        description = "Higher = fewer speakers (more merging)"
+                        description = "Max 'difference' allowed for merging sparse clusters. Higher: Merges more (fewer speakers). Lower: Merges less (more speakers)."
                     )
                 }
 
@@ -271,7 +322,7 @@ fun ClusteringSettingsDialog(
                         onValueChange = { tempParams = tempParams.copy(clusterPurityThreshold = it) },
                         valueRange = 0.3f..0.8f,
                         steps = 50,
-                        description = "General filter for all clusters."
+                        description = "Min average similarity for a cluster to be valid. Higher: Stricter, rejects more. Lower: More lenient."
                     )
                     SliderSetting(
                         label = "Small Cluster Purity",
@@ -280,24 +331,24 @@ fun ClusteringSettingsDialog(
                         valueRange = 0.7f..0.98f,
                         steps = 28,
                         displayFormatter = { "%.0f%%".format(it * 100) },
-                        description = "Stricter filter for clusters with ≤ ${tempParams.minClusterSize} segments."
+                        description = "Stricter purity for small clusters (≤ ${tempParams.smallClusterSizeThreshold} segments). Higher: Rejects more duplicates. Lower: Accepts more."
                     )
                     SliderSetting(
-                        label = "Base Max Variance",
+                        label = "Max Variance (Base)",
                         value = tempParams.baseMaxClusterVariance * 1000,
                         onValueChange = { tempParams = tempParams.copy(baseMaxClusterVariance = it / 1000) },
                         valueRange = 1f..10f,
                         steps = 90,
                         displayFormatter = { "%.1f‰".format(it) },
-                        description = "Base variance allowed for a cluster."
+                        description = "The starting variance limit for the smallest clusters. This is the strictest the filter will be."
                     )
                     SliderSetting(
-                        label = "Variance Size Factor",
-                        value = tempParams.varianceSizeFactor,
-                        onValueChange = { tempParams = tempParams.copy(varianceSizeFactor = it) },
+                        label = "Variance Growth Factor",
+                        value = tempParams.varianceGrowthFactor,
+                        onValueChange = { tempParams = tempParams.copy(varianceGrowthFactor = it) },
                         valueRange = 0.1f..1.0f,
                         steps = 18,
-                        description = "Allows larger clusters more variance."
+                        description = "Controls how much the variance limit grows for larger clusters. Higher: More lenient. Lower: Stricter."
                     )
                 }
                 Spacer(Modifier.height(16.dp))
