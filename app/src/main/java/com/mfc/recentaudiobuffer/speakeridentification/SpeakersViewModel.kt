@@ -32,6 +32,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.CoroutineWorker
+import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
@@ -69,6 +70,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
@@ -83,6 +85,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.sqrt
@@ -207,6 +210,23 @@ class SpeakersViewModel @Inject constructor(
     private val processedFiles = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private var workObserverJob: Job? = null
 
+    init {
+        // Check for and reconnect to an ongoing scan when the ViewModel is created.
+        reconnectToRunningScan()
+    }
+
+    private fun reconnectToRunningScan() {
+        viewModelScope.launch {
+            val workInfos = workManager.getWorkInfosForUniqueWork("SpeakerScan").get()
+            val runningWork = workInfos.find { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
+            if (runningWork != null) {
+                // A scan is already in progress, let's observe it.
+                observeWork(runningWork.id)
+                // Immediately handle the current state so the UI updates without delay.
+                handleWorkInfo(runningWork)
+            }
+        }
+    }
 
     fun rescanWithCurrentFiles() {
         viewModelScope.launch {
@@ -316,7 +336,6 @@ class SpeakersViewModel @Inject constructor(
     fun startScan(selectedFileUris: Set<Uri>) {
         if (selectedFileUris.isEmpty()) return
         lastScannedFileUris = selectedFileUris
-        workObserverJob?.cancel()
 
         val inputData = workDataOf(
             "URIS" to selectedFileUris.map { it.toString() }.toTypedArray(),
@@ -330,8 +349,13 @@ class SpeakersViewModel @Inject constructor(
             "SpeakerScan", ExistingWorkPolicy.REPLACE, speakerScanRequest
         )
 
+        observeWork(speakerScanRequest.id)
+    }
+
+    private fun observeWork(workId: UUID) {
+        workObserverJob?.cancel()
         workObserverJob = viewModelScope.launch {
-            workManager.getWorkInfoByIdFlow(speakerScanRequest.id).collect { workInfo ->
+            workManager.getWorkInfoByIdFlow(workId).collect { workInfo ->
                 handleWorkInfo(workInfo)
             }
         }
@@ -349,7 +373,9 @@ class SpeakersViewModel @Inject constructor(
                     val progress = workInfo.progress.getFloat("PROGRESS", 0f)
                     val current = workInfo.progress.getInt("CURRENT", 0)
                     val total = workInfo.progress.getInt("TOTAL", 0)
-                    _uiState.value = SpeakerDiscoveryUiState.Scanning(progress, current, total)
+                    if (total > 0) { // Ensure we don't show 0/0
+                        _uiState.value = SpeakerDiscoveryUiState.Scanning(progress, current, total)
+                    }
                 }
             }
 
@@ -398,9 +424,8 @@ class SpeakersViewModel @Inject constructor(
             }
 
             WorkInfo.State.CANCELLED -> {
-                if (_uiState.value is SpeakerDiscoveryUiState.Stopping) {
-                    _uiState.value =
-                        SpeakerDiscoveryUiState.Success(emptyList()) // Or handle partial results if implemented
+                if (_uiState.value is SpeakerDiscoveryUiState.Stopping || _uiState.value is SpeakerDiscoveryUiState.Scanning) {
+                    _uiState.value = SpeakerDiscoveryUiState.Idle
                 }
             }
 
@@ -603,11 +628,15 @@ class SpeakerScanWorker @AssistedInject constructor(
     private fun createForegroundInfo(totalFiles: Int): ForegroundInfo {
         createNotificationChannel()
         val notification = createNotification("Preparing to scan $totalFiles files...")
-        return ForegroundInfo(
-            NOTIFICATION_ID,
-            notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        )
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ForegroundInfo(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            ForegroundInfo(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun createNotification(contentText: String): Notification {
@@ -620,16 +649,18 @@ class SpeakerScanWorker @AssistedInject constructor(
     }
 
     private fun createNotificationChannel() {
-        val name = "Speaker Scanning"
-        val descriptionText = "Notifications for ongoing speaker identification scans"
-        val importance = NotificationManager.IMPORTANCE_LOW
-        val channel =
-            NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance).apply {
-                description = descriptionText
-            }
-        val notificationManager: NotificationManager =
-            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(channel)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Speaker Scanning"
+            val descriptionText = "Notifications for ongoing speaker identification scans"
+            val importance = NotificationManager.IMPORTANCE_LOW
+            val channel =
+                NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance).apply {
+                    description = descriptionText
+                }
+            val notificationManager: NotificationManager =
+                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
     }
 
 
