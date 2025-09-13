@@ -83,19 +83,19 @@ class SpeakerClusteringConfig @Inject constructor(
 ) {
     data class Parameters(
         // --- Primary Clustering (DBSCAN for prominent speakers) ---
-        val dbscanEps: Float = 0.625f,
+        val dbscanEps: Float = 0.64f,
         val highConfidenceMinPts: Int = 6,
 
         // --- Leftover Clustering (AHC for sparse speakers) ---
-        val leftoverAhcThreshold: Float = 0.74f,
+        val leftoverAhcThreshold: Float = 0.76f,
 
         // --- Cluster Quality Filters ---
         val minClusterSize: Int = 2,
         val smallClusterSizeThreshold: Int = 3,
-        val clusterPurityThreshold: Float = 0.52f,
-        val minPurityForSmallCluster: Float = 0.85f,
-        val baseMaxClusterVariance: Float = 0.0025f,
-        val varianceGrowthFactor: Float = 0.5f,
+        val clusterPurityThreshold: Float = 0.43f,
+        val minPurityForSmallCluster: Float = 0.81f,
+        val baseMaxClusterVariance: Float = 0.0012f,
+        val varianceGrowthFactor: Float = 1f,
 
         // --- Sample Generation ---
         val sampleMinDurationSec: Int = 7,
@@ -110,8 +110,8 @@ class SpeakerClusteringConfig @Inject constructor(
         val minSpeechEnergyRms: Float = 0.001f,
 
         // --- VAD ---
-        val vadMergeGapMs: Int = 200,
-        val vadPaddingMs: Int = 100,
+        val vadMergeGapMs: Int = 125,
+        val vadPaddingMs: Int = 50,
         val vadSpeechThreshold: Float = 0.25f
     )
 
@@ -325,13 +325,22 @@ fun ClusteringSettingsDialog(
                         description = "Min average similarity for a cluster to be valid. Higher: Stricter, rejects more. Lower: More lenient."
                     )
                     SliderSetting(
+                        label = "Threshold for a cluster to be considered small",
+                        value = tempParams.smallClusterSizeThreshold.toFloat(),
+                        onValueChange = { tempParams = tempParams.copy(smallClusterSizeThreshold = it.toInt()) },
+                        valueRange = 2f..6f,
+                        steps = 4,
+                        displayFormatter = { "%.0f".format(it) },
+                        description = "Small cluster segment size threshold to apply Small Cluster Purity instead of Purity Threshold. Higher: Rejects more. Lower: Accepts more."
+                    )
+                    SliderSetting(
                         label = "Small Cluster Purity",
                         value = tempParams.minPurityForSmallCluster,
                         onValueChange = { tempParams = tempParams.copy(minPurityForSmallCluster = it) },
                         valueRange = 0.7f..0.98f,
                         steps = 28,
                         displayFormatter = { "%.0f%%".format(it * 100) },
-                        description = "Stricter purity for small clusters (≤ ${tempParams.smallClusterSizeThreshold} segments). Higher: Rejects more duplicates. Lower: Accepts more."
+                        description = "Stricter purity for small clusters (≤ ${tempParams.smallClusterSizeThreshold} segments). Higher: Rejects more. Lower: Accepts more."
                     )
                     SliderSetting(
                         label = "Max Variance (Base)",
