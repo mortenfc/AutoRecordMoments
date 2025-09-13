@@ -59,8 +59,11 @@ import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.log10
 import kotlin.math.sqrt
+
+data class SearchResult(val distance: Float, val pair: Pair<Int, Int>)
 
 data class UnknownSpeaker(
     val id: String,
@@ -235,51 +238,40 @@ class SpeakersViewModel @Inject constructor(
         }.toMutableList()
 
         if (clusters.size <= 1) {
-            val singleClusterContent: List<UnidentifiedSegment> =
-                clusters.firstOrNull() ?: emptyList()
-            return@withContext mapOf("cluster_1" to singleClusterContent)
+            return@withContext clusters.firstOrNull()?.let { mapOf("cluster_ahc_1" to it) }
+                ?: emptyMap()
         }
         var mergeCount = 1
 
-        while (true) {
+        while (clusters.size > 1) {
             coroutineContext.ensureActive()
-            if (clusters.size <= 1) break
 
-            var minDistance = Float.MAX_VALUE
-            var bestPair = Pair(-1, -1)
+            // Key Change: Parallel calculation of the best pair to merge
+            val bestResult = findBestPairParallel(centroids)
 
-            for (i in 0 until centroids.size) {
-                for (j in (i + 1) until centroids.size) {
-                    val dist = 1.0f - speakerIdentifier.calculateCosineSimilarity(
-                        centroids[i], centroids[j]
-                    )
-                    if (dist < minDistance) {
-                        minDistance = dist
-                        bestPair = Pair(i, j)
-                    }
-                }
-            }
-
-            if (minDistance > distanceThreshold || bestPair.first == -1) {
+            if (bestResult.distance > distanceThreshold || bestResult.pair.first == -1) {
                 Timber.d(
                     "✅ Halting merge: Min distance %.3f > threshold %.3f".format(
-                        minDistance, distanceThreshold
+                        bestResult.distance, distanceThreshold
                     )
                 )
                 break
             }
 
-            val (i, j) = bestPair
+            // Ensure indices are sorted to safely remove the larger index first
+            val (i, j) = if (bestResult.pair.first < bestResult.pair.second) bestResult.pair else bestResult.pair.second to bestResult.pair.first
+
             Timber.d(
                 "    🔗 Merge #$mergeCount: cluster $j -> cluster $i (distance: %.3f)".format(
-                    minDistance
+                    bestResult.distance
                 )
             )
 
+            // Merge clusters and update centroids
             clusters[i].addAll(clusters[j])
-            centroids[i] = speakerIdentifier.averageEmbeddings(
-                clusters[i].map { it.embedding })
+            centroids[i] = speakerIdentifier.averageEmbeddings(clusters[i].map { it.embedding })
 
+            // Remove the merged cluster and its centroid (remove higher index first)
             clusters.removeAt(j)
             centroids.removeAt(j)
             mergeCount++
@@ -289,6 +281,54 @@ class SpeakersViewModel @Inject constructor(
             "cluster_ahc_${index + 1}" to segmentList
         }.toMap()
     }
+
+    /**
+     * Key Change: New helper function to perform the parallel search for the closest pair.
+     */
+    private suspend fun findBestPairParallel(centroids: List<SpeakerEmbedding>): SearchResult =
+        coroutineScope {
+            val numCentroids = centroids.size
+            if (numCentroids < 2) return@coroutineScope SearchResult(Float.MAX_VALUE, Pair(-1, -1))
+
+            // 1. Create a list of all pairs to be checked.
+            val pairs = mutableListOf<Pair<Int, Int>>()
+            for (i in 0 until numCentroids) {
+                for (j in (i + 1) until numCentroids) {
+                    pairs.add(Pair(i, j))
+                }
+            }
+
+            val availableCores = Runtime.getRuntime().availableProcessors()
+            val chunkSize =
+                if (pairs.isNotEmpty()) ceil(pairs.size.toDouble() / availableCores).toInt() else 1
+
+            // 2. Split the work into chunks.
+            val chunks = pairs.chunked(chunkSize.coerceAtLeast(1))
+
+            // 3. Process chunks in parallel.
+            val deferredBests = chunks.map { chunk ->
+                async(Dispatchers.Default) { // Each chunk runs on a coroutine
+                    var localMinDistance = Float.MAX_VALUE
+                    var localBestPair = Pair(-1, -1)
+
+                    // Each coroutine finds the best pair in its own chunk.
+                    for (pair in chunk) {
+                        val dist = 1.0f - speakerIdentifier.calculateCosineSimilarity(
+                            centroids[pair.first], centroids[pair.second]
+                        )
+                        if (dist < localMinDistance) {
+                            localMinDistance = dist
+                            localBestPair = pair
+                        }
+                    }
+                    SearchResult(localMinDistance, localBestPair)
+                }
+            }
+
+            // 4. Await all results and find the global best.
+            val bests = deferredBests.awaitAll()
+            bests.minByOrNull { it.distance } ?: SearchResult(Float.MAX_VALUE, Pair(-1, -1))
+        }
 
 
     private suspend fun createUnknownSpeakerObjects(
@@ -894,4 +934,3 @@ class SpeakersViewModel @Inject constructor(
         scanningJob?.cancel()
     }
 }
-
