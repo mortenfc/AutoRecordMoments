@@ -83,19 +83,16 @@ class SpeakerClusteringConfig @Inject constructor(
 ) {
     data class Parameters(
         // --- Primary Clustering (DBSCAN for prominent speakers) ---
-        val dbscanEps: Float = 0.62f,
-        val highConfidenceMinPts: Int = 4,
+        val dbscanEps: Float = 0.625f,
+        val highConfidenceMinPts: Int = 5,
 
         // --- Leftover Clustering (AHC for sparse speakers) ---
-        val leftoverAhcThreshold: Float = 0.82f,
+        val leftoverAhcThreshold: Float = 0.75f,
 
         // --- Cluster Quality Filters ---
         val minClusterSize: Int = 2,
-        val smallClusterSizeThreshold: Int = 2,
-        val clusterPurityThreshold: Float = 0.5f,
-        val minPurityForSmallCluster: Float = 0.84f,
-        val baseMaxClusterVariance: Float = 0.0023f,
-        val varianceGrowthFactor: Float = 0.48f,
+        val clusterPurityThreshold: Float = 0.55f,
+        val maxClusterVariance: Float = 0.004f,
 
         // --- Sample Generation ---
         val sampleMinDurationSec: Int = 7,
@@ -110,8 +107,8 @@ class SpeakerClusteringConfig @Inject constructor(
         val minSpeechEnergyRms: Float = 0.001f,
 
         // --- VAD ---
-        val vadMergeGapMs: Int = 125,
-        val vadPaddingMs: Int = 50,
+        val vadMergeGapMs: Int = 200,
+        val vadPaddingMs: Int = 100,
         val vadSpeechThreshold: Float = 0.25f
     )
 
@@ -160,11 +157,8 @@ class SpeakerClusteringConfig @Inject constructor(
             |
             |Quality Filters:
             |  minClusterSize: ${p.minClusterSize}
-            |  smallClusterSizeThreshold: ${p.smallClusterSizeThreshold}
             |  clusterPurityThreshold: ${p.clusterPurityThreshold}
-            |  minPurityForSmallCluster: ${p.minPurityForSmallCluster}
-            |  baseMaxClusterVariance: ${p.baseMaxClusterVariance}
-            |  varianceGrowthFactor: ${p.varianceGrowthFactor}
+            |  maxClusterVariance: ${p.maxClusterVariance}
             |
             |Sample Generation:
             |  duration: ${p.sampleMinDurationSec}-${p.sampleMaxDurationSec}s
@@ -325,39 +319,13 @@ fun ClusteringSettingsDialog(
                         description = "Min average similarity for a cluster to be valid. Higher: Stricter, rejects more. Lower: More lenient."
                     )
                     SliderSetting(
-                        label = "Threshold for a cluster to be considered small",
-                        value = tempParams.smallClusterSizeThreshold.toFloat(),
-                        onValueChange = { tempParams = tempParams.copy(smallClusterSizeThreshold = it.toInt()) },
-                        valueRange = 2f..6f,
-                        steps = 4,
-                        displayFormatter = { "%.0f".format(it) },
-                        description = "Small cluster segment size threshold to apply Small Cluster Purity instead of Purity Threshold. Higher: Rejects more. Lower: Accepts more."
-                    )
-                    SliderSetting(
-                        label = "Small Cluster Purity",
-                        value = tempParams.minPurityForSmallCluster,
-                        onValueChange = { tempParams = tempParams.copy(minPurityForSmallCluster = it) },
-                        valueRange = 0.7f..0.98f,
-                        steps = 28,
-                        displayFormatter = { "%.0f%%".format(it * 100) },
-                        description = "Stricter purity for small clusters (≤ ${tempParams.smallClusterSizeThreshold} segments). Higher: Rejects more. Lower: Accepts more."
-                    )
-                    SliderSetting(
-                        label = "Max Variance (Base)",
-                        value = tempParams.baseMaxClusterVariance * 1000,
-                        onValueChange = { tempParams = tempParams.copy(baseMaxClusterVariance = it / 1000) },
+                        label = "Max Variance",
+                        value = tempParams.maxClusterVariance * 1000,
+                        onValueChange = { tempParams = tempParams.copy(maxClusterVariance = it / 1000) },
                         valueRange = 1f..10f,
                         steps = 90,
                         displayFormatter = { "%.1f‰".format(it) },
-                        description = "The starting variance limit for the smallest clusters. This is the strictest the filter will be."
-                    )
-                    SliderSetting(
-                        label = "Variance Growth Factor",
-                        value = tempParams.varianceGrowthFactor,
-                        onValueChange = { tempParams = tempParams.copy(varianceGrowthFactor = it) },
-                        valueRange = 0.1f..1.0f,
-                        steps = 18,
-                        description = "Controls how much the variance limit grows for larger clusters. Higher: More lenient. Lower: Stricter."
+                        description = "Max 'spread' in a cluster's voice print. Higher: Allows more variation. Lower: Requires tighter clusters."
                     )
                 }
                 Spacer(Modifier.height(16.dp))

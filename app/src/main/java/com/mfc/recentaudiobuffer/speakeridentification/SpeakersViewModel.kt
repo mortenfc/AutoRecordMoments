@@ -60,10 +60,10 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
 import kotlin.math.ceil
-import kotlin.math.log10
 import kotlin.math.sqrt
 
-data class SearchResult(val distance: Float, val pair: Pair<Int, Int>)
+// Key Change: Helper class for returning results from the parallel cluster search.
+private data class SearchResult(val distance: Float, val pair: Pair<Int, Int>)
 
 data class UnknownSpeaker(
     val id: String,
@@ -204,7 +204,7 @@ class SpeakersViewModel @Inject constructor(
         var ahcClusters: Map<String, List<UnidentifiedSegment>> = emptyMap()
         if (leftovers.size >= params.minClusterSize) {
             Timber.d("\n📊 STAGE 2: LEFTOVER CLUSTERING (AHC) on ${leftovers.size} segments")
-            ahcClusters = agglomerativeClustering(
+            ahcClusters = agglomerativeClustering( // This function is now optimized
                 leftovers, params.leftoverAhcThreshold
             )
             Timber.d("✅ AHC Pass Results: ${ahcClusters.size} new clusters found.")
@@ -226,6 +226,9 @@ class SpeakersViewModel @Inject constructor(
         return@withContext result
     }
 
+    /**
+     * Key Change: This function is now optimized to find the best pair to merge in parallel.
+     */
     private suspend fun agglomerativeClustering(
         segments: List<UnidentifiedSegment>, distanceThreshold: Float
     ): Map<String, List<UnidentifiedSegment>> = withContext(Dispatchers.Default) {
@@ -246,7 +249,7 @@ class SpeakersViewModel @Inject constructor(
         while (clusters.size > 1) {
             coroutineContext.ensureActive()
 
-            // Key Change: Parallel calculation of the best pair to merge
+            // Key Change: Parallel calculation of the best pair to merge instead of sequential loops.
             val bestResult = findBestPairParallel(centroids)
 
             if (bestResult.distance > distanceThreshold || bestResult.pair.first == -1) {
@@ -258,7 +261,7 @@ class SpeakersViewModel @Inject constructor(
                 break
             }
 
-            // Ensure indices are sorted to safely remove the larger index first
+            // Ensure indices are sorted to safely remove the larger index first.
             val (i, j) = if (bestResult.pair.first < bestResult.pair.second) bestResult.pair else bestResult.pair.second to bestResult.pair.first
 
             Timber.d(
@@ -267,11 +270,11 @@ class SpeakersViewModel @Inject constructor(
                 )
             )
 
-            // Merge clusters and update centroids
+            // Merge clusters and update centroids.
             clusters[i].addAll(clusters[j])
             centroids[i] = speakerIdentifier.averageEmbeddings(clusters[i].map { it.embedding })
 
-            // Remove the merged cluster and its centroid (remove higher index first)
+            // Remove the merged cluster and its centroid (remove higher index first).
             clusters.removeAt(j)
             centroids.removeAt(j)
             mergeCount++
@@ -330,7 +333,6 @@ class SpeakersViewModel @Inject constructor(
             bests.minByOrNull { it.distance } ?: SearchResult(Float.MAX_VALUE, Pair(-1, -1))
         }
 
-
     private suspend fun createUnknownSpeakerObjects(
         clusteredSegments: Map<String, List<UnidentifiedSegment>>
     ): List<UnknownSpeaker> {
@@ -383,9 +385,6 @@ class SpeakersViewModel @Inject constructor(
                 segmentSimilarities.filter { it.second >= params.clusterPurityThreshold }
             val pureSegments = pureSegmentSimilarities.map { it.first }
 
-            val avgSimilarity =
-                if (pureSegmentSimilarities.isNotEmpty()) pureSegmentSimilarities.map { it.second }
-                    .average().toFloat() else 0f
             val discardedCount = segments.size - pureSegments.size
 
             if (pureSegments.size < params.minClusterSize) {
@@ -396,29 +395,13 @@ class SpeakersViewModel @Inject constructor(
                 continue
             }
 
-            if (pureSegments.size <= params.smallClusterSizeThreshold && avgSimilarity < params.minPurityForSmallCluster) {
-                val reason =
-                    "Small cluster failed purity check: size=${pureSegments.size}, purity=%.2f < %.2f".format(
-                        avgSimilarity, params.minPurityForSmallCluster
-                    )
-                (debugInfo.filterReasons as MutableList).add(reason)
-                Timber.d("  ❌ REJECTED $id: $reason")
-                continue
-            }
-
             val variance = calculateClusterVariance(
                 pureSegments.map { it.embedding }, clusterCentroid
             )
 
-            val dynamicMaxVariance =
-                params.baseMaxClusterVariance * (1.0f + params.varianceGrowthFactor * log10(
-                    pureSegments.size.toFloat()
-                ))
-
-
-            if (variance > dynamicMaxVariance) {
-                val reason = "High variance: %.5f > %.5f (dynamic threshold)".format(
-                    variance, dynamicMaxVariance
+            if (variance > params.maxClusterVariance) {
+                val reason = "High variance: %.5f > %.5f".format(
+                    variance, params.maxClusterVariance
                 )
                 (debugInfo.filterReasons as MutableList).add(reason)
                 Timber.d("  ❌ REJECTED $id: $reason")
@@ -438,6 +421,9 @@ class SpeakersViewModel @Inject constructor(
                 val sampleUri = createImprovedSpeakerSample(audioChunksWithConfig)
                 val avgEmbedding = speakerIdentifier.averageEmbeddings(
                     pureSegments.map { it.embedding })
+                val avgSimilarity =
+                    if (pureSegmentSimilarities.isNotEmpty()) pureSegmentSimilarities.map { it.second }
+                        .average().toFloat() else 0f
 
                 finalSpeakers.add(
                     UnknownSpeaker(
