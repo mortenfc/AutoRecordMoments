@@ -83,19 +83,19 @@ class SpeakerClusteringConfig @Inject constructor(
 ) {
     data class Parameters(
         // --- Primary Clustering (DBSCAN for prominent speakers) ---
-        val dbscanEps: Float = 0.64f,
-        val highConfidenceMinPts: Int = 6,
+        val dbscanEps: Float = 0.62f,
+        val highConfidenceMinPts: Int = 4,
 
         // --- Leftover Clustering (AHC for sparse speakers) ---
-        val leftoverAhcThreshold: Float = 0.76f,
+        val leftoverAhcThreshold: Float = 0.82f,
 
         // --- Cluster Quality Filters ---
         val minClusterSize: Int = 2,
-        val smallClusterSizeThreshold: Int = 3,
-        val clusterPurityThreshold: Float = 0.43f,
-        val minPurityForSmallCluster: Float = 0.81f,
-        val baseMaxClusterVariance: Float = 0.0012f,
-        val varianceGrowthFactor: Float = 1f,
+        val smallClusterSizeThreshold: Int = 2,
+        val clusterPurityThreshold: Float = 0.5f,
+        val minPurityForSmallCluster: Float = 0.84f,
+        val baseMaxClusterVariance: Float = 0.0023f,
+        val varianceGrowthFactor: Float = 0.48f,
 
         // --- Sample Generation ---
         val sampleMinDurationSec: Int = 7,
