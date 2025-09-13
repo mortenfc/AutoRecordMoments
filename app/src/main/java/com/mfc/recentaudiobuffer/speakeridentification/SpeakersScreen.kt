@@ -560,6 +560,7 @@ fun SpeakersScreenContent(
                         TextButton(onClick = onClearScanState) { Text("Try Again") }
                     }
 
+
                     is SpeakerDiscoveryUiState.Success -> {
                         if (state.unknownSpeakers.isEmpty()) {
                             Text(
@@ -1304,4 +1305,3 @@ fun DebugReportDialogPreview() {
                   Variance: 0.00150
             """.trimIndent(), onCopy = {}, onDismiss = {})
 }
-

@@ -18,18 +18,40 @@
 
 package com.mfc.recentaudiobuffer.speakeridentification
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
 import android.net.Uri
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import androidx.hilt.work.HiltWorker
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.ForegroundInfo
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.mfc.recentaudiobuffer.AudioConfig
 import com.mfc.recentaudiobuffer.FileSavingUtils
+import com.mfc.recentaudiobuffer.R
 import com.mfc.recentaudiobuffer.VADProcessor
 import com.mfc.recentaudiobuffer.WavUtils
+import dagger.Module
+import dagger.Provides
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+import dagger.hilt.InstallIn
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -41,11 +63,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -53,14 +77,25 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
+import javax.inject.Singleton
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.sqrt
+
+@Module
+@InstallIn(SingletonComponent::class)
+object WorkManagerModule {
+    @Provides
+    @Singleton
+    fun provideWorkManager(@ApplicationContext context: Context): WorkManager {
+        return WorkManager.getInstance(context)
+    }
+}
 
 // Key Change: Helper class for returning results from the parallel cluster search.
 private data class SearchResult(val distance: Float, val pair: Pair<Int, Int>)
@@ -79,17 +114,24 @@ data class UnknownSpeaker(
         other as UnknownSpeaker
 
         if (id != other.id) return false
-        if (audioSegments != other.audioSegments) return false
         if (sampleUri != other.sampleUri) return false
-        if (!averageEmbedding.contentEquals(other.averageEmbedding)) return false
         if (debugInfo != other.debugInfo) return false
+        if (averageEmbedding != null) {
+            if (other.averageEmbedding == null) return false
+            if (!averageEmbedding.contentEquals(other.averageEmbedding)) return false
+        } else if (other.averageEmbedding != null) return false
+
+        if (audioSegments.size != other.audioSegments.size) return false
+        for (i in audioSegments.indices) {
+            if (!audioSegments[i].contentEquals(other.audioSegments[i])) return false
+        }
 
         return true
     }
 
     override fun hashCode(): Int {
         var result = id.hashCode()
-        result = 31 * result + audioSegments.hashCode()
+        result = 31 * result + audioSegments.sumOf { it.contentHashCode() }
         result = 31 * result + (sampleUri?.hashCode() ?: 0)
         result = 31 * result + (averageEmbedding?.contentHashCode() ?: 0)
         result = 31 * result + debugInfo.hashCode()
@@ -97,6 +139,8 @@ data class UnknownSpeaker(
     }
 }
 
+
+@Serializable
 data class SpeakerDebugInfo(
     val clusterSize: Int = 0,
     val originalClusterSize: Int = 0,
@@ -132,13 +176,21 @@ sealed class SpeakerDiscoveryUiState {
     data class Error(val message: String) : SpeakerDiscoveryUiState()
 }
 
+@Serializable
+private data class SerializableUnknownSpeaker(
+    val id: String,
+    val audioSegmentsBase64: List<String>,
+    val sampleUriString: String? = null,
+    val averageEmbedding: List<Float>? = null,
+    val debugInfo: SpeakerDebugInfo = SpeakerDebugInfo()
+)
+
 @HiltViewModel
 class SpeakersViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val speakerRepository: SpeakerRepository,
     private val speakerIdentifier: SpeakerIdentifier,
-    private val diarizationProcessor: DiarizationProcessor,
-    private val vadProcessor: VADProcessor,
+    private val workManager: WorkManager,
     private val clusteringConfig: SpeakerClusteringConfig
 ) : ViewModel() {
 
@@ -152,8 +204,8 @@ class SpeakersViewModel @Inject constructor(
 
     val config = clusteringConfig
 
-    private var scanningJob: Job? = null
     private val processedFiles = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private var workObserverJob: Job? = null
 
 
     fun rescanWithCurrentFiles() {
@@ -175,6 +227,459 @@ class SpeakersViewModel @Inject constructor(
                 else -> prepareFileSelection()
             }
         }
+    }
+
+
+    fun exportDebugReport(): String {
+        val state = _uiState.value
+        val report = StringBuilder()
+
+        report.appendLine("=== SPEAKER DISCOVERY DEBUG REPORT ===")
+        report.appendLine("Generated: ${java.util.Date()}")
+        report.appendLine()
+        report.append(clusteringConfig.exportCurrentConfig())
+        report.appendLine()
+
+        if (state is SpeakerDiscoveryUiState.Success) {
+            report.appendLine("=== DISCOVERED SPEAKERS ===")
+            state.unknownSpeakers.forEach { speaker ->
+                report.appendLine("\nSpeaker: ${speaker.id}")
+                report.appendLine("  Purity Score: ${(speaker.debugInfo.averageSimilarityToCentroid * 100).toInt()}%")
+                report.appendLine("  Cluster Size: ${speaker.debugInfo.clusterSize}")
+                report.appendLine("  Original Size: ${speaker.debugInfo.originalClusterSize}")
+                report.appendLine("  Discarded: ${speaker.debugInfo.discardedSegments}")
+                report.appendLine("  Variance: %.5f".format(speaker.debugInfo.variance))
+                report.appendLine("  Method: ${speaker.debugInfo.clusteringMethod}")
+
+                if (speaker.debugInfo.filterReasons.isNotEmpty()) {
+                    report.appendLine("  Filters:")
+                    speaker.debugInfo.filterReasons.forEach { reason ->
+                        report.appendLine("    - $reason")
+                    }
+                }
+            }
+        }
+
+        report.appendLine("\n=== END REPORT ===")
+        return report.toString()
+    }
+
+    fun prepareFileSelection() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.value = SpeakerDiscoveryUiState.LoadingFiles
+            try {
+                val recordingsDirUri = FileSavingUtils.getCachedGrantedUri(context)
+                    ?: throw IOException("Please set a recordings directory first.")
+
+                val allWavFiles = DocumentFile.fromTreeUri(context, recordingsDirUri)?.listFiles()
+                    ?.filter { it.name?.endsWith(".wav") == true && it.name?.startsWith(".trashed") == false }
+                    ?.map {
+                        RecordingFile(
+                            name = it.name ?: "Unknown File",
+                            uri = it.uri,
+                            sizeMb = it.length() / (1024f * 1024f),
+                            lastModified = it.lastModified()
+                        )
+                    }?.sortedByDescending { it.lastModified } ?: emptyList()
+
+                val unprocessedFiles =
+                    allWavFiles.filter { !processedFiles.contains(it.uri.toString()) }
+
+                _uiState.value = SpeakerDiscoveryUiState.FileSelection(
+                    allFiles = allWavFiles,
+                    selectedFileUris = unprocessedFiles.map { it.uri }.toSet(),
+                    processedFileUris = processedFiles.toSet()
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "Error preparing file list")
+                _uiState.value = SpeakerDiscoveryUiState.Error("Could not load recording files.")
+            }
+        }
+    }
+
+    fun toggleFileSelection(uri: Uri) {
+        _uiState.update { currentState ->
+            if (currentState is SpeakerDiscoveryUiState.FileSelection) {
+                val newSelection = currentState.selectedFileUris.toMutableSet()
+                if (newSelection.contains(uri)) {
+                    newSelection.remove(uri)
+                } else {
+                    newSelection.add(uri)
+                }
+                currentState.copy(selectedFileUris = newSelection)
+            } else {
+                currentState
+            }
+        }
+    }
+
+    fun startScan(selectedFileUris: Set<Uri>) {
+        if (selectedFileUris.isEmpty()) return
+        lastScannedFileUris = selectedFileUris
+        workObserverJob?.cancel()
+
+        val inputData = workDataOf(
+            "URIS" to selectedFileUris.map { it.toString() }.toTypedArray(),
+            "PROCESSED_URIS" to processedFiles.toTypedArray()
+        )
+
+        val speakerScanRequest =
+            OneTimeWorkRequestBuilder<SpeakerScanWorker>().setInputData(inputData).build()
+
+        workManager.enqueueUniqueWork(
+            "SpeakerScan", ExistingWorkPolicy.REPLACE, speakerScanRequest
+        )
+
+        workObserverJob = viewModelScope.launch {
+            workManager.getWorkInfoByIdFlow(speakerScanRequest.id).collect { workInfo ->
+                handleWorkInfo(workInfo)
+            }
+        }
+    }
+
+    private fun handleWorkInfo(workInfo: WorkInfo?) {
+        if (workInfo == null) return
+
+        when (workInfo.state) {
+            WorkInfo.State.RUNNING -> {
+                val stage = workInfo.progress.getString("STAGE")
+                if (stage == "CLUSTERING") {
+                    _uiState.value = SpeakerDiscoveryUiState.Clustering
+                } else {
+                    val progress = workInfo.progress.getFloat("PROGRESS", 0f)
+                    val current = workInfo.progress.getInt("CURRENT", 0)
+                    val total = workInfo.progress.getInt("TOTAL", 0)
+                    _uiState.value = SpeakerDiscoveryUiState.Scanning(progress, current, total)
+                }
+            }
+
+            WorkInfo.State.SUCCEEDED -> {
+                val newProcessed = workInfo.outputData.getStringArray("PROCESSED_URIS")
+                newProcessed?.let { processedFiles.addAll(it) }
+
+                val resultPath = workInfo.outputData.getString("RESULT_FILE_PATH")
+                if (resultPath != null) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        try {
+                            val resultFile = File(resultPath)
+                            val jsonString = resultFile.readText()
+                            val serializedSpeakers =
+                                Json.decodeFromString<List<SerializableUnknownSpeaker>>(jsonString)
+                            resultFile.delete() // Clean up temp file
+
+                            val unknownSpeakers = serializedSpeakers.map { s ->
+                                UnknownSpeaker(
+                                    id = s.id,
+                                    audioSegments = s.audioSegmentsBase64.map {
+                                        Base64.getDecoder().decode(it)
+                                    },
+                                    sampleUri = s.sampleUriString?.toUri(),
+                                    averageEmbedding = s.averageEmbedding?.toFloatArray(),
+                                    debugInfo = s.debugInfo
+                                )
+                            }
+                            withContext(Dispatchers.Main) {
+                                _uiState.value = SpeakerDiscoveryUiState.Success(unknownSpeakers)
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "Failed to process scan results")
+                            _uiState.value = SpeakerDiscoveryUiState.Error("Failed to read results")
+                        }
+                    }
+                } else {
+                    _uiState.value = SpeakerDiscoveryUiState.Success(emptyList())
+                }
+            }
+
+            WorkInfo.State.FAILED -> {
+                val message = workInfo.outputData.getString("ERROR_MESSAGE")
+                _uiState.value =
+                    SpeakerDiscoveryUiState.Error(message ?: "An unknown error occurred.")
+            }
+
+            WorkInfo.State.CANCELLED -> {
+                if (_uiState.value is SpeakerDiscoveryUiState.Stopping) {
+                    _uiState.value =
+                        SpeakerDiscoveryUiState.Success(emptyList()) // Or handle partial results if implemented
+                }
+            }
+
+            else -> {}
+        }
+    }
+
+
+    fun addSpeaker(name: String, unknownSpeaker: UnknownSpeaker) {
+        viewModelScope.launch {
+            val embedding = unknownSpeaker.averageEmbedding ?: speakerIdentifier.createEmbedding(
+                unknownSpeaker.audioSegments
+            )
+
+            val permanentSampleUri = unknownSpeaker.sampleUri?.let { tempUri ->
+                try {
+                    val tempFile = File(tempUri.path!!)
+                    val permanentFile = File(
+                        context.filesDir, "speaker_samples/${name}_${UUID.randomUUID()}.wav"
+                    )
+                    permanentFile.parentFile?.mkdirs()
+                    tempFile.copyTo(permanentFile, overwrite = true)
+                    Uri.fromFile(permanentFile)
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to copy speaker sample")
+                    tempUri
+                }
+            }
+
+            val newSpeaker =
+                Speaker(name = name, embedding = embedding, sampleUri = permanentSampleUri)
+            speakerRepository.addSpeaker(newSpeaker)
+        }
+    }
+
+    fun renameSpeaker(speaker: Speaker, newName: String) {
+        viewModelScope.launch {
+            speakerRepository.updateSpeaker(speaker.copy(name = newName))
+        }
+    }
+
+    fun deleteSpeaker(speaker: Speaker) {
+        viewModelScope.launch {
+            speakerRepository.deleteSpeaker(speaker)
+            resetProcessedFiles()
+        }
+    }
+
+    fun deleteAllSpeakers() {
+        viewModelScope.launch {
+            speakerRepository.deleteAllSpeakers()
+            resetProcessedFiles()
+        }
+    }
+
+    fun clearScanState() {
+        _uiState.value = SpeakerDiscoveryUiState.Idle
+    }
+
+    fun stopScanning() {
+        if (_uiState.value is SpeakerDiscoveryUiState.Scanning) {
+            _uiState.value = SpeakerDiscoveryUiState.Stopping
+        }
+        workManager.cancelUniqueWork("SpeakerScan")
+    }
+
+    fun resetProcessedFiles() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentState = _uiState.value
+            if (currentState is SpeakerDiscoveryUiState.FileSelection) {
+                _uiState.value = currentState.copy(isLoading = true)
+            } else {
+                _uiState.value = SpeakerDiscoveryUiState.LoadingFiles
+            }
+
+            processedFiles.clear()
+            Timber.d("Cleared processed files list. Next scan will process all files.")
+
+            try {
+                val recordingsDirUri = FileSavingUtils.getCachedGrantedUri(context)
+                    ?: throw IOException("Please set a recordings directory first.")
+
+                val allWavFiles =
+                    DocumentFile.fromTreeUri(context, recordingsDirUri)?.listFiles()?.filter {
+                        it.name?.endsWith(".wav") == true && it.name?.startsWith(
+                            ".trashed"
+                        ) == false
+                    }?.map {
+                        RecordingFile(
+                            name = it.name ?: "Unknown File",
+                            uri = it.uri,
+                            sizeMb = it.length() / (1024f * 1024f),
+                            lastModified = it.lastModified()
+                        )
+                    }?.sortedByDescending { it.lastModified } ?: emptyList()
+
+                _uiState.value = SpeakerDiscoveryUiState.FileSelection(
+                    allFiles = allWavFiles,
+                    selectedFileUris = allWavFiles.map { it.uri }.toSet(),
+                    processedFileUris = emptySet(),
+                    isLoading = false
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "Error during reset")
+                _uiState.value =
+                    SpeakerDiscoveryUiState.Error("Failed to reload files after reset.")
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        workObserverJob?.cancel()
+    }
+}
+
+
+@HiltWorker
+class SpeakerScanWorker @AssistedInject constructor(
+    @Assisted private val context: Context,
+    @Assisted workerParams: WorkerParameters,
+    private val speakerRepository: SpeakerRepository,
+    private val speakerIdentifier: SpeakerIdentifier,
+    private val diarizationProcessor: DiarizationProcessor,
+    private val vadProcessor: VADProcessor,
+    private val clusteringConfig: SpeakerClusteringConfig
+) : CoroutineWorker(context, workerParams) {
+
+    companion object {
+        private const val NOTIFICATION_ID = 1
+        private const val NOTIFICATION_CHANNEL_ID = "SpeakerScanChannel"
+    }
+
+    private val processedFiles = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    override suspend fun doWork(): Result {
+        val uris = inputData.getStringArray("URIS")?.map { it.toUri() }?.toSet() ?: emptySet()
+        val alreadyProcessed = inputData.getStringArray("PROCESSED_URIS")?.toSet() ?: emptySet()
+        processedFiles.addAll(alreadyProcessed)
+
+        if (uris.isEmpty()) {
+            return Result.success()
+        }
+
+        setForeground(createForegroundInfo(uris.size))
+
+        var allUnidentifiedSegments: List<UnidentifiedSegment> = emptyList()
+        var result: Result = Result.success()
+
+        try {
+            allUnidentifiedSegments = collectAllUnidentifiedSegmentsParallel(uris)
+        } catch (e: CancellationException) {
+            Timber.i("Work was cancelled. Processing partial results.")
+        } catch (e: Exception) {
+            Timber.e(e, "Error during speaker scan worker")
+            return Result.failure(workDataOf("ERROR_MESSAGE" to e.localizedMessage))
+        } finally {
+            withContext(NonCancellable) {
+                if (allUnidentifiedSegments.isNotEmpty()) {
+                    setProgress(workDataOf("STAGE" to "CLUSTERING"))
+                    val clusteredSpeakers = improvedClusterSegments(allUnidentifiedSegments)
+                    val finalUnknownSpeakers = createUnknownSpeakerObjects(clusteredSpeakers)
+
+                    val resultFile = saveResultsToFile(finalUnknownSpeakers)
+
+                    val outputData = workDataOf(
+                        "RESULT_FILE_PATH" to resultFile.absolutePath,
+                        "PROCESSED_URIS" to processedFiles.toTypedArray()
+                    )
+                    result = Result.success(outputData)
+                } else {
+                    val outputData =
+                        workDataOf("PROCESSED_URIS" to processedFiles.toTypedArray())
+                    result = Result.success(outputData)
+                }
+            }
+        }
+        return result
+    }
+
+    private suspend fun saveResultsToFile(speakers: List<UnknownSpeaker>): File =
+        withContext(Dispatchers.IO) {
+            val serializableSpeakers = speakers.map { u ->
+                SerializableUnknownSpeaker(
+                    id = u.id,
+                    audioSegmentsBase64 = u.audioSegments.map {
+                        Base64.getEncoder().encodeToString(it)
+                    },
+                    sampleUriString = u.sampleUri?.toString(),
+                    averageEmbedding = u.averageEmbedding?.toList(),
+                    debugInfo = u.debugInfo
+                )
+            }
+            val jsonString = Json.encodeToString(serializableSpeakers)
+            val file = File(context.cacheDir, "scan_result_${UUID.randomUUID()}.json")
+            file.writeText(jsonString)
+            return@withContext file
+        }
+
+    private fun createForegroundInfo(totalFiles: Int): ForegroundInfo {
+        createNotificationChannel()
+        val notification = createNotification("Preparing to scan $totalFiles files...")
+        return ForegroundInfo(
+            NOTIFICATION_ID,
+            notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
+    }
+
+    private fun createNotification(contentText: String): Notification {
+        return NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Scanning Recordings...")
+            .setContentText(contentText)
+            .setSmallIcon(R.mipmap.ic_launcher_round).setOngoing(true)
+            .setSilent(true) // Less intrusive
+            .build()
+    }
+
+    private fun createNotificationChannel() {
+        val name = "Speaker Scanning"
+        val descriptionText = "Notifications for ongoing speaker identification scans"
+        val importance = NotificationManager.IMPORTANCE_LOW
+        val channel =
+            NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance).apply {
+                description = descriptionText
+            }
+        val notificationManager: NotificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannel(channel)
+    }
+
+
+    private suspend fun collectAllUnidentifiedSegmentsParallel(
+        filesToProcessUris: Set<Uri>
+    ): List<UnidentifiedSegment> = coroutineScope {
+        if (filesToProcessUris.isEmpty()) return@coroutineScope emptyList()
+
+        val knownSpeakers = speakerRepository.getAllSpeakers().first()
+        val totalFiles = filesToProcessUris.size
+        val filesCompleted = AtomicInteger(0)
+
+        val deferredResults = filesToProcessUris.map { uri ->
+            async(Dispatchers.IO) {
+                kotlin.coroutines.coroutineContext.ensureActive()
+                val fileUri = uri.toString()
+                try {
+                    val audioBytes =
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    if (audioBytes != null) {
+                        val audioBuffer = ByteBuffer.wrap(audioBytes)
+                        val audioConfig = WavUtils.readWavHeader(audioBytes)
+                        if (audioConfig != null) {
+                            val segments = diarizationProcessor.process(
+                                audioBuffer, fileUri, knownSpeakers, audioConfig
+                            )
+                            processedFiles.add(fileUri)
+                            return@async segments
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    Timber.d("Cancelled while processing file: $fileUri")
+                    throw e // Re-throw to be handled by the caller
+                } catch (e: Exception) {
+                    Timber.e(e, "Error processing file: $fileUri")
+                    processedFiles.add(fileUri)
+                } finally {
+                    val completedCount = filesCompleted.incrementAndGet()
+                    val progressData = workDataOf(
+                        "PROGRESS" to completedCount.toFloat() / totalFiles,
+                        "CURRENT" to completedCount,
+                        "TOTAL" to totalFiles
+                    )
+                    setProgress(progressData)
+                }
+                emptyList<UnidentifiedSegment>()
+            }
+        }
+
+        deferredResults.awaitAll().flatten()
     }
 
     private suspend fun improvedClusterSegments(
@@ -204,7 +709,7 @@ class SpeakersViewModel @Inject constructor(
         var ahcClusters: Map<String, List<UnidentifiedSegment>> = emptyMap()
         if (leftovers.size >= params.minClusterSize) {
             Timber.d("\n📊 STAGE 2: LEFTOVER CLUSTERING (AHC) on ${leftovers.size} segments")
-            ahcClusters = agglomerativeClustering( // This function is now optimized
+            ahcClusters = agglomerativeClustering(
                 leftovers, params.leftoverAhcThreshold
             )
             Timber.d("✅ AHC Pass Results: ${ahcClusters.size} new clusters found.")
@@ -226,9 +731,6 @@ class SpeakersViewModel @Inject constructor(
         return@withContext result
     }
 
-    /**
-     * Key Change: This function is now optimized to find the best pair to merge in parallel.
-     */
     private suspend fun agglomerativeClustering(
         segments: List<UnidentifiedSegment>, distanceThreshold: Float
     ): Map<String, List<UnidentifiedSegment>> = withContext(Dispatchers.Default) {
@@ -247,9 +749,7 @@ class SpeakersViewModel @Inject constructor(
         var mergeCount = 1
 
         while (clusters.size > 1) {
-            coroutineContext.ensureActive()
-
-            // Key Change: Parallel calculation of the best pair to merge instead of sequential loops.
+            kotlin.coroutines.coroutineContext.ensureActive()
             val bestResult = findBestPairParallel(centroids)
 
             if (bestResult.distance > distanceThreshold || bestResult.pair.first == -1) {
@@ -261,7 +761,6 @@ class SpeakersViewModel @Inject constructor(
                 break
             }
 
-            // Ensure indices are sorted to safely remove the larger index first.
             val (i, j) = if (bestResult.pair.first < bestResult.pair.second) bestResult.pair else bestResult.pair.second to bestResult.pair.first
 
             Timber.d(
@@ -270,11 +769,9 @@ class SpeakersViewModel @Inject constructor(
                 )
             )
 
-            // Merge clusters and update centroids.
             clusters[i].addAll(clusters[j])
             centroids[i] = speakerIdentifier.averageEmbeddings(clusters[i].map { it.embedding })
 
-            // Remove the merged cluster and its centroid (remove higher index first).
             clusters.removeAt(j)
             centroids.removeAt(j)
             mergeCount++
@@ -285,15 +782,11 @@ class SpeakersViewModel @Inject constructor(
         }.toMap()
     }
 
-    /**
-     * Key Change: New helper function to perform the parallel search for the closest pair.
-     */
     private suspend fun findBestPairParallel(centroids: List<SpeakerEmbedding>): SearchResult =
         coroutineScope {
             val numCentroids = centroids.size
             if (numCentroids < 2) return@coroutineScope SearchResult(Float.MAX_VALUE, Pair(-1, -1))
 
-            // 1. Create a list of all pairs to be checked.
             val pairs = mutableListOf<Pair<Int, Int>>()
             for (i in 0 until numCentroids) {
                 for (j in (i + 1) until numCentroids) {
@@ -305,16 +798,13 @@ class SpeakersViewModel @Inject constructor(
             val chunkSize =
                 if (pairs.isNotEmpty()) ceil(pairs.size.toDouble() / availableCores).toInt() else 1
 
-            // 2. Split the work into chunks.
             val chunks = pairs.chunked(chunkSize.coerceAtLeast(1))
 
-            // 3. Process chunks in parallel.
             val deferredBests = chunks.map { chunk ->
-                async(Dispatchers.Default) { // Each chunk runs on a coroutine
+                async(Dispatchers.Default) {
                     var localMinDistance = Float.MAX_VALUE
                     var localBestPair = Pair(-1, -1)
 
-                    // Each coroutine finds the best pair in its own chunk.
                     for (pair in chunk) {
                         val dist = 1.0f - speakerIdentifier.calculateCosineSimilarity(
                             centroids[pair.first], centroids[pair.second]
@@ -328,7 +818,6 @@ class SpeakersViewModel @Inject constructor(
                 }
             }
 
-            // 4. Await all results and find the global best.
             val bests = deferredBests.awaitAll()
             bests.minByOrNull { it.distance } ?: SearchResult(Float.MAX_VALUE, Pair(-1, -1))
         }
@@ -345,7 +834,7 @@ class SpeakersViewModel @Inject constructor(
         for (segments in clusteredSegments.values) {
             for (segment in segments) {
                 if (!audioDataCache.containsKey(segment.fileUriString)) {
-                    coroutineContext.ensureActive()
+                    kotlin.coroutines.coroutineContext.ensureActive()
                     context.contentResolver.openInputStream(segment.fileUriString.toUri())?.use {
                         val audioBytes = it.readBytes()
                         val config = WavUtils.readWavHeader(audioBytes)
@@ -358,7 +847,7 @@ class SpeakersViewModel @Inject constructor(
         }
 
         for ((id, segments) in clusteredSegments) {
-            coroutineContext.ensureActive()
+            kotlin.coroutines.coroutineContext.ensureActive()
 
             val debugInfo = SpeakerDebugInfo(
                 originalClusterSize = segments.size,
@@ -455,14 +944,17 @@ class SpeakersViewModel @Inject constructor(
     ): Pair<Map<String, MutableList<UnidentifiedSegment>>, List<UnidentifiedSegment>> =
         withContext(Dispatchers.Default) {
             Timber.d("  🔍 DBSCAN Pass '$passName' starting with ${segments.size} segments")
+            val sortedSegments = segments.sortedBy {
+                "${it.fileUriString}_${it.startOffsetBytes}"
+            }
 
             val labels = mutableMapOf<UnidentifiedSegment, Int>()
             var clusterId = 0
 
-            for ((index, segment) in segments.withIndex()) {
+            for (segment in sortedSegments) {
                 if (labels.containsKey(segment)) continue
-
-                val neighbors = findNeighbors(segment, segments, eps)
+                kotlin.coroutines.coroutineContext.ensureActive()
+                val neighbors = findNeighbors(segment, sortedSegments, eps)
 
                 if (neighbors.size < minPts) {
                     labels[segment] = -1 // Mark as noise
@@ -476,6 +968,7 @@ class SpeakersViewModel @Inject constructor(
                 seedSet.remove(segment)
 
                 while (seedSet.isNotEmpty()) {
+                    kotlin.coroutines.coroutineContext.ensureActive()
                     val current = seedSet.first()
                     seedSet.remove(current)
 
@@ -486,7 +979,7 @@ class SpeakersViewModel @Inject constructor(
                     if (currentLabel != 0) continue
 
                     labels[current] = clusterId
-                    val currentNeighbors = findNeighbors(current, segments, eps)
+                    val currentNeighbors = findNeighbors(current, sortedSegments, eps)
                     if (currentNeighbors.size >= minPts) {
                         seedSet.addAll(currentNeighbors)
                     }
@@ -513,7 +1006,7 @@ class SpeakersViewModel @Inject constructor(
     ): List<UnidentifiedSegment> {
         val neighbors = mutableListOf<UnidentifiedSegment>()
         for (other in allSegments) {
-            coroutineContext.ensureActive()
+            kotlin.coroutines.coroutineContext.ensureActive()
             val distance = 1.0f - speakerIdentifier.calculateCosineSimilarity(
                 segment.embedding, other.embedding
             )
@@ -522,172 +1015,6 @@ class SpeakersViewModel @Inject constructor(
             }
         }
         return neighbors
-    }
-
-    fun exportDebugReport(): String {
-        val state = _uiState.value
-        val report = StringBuilder()
-
-        report.appendLine("=== SPEAKER DISCOVERY DEBUG REPORT ===")
-        report.appendLine("Generated: ${java.util.Date()}")
-        report.appendLine()
-        report.append(clusteringConfig.exportCurrentConfig())
-        report.appendLine()
-
-        if (state is SpeakerDiscoveryUiState.Success) {
-            report.appendLine("=== DISCOVERED SPEAKERS ===")
-            state.unknownSpeakers.forEach { speaker ->
-                report.appendLine("\nSpeaker: ${speaker.id}")
-                report.appendLine("  Purity Score: ${(speaker.debugInfo.averageSimilarityToCentroid * 100).toInt()}%")
-                report.appendLine("  Cluster Size: ${speaker.debugInfo.clusterSize}")
-                report.appendLine("  Original Size: ${speaker.debugInfo.originalClusterSize}")
-                report.appendLine("  Discarded: ${speaker.debugInfo.discardedSegments}")
-                report.appendLine("  Variance: %.5f".format(speaker.debugInfo.variance))
-                report.appendLine("  Method: ${speaker.debugInfo.clusteringMethod}")
-
-                if (speaker.debugInfo.filterReasons.isNotEmpty()) {
-                    report.appendLine("  Filters:")
-                    speaker.debugInfo.filterReasons.forEach { reason ->
-                        report.appendLine("    - $reason")
-                    }
-                }
-            }
-        }
-
-        report.appendLine("\n=== END REPORT ===")
-        return report.toString()
-    }
-
-    fun prepareFileSelection() {
-        viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = SpeakerDiscoveryUiState.LoadingFiles
-            try {
-                val recordingsDirUri = FileSavingUtils.getCachedGrantedUri(context)
-                    ?: throw IOException("Please set a recordings directory first.")
-
-                val allWavFiles = DocumentFile.fromTreeUri(context, recordingsDirUri)?.listFiles()
-                    ?.filter { it.name?.endsWith(".wav") == true && it.name?.startsWith(".trashed") == false }
-                    ?.map {
-                        RecordingFile(
-                            name = it.name ?: "Unknown File",
-                            uri = it.uri,
-                            sizeMb = it.length() / (1024f * 1024f),
-                            lastModified = it.lastModified()
-                        )
-                    }?.sortedByDescending { it.lastModified } ?: emptyList()
-
-                val unprocessedFiles =
-                    allWavFiles.filter { !processedFiles.contains(it.uri.toString()) }
-
-                _uiState.value = SpeakerDiscoveryUiState.FileSelection(
-                    allFiles = allWavFiles,
-                    selectedFileUris = unprocessedFiles.map { it.uri }.toSet(),
-                    processedFileUris = processedFiles.toSet()
-                )
-            } catch (e: Exception) {
-                Timber.e(e, "Error preparing file list")
-                _uiState.value = SpeakerDiscoveryUiState.Error("Could not load recording files.")
-            }
-        }
-    }
-
-    fun toggleFileSelection(uri: Uri) {
-        _uiState.update { currentState ->
-            if (currentState is SpeakerDiscoveryUiState.FileSelection) {
-                val newSelection = currentState.selectedFileUris.toMutableSet()
-                if (newSelection.contains(uri)) {
-                    newSelection.remove(uri)
-                } else {
-                    newSelection.add(uri)
-                }
-                currentState.copy(selectedFileUris = newSelection)
-            } else {
-                currentState
-            }
-        }
-    }
-
-    fun startScan(selectedFileUris: Set<Uri>) {
-        lastScannedFileUris = selectedFileUris
-        scanningJob?.cancel()
-        scanningJob = viewModelScope.launch {
-            var allUnidentifiedSegments: List<UnidentifiedSegment> = emptyList()
-
-            try {
-                _uiState.value = SpeakerDiscoveryUiState.Scanning(0f, 0, selectedFileUris.size)
-                allUnidentifiedSegments = collectAllUnidentifiedSegmentsParallel(selectedFileUris)
-            } catch (e: CancellationException) {
-                Timber.i("Scanning was cancelled by the user. Proceeding with partial results.")
-            } catch (e: Exception) {
-                Timber.e(e, "Error during speaker scan")
-                _uiState.value = SpeakerDiscoveryUiState.Error("An error occurred during scanning.")
-                return@launch
-            } finally {
-                if (allUnidentifiedSegments.isNotEmpty()) {
-                    withContext(NonCancellable) {
-                        _uiState.value = SpeakerDiscoveryUiState.Clustering
-                        val clusteredSpeakers = improvedClusterSegments(allUnidentifiedSegments)
-                        val finalUnknownSpeakers = createUnknownSpeakerObjects(clusteredSpeakers)
-                        _uiState.value = SpeakerDiscoveryUiState.Success(finalUnknownSpeakers)
-                    }
-                } else if (coroutineContext.isActive) {
-                    _uiState.value = SpeakerDiscoveryUiState.Success(emptyList())
-                }
-            }
-        }
-    }
-
-    private suspend fun collectAllUnidentifiedSegmentsParallel(
-        filesToProcessUris: Set<Uri>
-    ): List<UnidentifiedSegment> = coroutineScope {
-        if (filesToProcessUris.isEmpty()) return@coroutineScope emptyList()
-
-        val knownSpeakers = speakers.value
-        val totalFiles = filesToProcessUris.size
-        val filesCompleted = AtomicInteger(0)
-
-        val deferredResults = filesToProcessUris.map { uri ->
-            async(Dispatchers.IO) {
-                val fileUri = uri.toString()
-                try {
-                    val audioBytes =
-                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    if (audioBytes != null) {
-                        val audioBuffer = ByteBuffer.wrap(audioBytes)
-                        val audioConfig = WavUtils.readWavHeader(audioBytes)
-                        if (audioConfig != null) {
-                            val segments = diarizationProcessor.process(
-                                audioBuffer, fileUri, knownSpeakers, audioConfig
-                            )
-                            processedFiles.add(fileUri)
-                            return@async segments
-                        }
-                    }
-                } catch (e: CancellationException) {
-                    Timber.d("Cancelled while processing file: $fileUri")
-                    throw e
-                } catch (e: Exception) {
-                    Timber.e(e, "Error processing file: $fileUri")
-                    processedFiles.add(fileUri)
-                } finally {
-                    val completedCount = filesCompleted.incrementAndGet()
-                    withContext(Dispatchers.Main) {
-                        _uiState.update {
-                            if (it is SpeakerDiscoveryUiState.Scanning) {
-                                it.copy(
-                                    progress = completedCount.toFloat() / totalFiles,
-                                    currentFile = completedCount,
-                                    totalFiles = totalFiles
-                                )
-                            } else it
-                        }
-                    }
-                }
-                emptyList<UnidentifiedSegment>()
-            }
-        }
-
-        deferredResults.awaitAll().flatten()
     }
 
     private fun calculateClusterVariance(
@@ -769,6 +1096,7 @@ class SpeakersViewModel @Inject constructor(
                 ByteArray(((targetSampleRate * params.sampleSilenceDurationMs / 1000.0).toInt()) * bytesPerSample)
 
             for ((chunk, _, originalRate) in selectedChunks) {
+                kotlin.coroutines.coroutineContext.ensureActive()
                 val processedChunk = if (originalRate != targetSampleRate) {
                     vadProcessor.resampleAudioChunk(chunk, originalRate, targetSampleRate)
                 } else {
@@ -812,111 +1140,5 @@ class SpeakersViewModel @Inject constructor(
             null
         }
     }
-
-    fun addSpeaker(name: String, unknownSpeaker: UnknownSpeaker) {
-        viewModelScope.launch {
-            val embedding = unknownSpeaker.averageEmbedding ?: speakerIdentifier.createEmbedding(
-                unknownSpeaker.audioSegments
-            )
-
-            val permanentSampleUri = unknownSpeaker.sampleUri?.let { tempUri ->
-                try {
-                    val tempFile = File(tempUri.path!!)
-                    val permanentFile = File(
-                        context.filesDir, "speaker_samples/${name}_${UUID.randomUUID()}.wav"
-                    )
-                    permanentFile.parentFile?.mkdirs()
-                    tempFile.copyTo(permanentFile, overwrite = true)
-                    Uri.fromFile(permanentFile)
-                } catch (e: Exception) {
-                    Timber.e(e, "Failed to copy speaker sample")
-                    tempUri
-                }
-            }
-
-            val newSpeaker =
-                Speaker(name = name, embedding = embedding, sampleUri = permanentSampleUri)
-            speakerRepository.addSpeaker(newSpeaker)
-        }
-    }
-
-    fun renameSpeaker(speaker: Speaker, newName: String) {
-        viewModelScope.launch {
-            speakerRepository.updateSpeaker(speaker.copy(name = newName))
-        }
-    }
-
-    fun deleteSpeaker(speaker: Speaker) {
-        viewModelScope.launch {
-            speakerRepository.deleteSpeaker(speaker)
-            resetProcessedFiles()
-        }
-    }
-
-    fun deleteAllSpeakers() {
-        viewModelScope.launch {
-            speakerRepository.deleteAllSpeakers()
-            resetProcessedFiles()
-        }
-    }
-
-    fun clearScanState() {
-        _uiState.value = SpeakerDiscoveryUiState.Idle
-    }
-
-    fun stopScanning() {
-        if (_uiState.value is SpeakerDiscoveryUiState.Scanning) {
-            _uiState.value = SpeakerDiscoveryUiState.Stopping
-        }
-        scanningJob?.cancel()
-    }
-
-    fun resetProcessedFiles() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val currentState = _uiState.value
-            if (currentState is SpeakerDiscoveryUiState.FileSelection) {
-                _uiState.value = currentState.copy(isLoading = true)
-            } else {
-                _uiState.value = SpeakerDiscoveryUiState.LoadingFiles
-            }
-
-            processedFiles.clear()
-            Timber.d("Cleared processed files list. Next scan will process all files.")
-
-            try {
-                val recordingsDirUri = FileSavingUtils.getCachedGrantedUri(context)
-                    ?: throw IOException("Please set a recordings directory first.")
-
-                val allWavFiles =
-                    DocumentFile.fromTreeUri(context, recordingsDirUri)?.listFiles()?.filter {
-                        it.name?.endsWith(".wav") == true && it.name?.startsWith(
-                            ".trashed"
-                        ) == false
-                    }?.map {
-                        RecordingFile(
-                            name = it.name ?: "Unknown File",
-                            uri = it.uri,
-                            sizeMb = it.length() / (1024f * 1024f),
-                            lastModified = it.lastModified()
-                        )
-                    }?.sortedByDescending { it.lastModified } ?: emptyList()
-
-                _uiState.value = SpeakerDiscoveryUiState.FileSelection(
-                    allFiles = allWavFiles,
-                    selectedFileUris = allWavFiles.map { it.uri }.toSet(),
-                    processedFileUris = emptySet(),
-                    isLoading = false
-                )
-            } catch (e: Exception) {
-                Timber.e(e, "Error during reset")
-                _uiState.value =
-                    SpeakerDiscoveryUiState.Error("Failed to reload files after reset.")
-            }
-        }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        scanningJob?.cancel()
-    }
 }
+
