@@ -83,16 +83,16 @@ class SpeakerClusteringConfig @Inject constructor(
 ) {
     data class Parameters(
         // --- Primary Clustering (DBSCAN for prominent speakers) ---
-        val dbscanEps: Float = 0.625f,
-        val highConfidenceMinPts: Int = 5,
+        val dbscanEps: Float = 0.644f,
+        val highConfidenceMinPts: Int = 4,
 
         // --- Leftover Clustering (AHC for sparse speakers) ---
-        val leftoverAhcThreshold: Float = 0.75f,
+        val leftoverAhcThreshold: Float = 0.744f,
 
         // --- Cluster Quality Filters ---
-        val minClusterSize: Int = 2,
-        val clusterPurityThreshold: Float = 0.55f,
-        val maxClusterVariance: Float = 0.004f,
+        val minClusterSize: Int = 4,
+        val clusterPurityThreshold: Float = 0.516f,
+        val maxClusterVariance: Float = 0.00209f,
 
         // --- Sample Generation ---
         val sampleMinDurationSec: Int = 7,
@@ -107,9 +107,9 @@ class SpeakerClusteringConfig @Inject constructor(
         val minSpeechEnergyRms: Float = 0.001f,
 
         // --- VAD ---
-        val vadMergeGapMs: Int = 200,
-        val vadPaddingMs: Int = 100,
-        val vadSpeechThreshold: Float = 0.25f
+        val vadMergeGapMs: Int = 90,
+        val vadPaddingMs: Int = 0,
+        val vadSpeechThreshold: Float = 0.33f
     )
 
     private val _parameters = MutableStateFlow(Parameters())
