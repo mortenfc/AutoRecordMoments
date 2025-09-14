@@ -152,55 +152,118 @@ class InactivityAndBootTest {
 
     // --- BootReceiver Tests ---
 
-//    @Test
-//    fun bootReceiver_postsNotification_whenRebootingAfterLongInactivity() = runBlocking {
-//        // Arrange: Simulate that the app was buffering and the device was off for a long time.
-//        val tenDaysAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(10)
-//        settingsRepository.updateWasBufferingActive(true) // Crucially, buffering was active.
-//        settingsRepository.updateLastActiveTimestamp(tenDaysAgo)
-//
-//        // Create a spy of the receiver to intercept the problematic goAsync() call.
-//        val receiverSpy = spyk(BootReceiver())
-//        // Stub goAsync() to return a relaxed mock, preventing the test from crashing.
-//        val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
-//        every { receiverSpy.goAsync() } returns mockPendingResult
-//        // Manually provide the dependency to the spy.
-//        receiverSpy.settingsRepository = settingsRepository
-//        val intent = Intent(Intent.ACTION_BOOT_COMPLETED)
-//
-//        // Act: Call onReceive on the spy. The real logic will run, but goAsync is stubbed.
-//        receiverSpy.onReceive(context, intent)
-//
-//        // Assert: Open the shade and wait for the notification to appear.
-//        uiDevice.openNotification()
-//        val notificationTitle = "Restart Buffering?"
-//        val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
-//        assertThat(notificationVisible).isTrue()
-//    }
+    @Test
+    fun bootReceiver_postsNotification_whenRebootingAfterLongInactivity() = runBlocking {
+        // Arrange: Simulate that the app was buffering and the device was off for a long time.
+        val tenDaysAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(10)
+        coEvery {
+            mockSettingsRepository.getSettingsConfig()
+        } returns SettingsConfig(
+            wasBufferingActive = true, lastActiveTimestamp = tenDaysAgo
+        )
 
-//    @Test
-//    fun bootReceiver_doesNotPostNotification_whenBufferingWasNotActive() = runBlocking {
-//        // Arrange: Simulate that the app was NOT buffering before the device shut down.
-//        val tenDaysAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(10)
-//        settingsRepository.updateWasBufferingActive(false) // Buffering was off.
-//        settingsRepository.updateLastActiveTimestamp(tenDaysAgo)
-//
-//        // Create a spy of the receiver to intercept the problematic goAsync() call.
-//        val receiverSpy = spyk(BootReceiver())
-//        val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
-//        every { receiverSpy.goAsync() } returns mockPendingResult
-//        // Manually provide the dependency to the spy.
-//        receiverSpy.settingsRepository = settingsRepository
-//        val intent = Intent(Intent.ACTION_BOOT_COMPLETED)
-//
-//        // Act: Call onReceive on the spy.
-//        receiverSpy.onReceive(context, intent)
-//
-//        // Assert
-//        uiDevice.openNotification()
-//        val notificationTitle = "Restart Buffering?"
-//        // Verify that the notification does NOT appear within the timeout.
-//        val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
-//        assertThat(notificationVisible).isFalse()
-//    }
+
+        // Create a spy of the receiver to intercept the problematic goAsync() call.
+        val receiverSpy = spyk(BootReceiver())
+        // Stub goAsync() to return a relaxed mock, preventing the test from crashing.
+        val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
+        every { receiverSpy.goAsync() } returns mockPendingResult
+        val intent = Intent(Intent.ACTION_BOOT_COMPLETED)
+
+        // Act: Call onReceive on the spy.
+        receiverSpy.onReceive(context, intent)
+        verify(timeout = 2000L) { mockPendingResult.finish() }
+
+        // Assert: Open the shade and wait for the notification to appear.
+        uiDevice.openNotification()
+        val notificationTitle = "Restart Audio Buffering?"
+        val notificationVisible =
+            uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
+        assertThat(notificationVisible).isTrue()
+    }
+
+    @Test
+    fun bootReceiver_doesNotPostNotification_whenBufferingWasNotActive() = runBlocking {
+        // Arrange: Simulate that the app was NOT buffering before the device shut down.
+        val tenDaysAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(10)
+        coEvery {
+            mockSettingsRepository.getSettingsConfig()
+        } returns SettingsConfig(
+            wasBufferingActive = false, lastActiveTimestamp = tenDaysAgo
+        )
+
+
+        // Create a spy of the receiver to intercept the problematic goAsync() call.
+        val receiverSpy = spyk(BootReceiver())
+        val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
+        every { receiverSpy.goAsync() } returns mockPendingResult
+        val intent = Intent(Intent.ACTION_BOOT_COMPLETED)
+
+        // Act: Call onReceive on the spy.
+        receiverSpy.onReceive(context, intent)
+
+        verify(timeout = 2000L) { mockPendingResult.finish() }
+
+        // Assert
+        uiDevice.openNotification()
+        val notificationTitle = "Restart Audio Buffering?"
+        // Verify that the notification does NOT appear within the timeout.
+        val notificationVisible =
+            uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
+        assertThat(notificationVisible).isFalse()
+    }
+
+    @Test
+    fun bootReceiver_doesNothing_whenIntentActionIsNotBootCompleted() = runBlocking {
+        // Arrange: Simulate that buffering was active, so if the guard clause fails,
+        // a notification WOULD be posted.
+        coEvery {
+            mockSettingsRepository.getSettingsConfig()
+        } returns SettingsConfig(wasBufferingActive = true)
+
+        val receiverSpy = spyk(BootReceiver())
+        val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
+        every { receiverSpy.goAsync() } returns mockPendingResult
+
+        // Use an irrelevant but valid system action
+        val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+
+        // Act
+        receiverSpy.onReceive(context, intent)
+
+        // We don't need to verify finish() because goAsync() should not even be called
+        // if the guard clause works correctly.
+
+        // Assert: Verify that no notification appears.
+        uiDevice.openNotification()
+        val notificationTitle = "Restart Audio Buffering?"
+        val notificationVisible = uiDevice.wait(
+            Until.hasObject(By.text(notificationTitle)), 2000L
+        ) // Shorter timeout is fine
+        assertThat(notificationVisible).isFalse()
+    }
+
+    @Test
+    fun bootReceiver_handlesRepositoryErrorGracefully() = runBlocking {
+        // Arrange: Force the repository to throw an exception when called.
+        coEvery { mockSettingsRepository.getSettingsConfig() } throws RuntimeException("Failed to read settings")
+
+        val receiverSpy = spyk(BootReceiver())
+        val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
+        every { receiverSpy.goAsync() } returns mockPendingResult
+        val intent = Intent(Intent.ACTION_BOOT_COMPLETED)
+
+        // Act
+        receiverSpy.onReceive(context, intent)
+
+        // Assert: The most important thing is that the PendingResult is still finished,
+        // preventing an "Application Not Responding" error from the system.
+        verify(timeout = 1000L) { mockPendingResult.finish() }
+
+        // Optional: Assert that no notification was shown
+        uiDevice.openNotification()
+        val notificationTitle = "Restart Audio Buffering?"
+        val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), 1000L)
+        assertThat(notificationVisible).isFalse()
+    }
 }

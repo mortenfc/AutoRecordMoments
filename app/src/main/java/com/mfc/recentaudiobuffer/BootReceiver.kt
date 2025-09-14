@@ -1,3 +1,21 @@
+/*
+ * Auto Record Moments
+ * Copyright (C) 2025 Morten Fjord Christensen
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.mfc.recentaudiobuffer
 
 import android.app.NotificationManager
@@ -12,6 +30,7 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,7 +46,11 @@ class BootReceiver : BroadcastReceiver() {
         fun settingsRepository(): SettingsRepository
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val handler = CoroutineExceptionHandler { _, exception ->
+        Timber.e(exception, "Exception in BootReceiver coroutine")
+    }
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + handler)
 
     companion object {
         const val RESTART_REMINDER_CHANNEL_ID = "restart_reminder_channel"
@@ -39,35 +62,42 @@ class BootReceiver : BroadcastReceiver() {
             return
         }
 
+        val pendingResult = goAsync()
         // 2. Manually get the EntryPoint from the application context.
         val hiltEntryPoint = EntryPointAccessors.fromApplication(
-            context.applicationContext,
-            BootReceiverEntryPoint::class.java
+            context.applicationContext, BootReceiverEntryPoint::class.java
         )
 
         // 3. Access the repository through the entry point.
         val settingsRepository = hiltEntryPoint.settingsRepository()
 
         scope.launch {
-            val settings = settingsRepository.getSettingsConfig()
-            if (settings.wasBufferingActive) {
-                Timber.i("Device booted and buffering was active. Showing restart notification.")
-                showRestartNotification(context)
-            } else {
-                Timber.i("Device booted, but buffering was not active. No action needed.")
+            try {
+                val settings = settingsRepository.getSettingsConfig()
+                if (settings.wasBufferingActive) {
+                    Timber.i("Device booted and buffering was active. Showing restart notification.")
+                    showRestartNotification(context)
+                } else {
+                    Timber.i("Device booted, but buffering was not active. No action needed.")
+                }
+            } finally {
+                pendingResult.finish()
             }
         }
     }
 
     @OptIn(UnstableApi::class)
     private fun showRestartNotification(context: Context) {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         val mainActivityIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
         val pendingIntent = PendingIntent.getActivity(
-            context, 0, mainActivityIntent,
+            context,
+            0,
+            mainActivityIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
@@ -75,9 +105,7 @@ class BootReceiver : BroadcastReceiver() {
             .setSmallIcon(R.drawable.baseline_record_voice_over_24)
             .setContentTitle("Restart Audio Buffering?")
             .setContentText("The app was recording when the device shut down. Tap to restart.")
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-            .build()
+            .setContentIntent(pendingIntent).setAutoCancel(true).build()
 
         notificationManager.notify(RESTART_NOTIFICATION_ID, notification)
     }

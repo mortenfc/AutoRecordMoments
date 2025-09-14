@@ -4,10 +4,10 @@
     <selectionStates>
       <SelectionState runConfigName="app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-08-25T20:26:30.626244900Z">
+        <DropdownSelection timestamp="2025-08-19T22:25:48.017449300Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="PhysicalDevice" identifier="serial=ZY22KM497W" />
+              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\morte\.android\avd\Pixel_7.avd" />
             </handle>
           </Target>
         </DropdownSelection>
@@ -15,7 +15,7 @@
       </SelectionState>
       <SelectionState runConfigName="VADProcessorInstrumentedTest">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-08-25T18:36:56.535067100Z">
+        <DropdownSelection timestamp="2025-08-20T20:57:34.678485200Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\morte\.android\avd\Pixel_7.avd" />
@@ -26,7 +26,7 @@
       </SelectionState>
       <SelectionState runConfigName="processStreamedAudioAndTriggerQuickSaveViaReceiver()">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-08-25T20:21:57.561409200Z">
+        <DropdownSelection timestamp="2025-08-22T20:30:21.136177800Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\morte\.android\avd\Pixel_7.avd" />
@@ -34,6 +34,15 @@
           </Target>
         </DropdownSelection>
         <DialogSelection />
+      </SelectionState>
+      <SelectionState runConfigName="InactivityAndBootTest">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="bootReceiver_doesNotPostNotification_whenBufferingWasNotActive()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="bootReceiver_doesNothing_whenIntentActionIsNotBootCompleted()">
+        <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
     </selectionStates>
   </component>
