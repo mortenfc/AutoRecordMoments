@@ -724,13 +724,13 @@ private fun RecordingButtonWithInfo(
             elementsColor = elementsColor,
             onClick = onToggleRecordingClick,
             modifier = Modifier.size(buttonSize).constrainAs(buttonRef) {
-                    // Place the button in the center of the layout.
-                    // This ConstraintLayout will wrap to fit the button and icon.
-                    top.linkTo(parent.top)
-                    bottom.linkTo(parent.bottom)
-                    start.linkTo(parent.start)
-                    end.linkTo(parent.end)
-                },
+                // Place the button in the center of the layout.
+                // This ConstraintLayout will wrap to fit the button and icon.
+                top.linkTo(parent.top)
+                bottom.linkTo(parent.bottom)
+                start.linkTo(parent.start)
+                end.linkTo(parent.end)
+            },
             iconSize = mainIconSize,
             textStyle = textStyle
         )
@@ -738,14 +738,14 @@ private fun RecordingButtonWithInfo(
         IconButton(
             onClick = onPrivacyInfoClick,
             modifier = Modifier.size(infoIconSize).constrainAs(iconRef) {
-                    // 1. Center the icon vertically on the button's top edge.
-                    top.linkTo(buttonRef.top)
-                    bottom.linkTo(buttonRef.top)
+                // 1. Center the icon vertically on the button's top edge.
+                top.linkTo(buttonRef.top)
+                bottom.linkTo(buttonRef.top)
 
-                    // 2. Center the icon horizontally on the button's end (right) edge.
-                    start.linkTo(buttonRef.end)
-                    end.linkTo(buttonRef.end)
-                }) {
+                // 2. Center the icon horizontally on the button's end (right) edge.
+                start.linkTo(buttonRef.end)
+                end.linkTo(buttonRef.end)
+            }) {
             Icon(
                 Icons.Default.Info,
                 "Show privacy info",
@@ -815,8 +815,8 @@ fun SecondaryActionButton(
         Button(
             onClick = onClick,
             modifier = Modifier.size(buttonSize).roundedRectShadow(
-                    shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = 24.dp
-                ),
+                shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = 24.dp
+            ),
             shape = RoundedCornerShape(24.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = colorResource(id = R.color.teal_350),
@@ -914,14 +914,14 @@ fun MainButton(
     Button(
         onClick = onClick,
         modifier = modifier.padding(bottom = bottomPadding).roundedRectShadow(
-                shadowRadius = 5.dp,
-                offsetY = 5.dp,
-                cornerRadius = 8.dp,
-                insetX = (16.dp - contentPadding) / 20f,
-                insetY = if (contentPadding < 16.dp) {
-                    (16.dp - contentPadding) / 1.9f
-                } else 0.dp
-            ),
+            shadowRadius = 5.dp,
+            offsetY = 5.dp,
+            cornerRadius = 8.dp,
+            insetX = (16.dp - contentPadding) / 20f,
+            insetY = if (contentPadding < 16.dp) {
+                (16.dp - contentPadding) / 1.9f
+            } else 0.dp
+        ),
         colors = ButtonDefaults.buttonColors(
             containerColor = colorResource(id = R.color.teal_350),
             contentColor = colorResource(id = R.color.teal_900),
@@ -965,9 +965,9 @@ fun MainButton(
 fun LoadingIndicator(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)).clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = {}), contentAlignment = Alignment.Center
+            indication = null,
+            interactionSource = remember { MutableInteractionSource() },
+            onClick = {}), contentAlignment = Alignment.Center
     ) {
         CircularProgressIndicator(color = colorResource(id = R.color.purple_accent))
     }
@@ -1021,8 +1021,8 @@ fun ThankYouButton(
         Button(
             onClick = onClick,
             modifier = Modifier.size(buttonSize).roundedRectShadow(
-                    shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = buttonSize / 2
-                ),
+                shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = buttonSize / 2
+            ),
             shape = CircleShape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = colorResource(id = R.color.teal_350),
@@ -1083,7 +1083,10 @@ fun PlayerControlViewContainer(
                         view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         view.player = mediaPlayerManager.player
                         view.show()
+                    }, onRelease = { view ->
+                        view.player = null
                     })
+
                     Text(
                         text = playerUiState.currentFileName,
                         color = Color.White,

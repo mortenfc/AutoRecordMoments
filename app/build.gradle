@@ -17,8 +17,8 @@ android {
         applicationId = "com.mfc.recentaudiobuffer"
         minSdk = 32
         targetSdk = 36
-        versionCode = 111
-        versionName = "1.1.1"
+        versionCode = 112
+        versionName = "1.1.2"
 
         testInstrumentationRunner = "com.mfc.recentaudiobuffer.HiltTestRunner"
         testInstrumentationRunnerArguments.put('clearPackageData', 'false')
@@ -49,6 +49,7 @@ android {
             debuggable = false
             signingConfig = signingConfigs.release
             minifyEnabled = true
+            shrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 
             // --- Production Config ---
