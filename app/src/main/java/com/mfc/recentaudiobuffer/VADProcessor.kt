@@ -39,7 +39,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.PI
-import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.min
@@ -687,7 +686,7 @@ class VADProcessor @Inject constructor(
             val audioChunks = segments.mapNotNull { segment ->
                 // --- stitchAudioWithCrossfade: use rounding when mapping samples to bytes ---
                 val startSample = kotlin.math.floor(segment.start * scaleFactor).toInt()
-                val endSample = kotlin.math.ceil(segment.end * scaleFactor).toInt()
+                val endSample = ceil(segment.end * scaleFactor).toInt()
                 val startByte = startSample * bytesPerSample
                 val endByte = endSample * bytesPerSample
                 val lengthInBytes = endByte - startByte

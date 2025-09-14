@@ -36,7 +36,6 @@ class MediaPlayerManager(
 ) {
     private val applicationContext: Context = context.applicationContext
     var player: ExoPlayer? = null
-    var playerControlView: PlayerControlView? = null
     var selectedUri: Uri? = null
 
     private val playerListener = object : Player.Listener {
@@ -77,8 +76,6 @@ class MediaPlayerManager(
                 addListener(playerListener)
                 prepare()
                 play()
-                playerControlView?.player = this
-                playerControlView?.show()
             }
         } catch (e: Exception) {
             Timber.e("Error setting up media player: ${e.message}")

@@ -56,7 +56,6 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.nio.ByteBuffer
 import javax.inject.Inject
-import kotlin.getValue
 
 @AndroidEntryPoint
 @UnstableApi

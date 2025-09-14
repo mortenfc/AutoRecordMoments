@@ -41,14 +41,11 @@
     <string name="donate_and_remove_ads">Donate and get rid of ADs</string>
     <string name="sign_in">Sign In</string>
     <string name="sign_out">Sign Out</string>
-    <string name="google_logo">Google Logo</string>
     <string name="pay_with_credit_card">Credit Card</string>
     <string name="it_supports_the_developer_and_gets_rid_of_ads">It supports the developer and gets rid of ads</string>
     <string name="donate_your_heart_out">Donate Your Heart Out</string>
     <string name="donate_ads_away">Donate ads away</string>
     <string name="buffer_length_seconds">Buffer length in Seconds</string>
-    <string name="submit">Apply, Save, and\nRestart Recording</string>
-    <string name="back">Return</string>
     <string name="close_media_player">Close Media Player</string>
 
 </resources>
