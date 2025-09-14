@@ -35,10 +35,13 @@
         </DropdownSelection>
         <DialogSelection />
       </SelectionState>
-      <SelectionState runConfigName="processBuffer_withSpeechFile44100Hz_resample_returnsSignificantNonEmptyBuffer()">
+      <SelectionState runConfigName="InactivityAndBootTest">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="InactivityAndBootTest">
+      <SelectionState runConfigName="bootReceiver_doesNotPostNotification_whenBufferingWasNotActive()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="bootReceiver_doesNothing_whenIntentActionIsNotBootCompleted()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
     </selectionStates>

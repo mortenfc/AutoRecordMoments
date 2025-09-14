@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <application>
+    <application tools:node="replace">
         <provider
                 android:name="androidx.core.content.FileProvider"
                 android:authorities="${applicationId}.provider"
@@ -15,5 +15,9 @@
                     android:name="android.support.FILE_PROVIDER_PATHS"
                     android:resource="@xml/test_file_paths" />
         </provider>
+
+        <receiver
+            android:name=".BootReceiver"
+            tools:node="remove" />
     </application>
 </manifest>

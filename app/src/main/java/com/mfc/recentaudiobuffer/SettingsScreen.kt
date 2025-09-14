@@ -262,13 +262,12 @@ private fun SettingsScreenContent(
                         )
                         Spacer(Modifier.weight(0.15f))
                         AISettingsGroup(state, onAiAutoClipChanged, sizing)
-                        Spacer(Modifier.weight(0.2f))
+                        Spacer(Modifier.weight(0.15f))
                         ActionsGroup(state, onSubmit, isUserSignedIn, sizing)
                         if (isUserSignedIn) {
-                            Spacer(Modifier.weight(0.2f))
+                            Spacer(Modifier.weight(0.15f))
                             DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick, sizing)
                         }
-                        Spacer(Modifier.weight(0.01f))
                     }
                 }
 
@@ -291,6 +290,7 @@ private fun SettingsScreenContent(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
+                            Spacer(Modifier.weight(0.1f))
                             AudioSettingsGroup(
                                 state,
                                 onSampleRateChanged,
@@ -298,8 +298,10 @@ private fun SettingsScreenContent(
                                 onBufferTimeLengthChanged,
                                 sizing
                             )
+                            Spacer(Modifier.weight(0.1f))
                             if (!isTablet && isUserSignedIn) {
                                 DangerZoneGroup(onDeleteAccountClick = onDeleteAccountClick, sizing)
+                                Spacer(Modifier.weight(0.1f))
                             }
                         }
 
@@ -362,7 +364,7 @@ private fun SettingsScreenContent(
 // --- Reusable Group Components ---
 
 @Composable
-private fun AudioSettingsGroup(
+private fun ColumnScope.AudioSettingsGroup(
     state: MutableState<SettingsScreenState>,
     onSampleRateChanged: (Int) -> Unit,
     onBitDepthChanged: (BitDepth) -> Unit,
@@ -372,61 +374,54 @@ private fun AudioSettingsGroup(
     var showSampleRateMenu by remember { mutableStateOf(false) }
     var showBitDepthMenu by remember { mutableStateOf(false) }
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+    SettingsButton(
+        text = "Sample Rate: ${state.value.sampleRateTemp.intValue} Hz",
+        icon = Icons.Filled.ArrowDropDown,
+        onClick = { showSampleRateMenu = true },
+        modifier = Modifier.height(sizing.audioSettingsButtonHeight),
+        textStyle = sizing.audioSettingsTextStyle
+    )
+    DropdownMenu(
+        expanded = showSampleRateMenu,
+        onDismissRequest = { showSampleRateMenu = false },
+        modifier = Modifier.background(colorResource(id = R.color.teal_100))
     ) {
-        Spacer(Modifier.weight(0.3f))
-        SettingsButton(
-            text = "Sample Rate: ${state.value.sampleRateTemp.intValue} Hz",
-            icon = Icons.Filled.ArrowDropDown,
-            onClick = { showSampleRateMenu = true },
-            modifier = Modifier.height(sizing.audioSettingsButtonHeight),
-            textStyle = sizing.audioSettingsTextStyle
-        )
-        DropdownMenu(
-            expanded = showSampleRateMenu,
-            onDismissRequest = { showSampleRateMenu = false },
-            modifier = Modifier.background(colorResource(id = R.color.teal_100))
-        ) {
-            sampleRates.forEach { (label, value) ->
-                StyledDropdownMenuItem(text = "$label Hz", onClick = {
-                    onSampleRateChanged(value)
-                    showSampleRateMenu = false
-                })
-            }
+        sampleRates.forEach { (label, value) ->
+            StyledDropdownMenuItem(text = "$label Hz", onClick = {
+                onSampleRateChanged(value)
+                showSampleRateMenu = false
+            })
         }
-        Spacer(Modifier.weight(0.3f))
-        SettingsButton(
-            text = "Bit Depth: ${state.value.bitDepthTemp.value.bits} bit",
-            icon = Icons.Filled.ArrowDropDown,
-            onClick = { showBitDepthMenu = true },
-            modifier = Modifier.height(sizing.audioSettingsButtonHeight),
-            textStyle = sizing.audioSettingsTextStyle
-        )
-        DropdownMenu(
-            expanded = showBitDepthMenu,
-            onDismissRequest = { showBitDepthMenu = false },
-            modifier = Modifier.background(colorResource(id = R.color.teal_100))
-        ) {
-            bitDepths.forEach { (label, value) ->
-                StyledDropdownMenuItem(text = "$label bit", onClick = {
-                    onBitDepthChanged(value)
-                    showBitDepthMenu = false
-                })
-            }
-        }
-        Spacer(Modifier.weight(0.3f))
-        MyOutlinedBufferInputField(
-            bufferTimeLength = state.value.bufferTimeLengthTemp,
-            onValueChange = onBufferTimeLengthChanged,
-            isMaxExceeded = state.value.isMaxExceeded,
-            isNull = state.value.isBufferTimeLengthNull,
-            modifier = Modifier.height(sizing.audioSettingsButtonHeight),
-            textStyle = sizing.audioSettingsTextStyle
-        )
-        Spacer(Modifier.weight(0.3f))
     }
+    Spacer(Modifier.weight(0.2f))
+    SettingsButton(
+        text = "Bit Depth: ${state.value.bitDepthTemp.value.bits} bit",
+        icon = Icons.Filled.ArrowDropDown,
+        onClick = { showBitDepthMenu = true },
+        modifier = Modifier.height(sizing.audioSettingsButtonHeight),
+        textStyle = sizing.audioSettingsTextStyle
+    )
+    DropdownMenu(
+        expanded = showBitDepthMenu,
+        onDismissRequest = { showBitDepthMenu = false },
+        modifier = Modifier.background(colorResource(id = R.color.teal_100))
+    ) {
+        bitDepths.forEach { (label, value) ->
+            StyledDropdownMenuItem(text = "$label bit", onClick = {
+                onBitDepthChanged(value)
+                showBitDepthMenu = false
+            })
+        }
+    }
+    Spacer(Modifier.weight(0.2f))
+    MyOutlinedBufferInputField(
+        bufferTimeLength = state.value.bufferTimeLengthTemp,
+        onValueChange = onBufferTimeLengthChanged,
+        isMaxExceeded = state.value.isMaxExceeded,
+        isNull = state.value.isBufferTimeLengthNull,
+        modifier = Modifier.height(sizing.audioSettingsButtonHeight),
+        textStyle = sizing.audioSettingsTextStyle
+    )
 }
 
 @Composable
@@ -1049,7 +1044,10 @@ private fun ComprehensiveHelpDialog(
 @Composable
 private fun PresetItem(preset: Preset, isSelected: Boolean, onClick: () -> Unit) {
     var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isPressed) 0.97f else 1f, label = "PresetScaleAnimation")
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        label = "PresetScaleAnimation"
+    )
 
     val selectedBorderColor = Color(0xFF388E3C) // A nice, complimentary green
     val defaultBorderColor = colorResource(id = R.color.purple_accent)

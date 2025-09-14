@@ -49,6 +49,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -62,13 +63,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -347,9 +345,7 @@ private fun MainScreenContent(
         val currentSizing = if (isTablet) tabletSizing else phoneSizing
 
         Box(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
+            modifier = Modifier.padding(innerPadding).fillMaxSize()
                 .background(colorResource(id = R.color.teal_100))
         ) {
             if (isLandscape) {
@@ -485,10 +481,7 @@ private fun PortraitLayout(
 
         // --- CONTENT SECTION ---
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceEvenly
         ) {
@@ -553,15 +546,11 @@ private fun PortraitLayout(
 
         // --- FOOTER SECTION ---
         Box(
-            modifier = Modifier
-                .padding(bottom = 12.dp)
-                .fillMaxWidth()
+            modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth()
         ) {
             if (hasDonated) {
                 ThankYouButton(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 16.dp),
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp),
                     onClick = onDonateClick,
                     buttonSize = sizing.thankYouButtonSize,
                     iconSize = sizing.thankYouIconSize,
@@ -569,9 +558,7 @@ private fun PortraitLayout(
                 )
             } else {
                 DonateBanner(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(horizontal = 16.dp),
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 16.dp),
                     onClick = onDonateClick
                 )
             }
@@ -614,9 +601,7 @@ private fun LandscapeLayout(
     ) {
         // --- Left Pane: Main Recording Button & Donation ---
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight(),
+            modifier = Modifier.weight(1f).fillMaxHeight(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceAround // Evenly space the items
         ) {
@@ -646,8 +631,7 @@ private fun LandscapeLayout(
 
         // --- Right Pane: Secondary Actions & Player ---
         Column(
-            modifier = Modifier
-                .weight(if (isTablet) 1.2f else 1f) // Give right pane more space on tablet
+            modifier = Modifier.weight(if (isTablet) 1.2f else 1f) // Give right pane more space on tablet
                 .fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // This column groups the buttons, is weighted, and centers its content
@@ -739,9 +723,7 @@ private fun RecordingButtonWithInfo(
             backgroundColor = backgroundColor,
             elementsColor = elementsColor,
             onClick = onToggleRecordingClick,
-            modifier = Modifier
-                .size(buttonSize)
-                .constrainAs(buttonRef) {
+            modifier = Modifier.size(buttonSize).constrainAs(buttonRef) {
                     // Place the button in the center of the layout.
                     // This ConstraintLayout will wrap to fit the button and icon.
                     top.linkTo(parent.top)
@@ -755,9 +737,7 @@ private fun RecordingButtonWithInfo(
 
         IconButton(
             onClick = onPrivacyInfoClick,
-            modifier = Modifier
-                .size(infoIconSize)
-                .constrainAs(iconRef) {
+            modifier = Modifier.size(infoIconSize).constrainAs(iconRef) {
                     // 1. Center the icon vertically on the button's top edge.
                     top.linkTo(buttonRef.top)
                     bottom.linkTo(buttonRef.top)
@@ -834,9 +814,7 @@ fun SecondaryActionButton(
     ) {
         Button(
             onClick = onClick,
-            modifier = Modifier
-                .size(buttonSize)
-                .roundedRectShadow(
+            modifier = Modifier.size(buttonSize).roundedRectShadow(
                     shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = 24.dp
                 ),
             shape = RoundedCornerShape(24.dp),
@@ -881,9 +859,7 @@ fun RewardStatusCard(
 
     Row(
         // Increased padding to give the text more room
-        modifier = modifier
-            .padding(vertical = 0.dp)
-            .fillMaxWidth(),
+        modifier = modifier.padding(vertical = 0.dp).fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
@@ -902,7 +878,7 @@ fun RewardStatusCard(
                 horizontalArrangement = Arrangement.Center
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ad_off_24),
+                    painter = painterResource(id = R.drawable.rewarded_ads_24px),
                     contentDescription = "Reward Active",
                     tint = colorResource(id = R.color.purple_accent),
                     modifier = Modifier.size(24.dp)
@@ -937,9 +913,7 @@ fun MainButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier
-            .padding(bottom = bottomPadding)
-            .roundedRectShadow(
+        modifier = modifier.padding(bottom = bottomPadding).roundedRectShadow(
                 shadowRadius = 5.dp,
                 offsetY = 5.dp,
                 cornerRadius = 8.dp,
@@ -990,10 +964,7 @@ fun MainButton(
 @Composable
 fun LoadingIndicator(modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
-            .clickable(
+        modifier = modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)).clickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
                 onClick = {}), contentAlignment = Alignment.Center
@@ -1049,9 +1020,7 @@ fun ThankYouButton(
     ) {
         Button(
             onClick = onClick,
-            modifier = Modifier
-                .size(buttonSize)
-                .roundedRectShadow(
+            modifier = Modifier.size(buttonSize).roundedRectShadow(
                     shadowRadius = 4.dp, offsetY = 4.dp, cornerRadius = buttonSize / 2
                 ),
             shape = CircleShape,
@@ -1063,7 +1032,7 @@ fun ThankYouButton(
             contentPadding = PaddingValues(0.dp)
         ) {
             Icon(
-                painter = painterResource(id = R.drawable.volunteer_activism_24),
+                Icons.Outlined.VolunteerActivism,
                 contentDescription = "Thank you for your support",
                 modifier = Modifier.size(iconSize),
                 tint = colorResource(id = R.color.gold)
@@ -1095,9 +1064,7 @@ fun PlayerControlViewContainer(
     ) {
         key(playerUiState.currentUri) {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.3f))
+                modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.3f))
             ) {
                 ConstraintLayout(modifier = Modifier.fillMaxWidth()) {
                     val (playerViewRef, fileNameRef) = createRefs()
@@ -1133,10 +1100,7 @@ fun PlayerControlViewContainer(
                 }
                 IconButton(
                     onClick = onPlayerClose,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(40.dp)
+                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(40.dp)
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.exo_icon_close),
@@ -1296,8 +1260,7 @@ fun MainScreenPhoneLandscapePreview() {
             showBatteryInfoDialog = false,
             onDismissBatteryInfoDialog = {},
             openLockScreenSettings = {},
-            openBatteryOptimizationSettings = {}
-        )
+            openBatteryOptimizationSettings = {})
     }
 }
 
@@ -1348,8 +1311,7 @@ fun MainScreenTabletPortraitPreview() {
             showBatteryInfoDialog = false,
             onDismissBatteryInfoDialog = {},
             openLockScreenSettings = {},
-            openBatteryOptimizationSettings = {}
-        )
+            openBatteryOptimizationSettings = {})
     }
 }
 
@@ -1400,7 +1362,6 @@ fun MainScreenTabletLandscapePreview() {
             showBatteryInfoDialog = false,
             onDismissBatteryInfoDialog = {},
             openLockScreenSettings = {},
-            openBatteryOptimizationSettings = {}
-        )
+            openBatteryOptimizationSettings = {})
     }
 }

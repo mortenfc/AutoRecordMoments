@@ -35,8 +35,11 @@ import androidx.test.uiautomator.Until
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
 import com.google.common.truth.Truth.assertThat
+import dagger.hilt.android.testing.BindValue
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
+import io.mockk.clearMocks
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
@@ -48,6 +51,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+import io.mockk.verify
 
 @RunWith(AndroidJUnit4::class)
 @HiltAndroidTest
@@ -60,14 +64,18 @@ class InactivityAndBootTest {
     // This rule grants the POST_NOTIFICATIONS permission required on Android 13+
     // for the app to show notifications during the test.
     @get:Rule(order = 1)
-    var grantPermissionRule: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
+    var grantPermissionRule: GrantPermissionRule =
+        GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
 
     // Inject dependencies from the Hilt graph.
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
-    @Inject
-    lateinit var settingsRepository: SettingsRepository
+    // The @BindValue annotation tells Hilt: "When any class asks for a
+    // SettingsRepository, inject THIS mock instance instead of the real one."
+    @BindValue
+    @JvmField
+    val mockSettingsRepository: SettingsRepository = mockk(relaxed = true)
 
     private lateinit var context: Context
     private lateinit var uiDevice: UiDevice
@@ -81,7 +89,8 @@ class InactivityAndBootTest {
         // Initialize Hilt components for the test.
         hiltRule.inject()
         context = ApplicationProvider.getApplicationContext()
-        notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         // Get an instance of UiDevice to interact with the device UI (like notifications).
         uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         // Ensure the screen is on for UI interactions.
@@ -94,13 +103,9 @@ class InactivityAndBootTest {
 
     @After
     fun tearDown() {
-        // Clean up settings after each test to ensure test isolation.
-        runBlocking {
-            settingsRepository.updateWasBufferingActive(false)
-            settingsRepository.updateLastActiveTimestamp(0L)
-        }
-        // Also clear any notifications that may have been posted during the test.
+        clearMocks(mockSettingsRepository)
         notificationManager.cancelAll()
+        uiDevice.pressBack()
     }
 
     // --- InactivityCheckWorker Tests ---
@@ -109,13 +114,15 @@ class InactivityAndBootTest {
     fun inactivityWorker_postsNotification_whenUserIsInactiveForOver7Days() = runBlocking {
         // Arrange: Simulate the condition where the user has been inactive.
         val eightDaysAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(8)
-        settingsRepository.updateWasBufferingActive(false)
-        settingsRepository.updateLastActiveTimestamp(eightDaysAgo)
+        val inactiveSettings = SettingsConfig(
+            wasBufferingActive = false, lastActiveTimestamp = eightDaysAgo
+        )
+        coEvery { mockSettingsRepository.getSettingsConfig() } returns inactiveSettings
 
         // Act: Build and run the worker directly.
-        val worker = TestListenableWorkerBuilder<InactivityCheckWorker>(context)
-            .setWorkerFactory(workerFactory)
-            .build()
+        val worker = TestListenableWorkerBuilder<InactivityCheckWorker>(context).setWorkerFactory(
+            workerFactory
+        ).build()
         val result = worker.doWork()
 
         // Assert: Check that the worker completed successfully.
@@ -124,7 +131,8 @@ class InactivityAndBootTest {
         // Assert: Verify that the inactivity notification is now visible using a robust wait.
         uiDevice.openNotification()
         val notificationTitle = "Feeling a Little Rusty?"
-        val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
+        val notificationVisible =
+            uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
         assertThat(notificationVisible).isTrue()
     }
 
@@ -132,13 +140,15 @@ class InactivityAndBootTest {
     fun inactivityWorker_doesNotPostNotification_whenUserWasRecentlyActive() = runBlocking {
         // Arrange: Simulate a recently active user.
         val oneDayAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1)
-        settingsRepository.updateWasBufferingActive(false)
-        settingsRepository.updateLastActiveTimestamp(oneDayAgo)
+        val activeSettings = SettingsConfig(
+            wasBufferingActive = false, lastActiveTimestamp = oneDayAgo
+        )
+        coEvery { mockSettingsRepository.getSettingsConfig() } returns activeSettings
 
         // Act
-        val worker = TestListenableWorkerBuilder<InactivityCheckWorker>(context)
-            .setWorkerFactory(workerFactory)
-            .build()
+        val worker = TestListenableWorkerBuilder<InactivityCheckWorker>(context).setWorkerFactory(
+            workerFactory
+        ).build()
         val result = worker.doWork()
 
         // Assert
@@ -146,7 +156,8 @@ class InactivityAndBootTest {
         uiDevice.openNotification()
         val notificationTitle = "Feeling a Little Rusty?"
         // Verify that the notification does NOT appear within the timeout.
-        val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
+        val notificationVisible =
+            uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
         assertThat(notificationVisible).isFalse()
     }
 
@@ -156,25 +167,29 @@ class InactivityAndBootTest {
     fun bootReceiver_postsNotification_whenRebootingAfterLongInactivity() = runBlocking {
         // Arrange: Simulate that the app was buffering and the device was off for a long time.
         val tenDaysAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(10)
-        settingsRepository.updateWasBufferingActive(true) // Crucially, buffering was active.
-        settingsRepository.updateLastActiveTimestamp(tenDaysAgo)
+        coEvery {
+            mockSettingsRepository.getSettingsConfig()
+        } returns SettingsConfig(
+            wasBufferingActive = true, lastActiveTimestamp = tenDaysAgo
+        )
+
 
         // Create a spy of the receiver to intercept the problematic goAsync() call.
         val receiverSpy = spyk(BootReceiver())
         // Stub goAsync() to return a relaxed mock, preventing the test from crashing.
         val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
         every { receiverSpy.goAsync() } returns mockPendingResult
-        // Manually provide the dependency to the spy.
-        receiverSpy.settingsRepository = settingsRepository
         val intent = Intent(Intent.ACTION_BOOT_COMPLETED)
 
-        // Act: Call onReceive on the spy. The real logic will run, but goAsync is stubbed.
+        // Act: Call onReceive on the spy.
         receiverSpy.onReceive(context, intent)
+        verify(timeout = 2000L) { mockPendingResult.finish() }
 
         // Assert: Open the shade and wait for the notification to appear.
         uiDevice.openNotification()
-        val notificationTitle = "Restart Buffering?"
-        val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
+        val notificationTitle = "Restart Audio Buffering?"
+        val notificationVisible =
+            uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
         assertThat(notificationVisible).isTrue()
     }
 
@@ -182,25 +197,85 @@ class InactivityAndBootTest {
     fun bootReceiver_doesNotPostNotification_whenBufferingWasNotActive() = runBlocking {
         // Arrange: Simulate that the app was NOT buffering before the device shut down.
         val tenDaysAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(10)
-        settingsRepository.updateWasBufferingActive(false) // Buffering was off.
-        settingsRepository.updateLastActiveTimestamp(tenDaysAgo)
+        coEvery {
+            mockSettingsRepository.getSettingsConfig()
+        } returns SettingsConfig(
+            wasBufferingActive = false, lastActiveTimestamp = tenDaysAgo
+        )
+
 
         // Create a spy of the receiver to intercept the problematic goAsync() call.
         val receiverSpy = spyk(BootReceiver())
         val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
         every { receiverSpy.goAsync() } returns mockPendingResult
-        // Manually provide the dependency to the spy.
-        receiverSpy.settingsRepository = settingsRepository
         val intent = Intent(Intent.ACTION_BOOT_COMPLETED)
 
         // Act: Call onReceive on the spy.
         receiverSpy.onReceive(context, intent)
 
+        verify(timeout = 2000L) { mockPendingResult.finish() }
+
         // Assert
         uiDevice.openNotification()
-        val notificationTitle = "Restart Buffering?"
+        val notificationTitle = "Restart Audio Buffering?"
         // Verify that the notification does NOT appear within the timeout.
-        val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
+        val notificationVisible =
+            uiDevice.wait(Until.hasObject(By.text(notificationTitle)), NOTIFICATION_TIMEOUT)
+        assertThat(notificationVisible).isFalse()
+    }
+
+    @Test
+    fun bootReceiver_doesNothing_whenIntentActionIsNotBootCompleted() = runBlocking {
+        // Arrange: Simulate that buffering was active, so if the guard clause fails,
+        // a notification WOULD be posted.
+        coEvery {
+            mockSettingsRepository.getSettingsConfig()
+        } returns SettingsConfig(wasBufferingActive = true)
+
+        val receiverSpy = spyk(BootReceiver())
+        val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
+        every { receiverSpy.goAsync() } returns mockPendingResult
+
+        // Use an irrelevant but valid system action
+        val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+
+        // Act
+        receiverSpy.onReceive(context, intent)
+
+        // We don't need to verify finish() because goAsync() should not even be called
+        // if the guard clause works correctly.
+
+        // Assert: Verify that no notification appears.
+        uiDevice.openNotification()
+        val notificationTitle = "Restart Audio Buffering?"
+        val notificationVisible = uiDevice.wait(
+            Until.hasObject(By.text(notificationTitle)), 2000L
+        ) // Shorter timeout is fine
+        assertThat(notificationVisible).isFalse()
+    }
+
+    @Test
+    fun bootReceiver_handlesRepositoryErrorGracefully() = runBlocking {
+        // Arrange: Force the repository to throw an exception when called.
+        coEvery { mockSettingsRepository.getSettingsConfig() } throws RuntimeException("Failed to read settings")
+
+        val receiverSpy = spyk(BootReceiver())
+        val mockPendingResult = mockk<BroadcastReceiver.PendingResult>(relaxed = true)
+        every { receiverSpy.goAsync() } returns mockPendingResult
+        val intent = Intent(Intent.ACTION_BOOT_COMPLETED)
+
+        // Act
+        receiverSpy.onReceive(context, intent)
+
+        // Assert: The most important thing is that the PendingResult is still finished,
+        // preventing an "Application Not Responding" error from the system.
+        verify(timeout = 1000L) { mockPendingResult.finish() }
+
+        // Optional: Assert that no notification was shown
+        uiDevice.openNotification()
+        val notificationTitle = "Restart Audio Buffering?"
+        val notificationVisible = uiDevice.wait(Until.hasObject(By.text(notificationTitle)), 1000L)
         assertThat(notificationVisible).isFalse()
     }
 }
+
