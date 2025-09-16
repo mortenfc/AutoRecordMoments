@@ -2,6 +2,7 @@ package com.mfc.recentaudiobuffer
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
@@ -14,6 +15,7 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.work.WorkManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.mfc.recentaudiobuffer.speakeridentification.AppDatabase
@@ -21,6 +23,7 @@ import com.mfc.recentaudiobuffer.speakeridentification.DiarizationProcessor
 import com.mfc.recentaudiobuffer.speakeridentification.SpeakerIdentifier
 import com.mfc.recentaudiobuffer.speakeridentification.SpeakerRepository
 import com.mfc.recentaudiobuffer.speakeridentification.Speaker
+import com.mfc.recentaudiobuffer.speakeridentification.SpeakerClusteringConfig
 import com.mfc.recentaudiobuffer.speakeridentification.SpeakerDao
 import com.mfc.recentaudiobuffer.speakeridentification.SpeakerDiscoveryUiState
 import com.mfc.recentaudiobuffer.speakeridentification.SpeakersViewModel
@@ -65,7 +68,7 @@ class SpeakerRepositoryTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         speakerDao = db.speakerDao()
-        repository = SpeakerRepository(speakerDao, auth, firestore)
+        repository = SpeakerRepository(speakerDao, auth, firestore, context)
     }
 
     @After
@@ -194,6 +197,12 @@ class EnrollmentViewModelTest {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    @Inject
+    lateinit var workManager: WorkManager
+
+    @Inject
+    lateinit var speakerClusteringConfig: SpeakerClusteringConfig
+
     private lateinit var viewModel: SpeakersViewModel
 
     @Before
@@ -204,8 +213,8 @@ class EnrollmentViewModelTest {
             context,
             speakerRepository,
             speakerIdentifier,
-            diarizationProcessor,
-            settingsRepository,
+            workManager,
+            speakerClusteringConfig,
         )
     }
 
@@ -220,7 +229,7 @@ class EnrollmentViewModelTest {
         tempFile.writeBytes(fileBytes)
 
         // 2. Start the processing
-        viewModel.scanRecordingsForUnknownSpeakers()
+        viewModel.startScan("oscar_talking_5min.wav".toUri() as Set<Uri>)
 
         // 3. Wait for the processing to complete and verify the state
         val uiState =
