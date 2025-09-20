@@ -1,3 +1,21 @@
+/*
+ * Auto Record Moments
+ * Copyright (C) 2025 Morten Fjord Christensen
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.mfc.recentaudiobuffer.speakeridentification
 
 import com.mfc.recentaudiobuffer.AudioConfig
@@ -48,19 +66,24 @@ data class UnidentifiedSegment(
 
 @Singleton
 class DiarizationProcessor @Inject constructor(
-    private val speakerIdentifier: SpeakerIdentifier, private val vadProcessor: VADProcessor
+    private val speakerIdentifier: SpeakerIdentifier, private val vadProcessor: VADProcessor,
+    private val clusteringConfig: SpeakerClusteringConfig,
 ) {
-    companion object {
-        // Match the model's expectation of 1.5s
-        const val MIN_SEGMENT_DURATION_SEC = 1.5f
-        // Process in chunks up to 3s to get varied speech
-        const val MAX_SEGMENT_DURATION_SEC = 3.0f
-        // Overlap when splitting long segments to avoid cutting words
-        const val SEGMENT_OVERLAP_WINDOW_S = 0.1f
 
-        const val MERGE_GAP_MS = 150 // Tighter gap to prevent merging different speakers
-        const val PADDING_MS = 50
-        const val IS_SPEECH_THRESHOLD = 0.3f
+    private fun calculateRMS(audioBytes: ByteArray): Float {
+        if (audioBytes.isEmpty() || audioBytes.size % 2 != 0) return 0f
+
+        var sumOfSquares = 0.0
+        val byteBuffer = ByteBuffer.wrap(audioBytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        val shortBuffer = byteBuffer.asShortBuffer()
+        val sampleCount = shortBuffer.remaining()
+
+        for (i in 0 until sampleCount) {
+            val sample = shortBuffer.get(i).toFloat() / 32768.0f
+            sumOfSquares += (sample * sample).toDouble()
+        }
+
+        return kotlin.math.sqrt(sumOfSquares / sampleCount).toFloat()
     }
 
     suspend fun process(
@@ -78,13 +101,15 @@ class DiarizationProcessor @Inject constructor(
             VADProcessor.VAD_MIN_SAMPLE_RATE
         }
 
-        // 1. Get all speech timestamps from VAD
+        val params = clusteringConfig.parameters.value
+
+
         val speechTimestamps = vadProcessor.getSpeechTimestamps(
             fullBuffer,
             audioConfig,
-            paddingMs = PADDING_MS,
-            mergeGapMs = MERGE_GAP_MS,
-            speechThreshold = IS_SPEECH_THRESHOLD
+            paddingMs = params.vadPaddingMs,
+            mergeGapMs = params.vadMergeGapMs,
+            speechThreshold = params.vadSpeechThreshold
         )
 
         if (speechTimestamps.isEmpty()) {
@@ -97,25 +122,51 @@ class DiarizationProcessor @Inject constructor(
         val unidentified = mutableListOf<UnidentifiedSegment>()
         val scaleFactor = audioConfig.sampleRateHz.toDouble() / vadSampleRate.toDouble()
         var validSegmentsCount = 0
+        var rejectedForEnergy = 0
+        var rejectedForDuration = 0
 
-        // 2. Process each individual speech segment
-        for (segment in speechTimestamps.take(200)) { // Limit segments per file
+        val shortSegmentsBuffer = mutableListOf<VADProcessor.SpeechTimestamp>()
+
+        for ((index, segment) in speechTimestamps.withIndex()) {
             coroutineContext.ensureActive()
+
             val startVad = segment.start
             val endVad = segment.end
             val durationSec = (endVad - startVad).toFloat() / vadSampleRate
 
-            // 3. IMPORTANT: Only process segments that are long enough on their own
-            if (durationSec < MIN_SEGMENT_DURATION_SEC) {
-                continue // Skip short segments entirely
+            if (durationSec < params.minSegmentDurationSec) {
+                shortSegmentsBuffer.add(segment)
+
+                val totalDuration = shortSegmentsBuffer.sumOf { seg ->
+                    ((seg.end - seg.start).toFloat() / vadSampleRate).toDouble()
+                }.toFloat()
+
+                if (totalDuration >= params.minSegmentDurationSec || index == speechTimestamps.size - 1) {
+                    val concatenatedSegment = processConcatenatedSegments(
+                        shortSegmentsBuffer,
+                        scaleFactor,
+                        bytesPerSample,
+                        originalArray,
+                        fileUriString,
+                        audioConfig,
+                        allKnownSpeakers
+                    )
+                    concatenatedSegment?.let { unidentified.add(it) }
+                    shortSegmentsBuffer.clear()
+                }
+
+                rejectedForDuration++
+                continue
             }
+
+            shortSegmentsBuffer.clear()
             validSegmentsCount++
 
             val startSampleOriginal = floor(startVad * scaleFactor).toInt()
             val endSampleOriginal = ceil(endVad * scaleFactor).toInt()
 
-            // Split the chunk if it's longer than our max duration
-            val subSegments = splitLongSegment(startSampleOriginal, endSampleOriginal, audioConfig.sampleRateHz)
+            val subSegments =
+                splitLongSegment(startSampleOriginal, endSampleOriginal, audioConfig.sampleRateHz)
 
             for ((subStart, subEnd) in subSegments) {
                 coroutineContext.ensureActive()
@@ -127,11 +178,20 @@ class DiarizationProcessor @Inject constructor(
                 val segmentBytes = originalArray.copyOfRange(startByte, endByte)
                 if (segmentBytes.isEmpty()) continue
 
+                val rms = calculateRMS(segmentBytes)
+                if (rms < params.minSpeechEnergyRms) {
+                    rejectedForEnergy++
+                    Timber.d("Rejected segment with low energy: RMS=$rms")
+                    continue
+                }
+
                 try {
                     val segmentEmbedding = speakerIdentifier.generateEmbedding(segmentBytes)
                     if (segmentEmbedding.isNotEmpty()) {
                         val bestKnownSimilarity = allKnownSpeakers.maxOfOrNull { speaker ->
-                            speakerIdentifier.calculateCosineSimilarity(segmentEmbedding, speaker.embedding)
+                            speakerIdentifier.calculateCosineSimilarity(
+                                segmentEmbedding, speaker.embedding
+                            )
                         } ?: 0f
 
                         if (bestKnownSimilarity <= SpeakerIdentifier.SIMILARITY_THRESHOLD) {
@@ -154,25 +214,82 @@ class DiarizationProcessor @Inject constructor(
             }
         }
 
-        Timber.d("VAD produced ${speechTimestamps.size} segments, ${validSegmentsCount} were long enough for processing.")
+        Timber.d("VAD produced ${speechTimestamps.size} segments, $validSegmentsCount were long enough for processing.")
+        Timber.d("Rejected $rejectedForDuration segments for duration, $rejectedForEnergy for low energy.")
         Timber.d("Diarization for $fileUriString complete. Found ${unidentified.size} unidentified segments.")
         return@withContext unidentified
+    }
+
+    private suspend fun processConcatenatedSegments(
+        segments: List<VADProcessor.SpeechTimestamp>,
+        scaleFactor: Double,
+        bytesPerSample: Int,
+        originalArray: ByteArray,
+        fileUriString: String,
+        audioConfig: AudioConfig,
+        allKnownSpeakers: List<Speaker>
+    ): UnidentifiedSegment? {
+        if (segments.isEmpty()) return null
+
+        val params = clusteringConfig.parameters.value
+
+        val firstStart = segments.first().start
+        val lastEnd = segments.last().end
+
+        val startSampleOriginal = floor(firstStart * scaleFactor).toInt()
+        val endSampleOriginal = ceil(lastEnd * scaleFactor).toInt()
+
+        val startByte = startSampleOriginal * bytesPerSample
+        val endByte = endSampleOriginal * bytesPerSample
+
+        if (startByte < 0 || endByte > originalArray.size || startByte >= endByte) return null
+
+        val concatenatedBytes = originalArray.copyOfRange(startByte, endByte)
+
+        val rms = calculateRMS(concatenatedBytes)
+        if (rms < params.minSpeechEnergyRms) {
+            Timber.d("Concatenated segments rejected for low energy: RMS=$rms")
+            return null
+        }
+
+        return try {
+            val embedding = speakerIdentifier.generateEmbedding(concatenatedBytes)
+            if (embedding.isNotEmpty()) {
+                val bestKnownSimilarity = allKnownSpeakers.maxOfOrNull { speaker ->
+                    speakerIdentifier.calculateCosineSimilarity(embedding, speaker.embedding)
+                } ?: 0f
+
+                if (bestKnownSimilarity <= SpeakerIdentifier.SIMILARITY_THRESHOLD) {
+                    UnidentifiedSegment(
+                        fileUriString = fileUriString,
+                        startOffsetBytes = startByte,
+                        endOffsetBytes = endByte,
+                        embedding = embedding,
+                        originalSampleRate = audioConfig.sampleRateHz
+                    )
+                } else null
+            } else null
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to generate embedding for concatenated segments")
+            null
+        }
     }
 
     private fun splitLongSegment(
         startSample: Int, endSample: Int, sampleRate: Int
     ): List<Pair<Int, Int>> {
+        val params = clusteringConfig.parameters.value
         val segments = mutableListOf<Pair<Int, Int>>()
         val totalSamples = endSample - startSample
         val totalDurationSec = totalSamples.toFloat() / sampleRate
 
-        if (totalDurationSec <= MAX_SEGMENT_DURATION_SEC) {
+        if (totalDurationSec <= params.maxSegmentDurationSec) {
             segments.add(Pair(startSample, endSample))
             return segments
         }
 
-        val maxSamplesPerSegment = (MAX_SEGMENT_DURATION_SEC * sampleRate).toInt()
-        val overlapSamples = (SEGMENT_OVERLAP_WINDOW_S * sampleRate).toInt()
+        val maxSamplesPerSegment = (params.maxSegmentDurationSec * sampleRate).toInt()
+        val overlapSamples = (params.vadPaddingMs * sampleRate)
         val stepSize = maxSamplesPerSegment - overlapSamples
 
         if (stepSize <= 0) {
@@ -190,4 +307,3 @@ class DiarizationProcessor @Inject constructor(
         return segments
     }
 }
-
