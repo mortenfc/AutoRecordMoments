@@ -14,3 +14,8 @@ li { margin: 8px 0; }
 .note { background: #edf4fb; border-left: 4px solid #125ba3; padding: 16px 20px; }
 footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #dce3ec; font-size: .95rem; }
 @media (max-width: 600px) { main { margin: 0; padding: 22px; border-radius: 0; } }
+
+.screenshots { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 20px; }
+.screenshots figure { margin: 0; }
+.screenshots img { display: block; width: 100%; height: auto; border-radius: 10px; }
+.screenshots figcaption { margin-top: 8px; font-size: .9rem; }

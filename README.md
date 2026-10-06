@@ -62,15 +62,20 @@ Account deletion does not delete recordings in your phone's chosen folder, and l
 deleted-account and starter-credit prevention records remain.
 [Read the full deletion instructions](docs/account-deletion.html).
 
-## Earlier app screenshots
+## Current app screenshots
 
-These screenshots show the older release and do not represent the current interface.
+Captured from the 2.0.0 app on 6 October 2026. Features and models vary by device.
 
 <p>
-  <img src="docs/screenshots/Screenshot_20250810_214515.png" width="200" alt="Earlier release: recording screen">
-  <img src="docs/screenshots/Screenshot_20250810_221351.png" width="200" alt="Earlier release: saved recordings">
-  <img src="docs/screenshots/Screenshot_20250807_190816.png" width="200" alt="Earlier release: settings">
+  <img src="docs/screenshots/2026-10-06/01-home.png" width="240" alt="Rolling recording and quick actions">
+  <img src="docs/screenshots/2026-10-06/02-settings.png" width="240" alt="Recording and automatic-save settings">
+  <img src="docs/screenshots/2026-10-06/03-audio-presets.png" width="240" alt="Audio presets">
+  <img src="docs/screenshots/2026-10-06/04-auto-save.png" width="240" alt="Conversation and silence controls">
+  <img src="docs/screenshots/2026-10-06/05-transcription.png" width="240" alt="Word timing, speaker separation and cloud model">
+  <img src="docs/screenshots/2026-10-06/06-audio-quality.png" width="240" alt="Sample rate and bit depth">
 </p>
+
+[Full-size screenshots and Play Console download](docs/screenshots/2026-10-06/README.md).
 
 ## Source license
 
