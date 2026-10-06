@@ -1,50 +1,78 @@
-# 🎙️ Auto Record Moments
+# Auto Record Moments
 
-[![Get it on Google Play](https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png)](https://play.google.com/store/apps/details?id=com.mfc.recentaudiobuffer)
+Catch the conversation you wish you'd recorded. Keep a rolling audio buffer on your Android
+phone, then save the moments that matter from the recent past. Start with a preset or fine-tune
+recording quality, automatic saving and transcription to suit your day.
 
-> An Android app that acts like a time machine for audio. It continuously records to a temporary buffer, ensuring you can save important moments *after* they happen.
+**[Website](https://mortenfc.github.io/AutoRecordMoments/)** ·
+[User guide](https://mortenfc.github.io/AutoRecordMoments/guide.html) ·
+[Account deletion](https://mortenfc.github.io/AutoRecordMoments/account-deletion.html) ·
+[Privacy policy](https://mortenfc.github.io/AutoRecordMoments/privacy.html)
 
-Never again fumble to unlock your phone and launch a recording app just to miss the critical moment. Auto Record Moments is always listening, ready to save the audio from the recent past with a single tap.
+## About this repository
 
----
+This public repository hosts the website and user documentation, alongside the older app's
+source code. Current development takes place in the private `AutoRecordMomentsPro` repository.
+The features below describe the current app, not everything available in the older public
+source or an older installed release. Availability depends on your app version and phone.
 
-## ✨ Core Features
+## Capture more, your way
 
-* **Continuous Background Recording:** Silently captures audio into a rolling buffer.
-* **Capture, Don't Predict:** Save audio from the past. Perfect for fleeting ideas, unexpected conversations, or a baby's first words.
-* **Automatic Trimming:** Only the audio you choose to save is kept. Everything else is automatically discarded, saving space and removing clutter.
-* **Resource Friendly:** Designed to be light on your battery and device storage.
-* **Simple & Intuitive:** No complex settings. Just activate it and go about your day.
+- **Save the recent past:** start the rolling recorder, then save from the app or notification.
+- **Auto-save by speaker:** enroll a voice and automatically save its conversations.
+- **Keep the atmosphere or just the speech:** preserve pauses and background sound, or trim
+  non-speech when saving.
+- **Turn audio into text:** choose on-device or cloud transcription with speaker labels.
+  Available models and CPU, GPU or NPU acceleration depend on your phone.
 
----
+## Plenty of room to customize
 
-## 🤔 How It Works
+Choose **Small Moments**, **Typical Use**, **Extended Buffer** or **Music and detail**, then
+make the setup your own:
 
-1.  **Activate:** Start the recording service. The app will begin recording to a temporary, cyclical buffer.
-2.  **Live Your Life:** The app silently overwrites the oldest audio with the newest, using a fixed amount of space.
-3.  **Capture the Moment:** Did something important just happen? Open the app and hit **Save**. The entire buffer is saved as a permanent audio file.
+- **Recording:** set buffer duration, sample rate and bit depth, with estimates for memory,
+  file size and battery impact.
+- **Automatic saving:** choose full audio or speech only, save when one speaker or everyone
+  goes quiet, and adjust the silence before saving.
+- **Conversation flow:** join short conversations and choose how long to wait for more speech.
+- **Voice recognition:** adjust how long someone must speak and how many voice matches trigger
+  saving.
+- **Transcription:** select on-device processing, cloud fallback with upload confirmation, or
+  always-cloud processing; choose language, speaker separation, supported timing options and
+  cloud model. Enable on-device transcription after saving where supported.
 
----
+[Explore the settings in the user guide](docs/guide.html).
 
-## 🖼️ App Preview
+## Get started
 
-<p align="center">
-  <img src="./docs/FeatureGraphic.png" alt="Auto Record Moments Feature Graphic" width="600"/>
+1. Allow microphone access and choose a folder for saved recordings when prompted.
+2. Pick an audio preset and how much recent audio to keep.
+3. Start recording, then save when something matters. New audio replaces old audio in the
+   temporary buffer until you save it; automatic saving is a separate option.
+
+On-device processing works offline after the models download. Cloud processing uses credits
+and uploads selected audio. Signing in synchronizes settings and speaker profiles, including
+speaker samples where present. See the [privacy policy](docs/privacy.html) for details.
+
+## Support and account deletion
+
+Email [mortenfjordchristensen@gmail.com](mailto:mortenfjordchristensen@gmail.com) for help.
+In the current app, open **Settings → Delete Account Permanently** and confirm.
+Account deletion does not delete recordings in your phone's chosen folder, and limited payment,
+deleted-account and starter-credit prevention records remain.
+[Read the full deletion instructions](docs/account-deletion.html).
+
+## Earlier app screenshots
+
+These screenshots show the older release and do not represent the current interface.
+
+<p>
+  <img src="docs/screenshots/Screenshot_20250810_214515.png" width="200" alt="Earlier release: recording screen">
+  <img src="docs/screenshots/Screenshot_20250810_221351.png" width="200" alt="Earlier release: saved recordings">
+  <img src="docs/screenshots/Screenshot_20250807_190816.png" width="200" alt="Earlier release: settings">
 </p>
 
-<p align="center">
-  <img src="./docs/screenshots/Screenshot_20250810_214515.png" width="200" alt="Main screen with recording active">
-  <img src="./docs/screenshots/Screenshot_20250810_214904.png" width="200" alt="Saving a clip from the buffer">
-  <img src="./docs/screenshots/Screenshot_20250810_221351.png" width="200" alt="Viewing the list of saved clips">
-  <img src="./docs/screenshots/Screenshot_20250807_190816.png" width="200" alt="Adjusting app settings">
-</p>
+## Source license
 
----
-
-## 📲 Download Now
-
-Ready to start capturing every important moment?
-
-<a href="https://play.google.com/store/apps/details?id=com.mfc.recentaudiobuffer">
-    <img alt="Get it on Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" width="200"/>
-</a>
+The source code in this repository is licensed under the GNU Affero General Public License v3.0;
+see [LICENSE](LICENSE).

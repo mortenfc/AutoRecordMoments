@@ -1,86 +1,54 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Privacy Policy - Auto Record Moments</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background-color: #f8f9fa;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            max-width: 800px;
-            margin: 20px auto;
-            padding: 25px;
-            background-color: #ffffff;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        h1, h2, h3 {
-            color: #2c3e50;
-        }
-        h1 {
-            font-size: 2em;
-            text-align: center;
-            border-bottom: 1px solid #ecf0f1;
-            padding-bottom: 10px;
-        }
-        h2 {
-            font-size: 1.5em;
-            margin-top: 40px;
-            border-bottom: 1px solid #ecf0f1;
-            padding-bottom: 10px;
-        }
-        h3 {
-            font-size: 1.2em;
-            color: #34495e;
-            margin-top: 30px;
-        }
-        p {
-            margin-bottom: 15px;
-        }
-        .last-updated {
-            text-align: center;
-            color: #7f8c8d;
-            font-style: italic;
-            margin-top: -10px;
-            margin-bottom: 30px;
-        }
-        a {
-            color: #3498db;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="How Auto Record Moments handles recordings, cloud processing, account information and payments.">
+<title>Privacy policy — Auto Record Moments</title>
+<link rel="stylesheet" href="site.css">
 </head>
-<body>
-    <div class="container">
-        <h1>Privacy Policy for Auto Record Moments</h1>
-        <p class="last-updated">Last updated: July 17, 2025</p>
+<body><main>
+<nav aria-label="Main navigation"><a href="index.html">Home</a><a href="guide.html">User guide</a><a href="account-deletion.html">Delete account</a><a href="privacy.html">Privacy</a></nav>
 
-        <p>This privacy policy governs your use of the software application "Auto Record Moments" (the "Application") for mobile devices.</p>
+        <h1>Privacy Policy for Auto Record Moments</h1>
+        <p class="last-updated">Last updated: October 6, 2026</p>
+
+        <p>This policy describes the current app developed in the AutoRecordMomentsPro repository; older app versions may not offer all optional features described here. This privacy policy governs your use of the software application "Auto Record Moments" (the "Application") for mobile devices.</p>
 
         <h2>What information does the Application obtain and how is it used?</h2>
-        <p>The Application is designed with your privacy as a priority.</p>
+        <p>The Application is designed to keep core recording and processing on your device. Some optional features use the services described below.</p>
 
         <h3>Audio Recording</h3>
-        <p>The Application continuously records audio to a temporary, looping buffer stored only in your device's local memory (RAM). This data is automatically overwritten as new audio is recorded. This data is never stored permanently or transmitted off your device unless you explicitly take action.</p>
+        <p>The Application continuously records audio to a temporary, looping buffer in your device's memory. New audio overwrites old audio. The buffer is saved only when you request a save or enable an automatic save feature. Audio is uploaded for cloud transcription only when you select Always Cloud or explicitly approve a cloud fallback.</p>
 
         <h3>Saved Files</h3>
-        <p>If you choose to save the audio buffer or trim an existing file, the resulting audio file is saved only to the directory you select on your device. The Application does not have access to these files after they are saved and does not share them.</p>
+        <p>If you save the buffer or trim an existing file, the resulting audio file is stored in a directory you select. Android grants the Application persistent access to that directory so it can list, play, trim, and transcribe those recordings. You can revoke this access in Android settings or by clearing the Application's data.</p>
 
         <h3>Data Collection</h3>
-        <p>The Application does not collect, store, or transmit any personal information, audio data, or usage statistics to us or any third party. All core functionality occurs entirely on your device.</p>
+        <p>When you sign in, settings, speaker names, voice embeddings, and optional speaker sample recordings are synchronized through Firebase Firestore and Firebase Storage. Firebase Authentication processes your sign-in. Firebase Crashlytics may receive crash diagnostics. If you turn on the experimental Phone Calls feature, Crashlytics also receives diagnostics about it while it is on: your phone model, Android version, default Phone app, and whether each call recording could be added to the buffer (its audio format and length). It never receives the audio, file names, folder paths or phone numbers. Google Mobile Ads may process device and advertising data when ads are enabled and consent permits. Firebase Remote Config fetches app configuration (such as which cloud transcription model to offer) when the Application starts, and Firebase App Check with Google Play Integrity attests the app and device when it calls our cloud functions for cloud transcription, credit balance, payments, and account deletion.</p>
 
-        <h2>Contact Us</h2>
+        <h3>On-device model downloads</h3>
+        <p>On-device transcription and speaker models are downloaded when you choose a feature that needs them. Depending on the model and your phone, they come from Google Play (asset packs), GitHub (github.com), Hugging Face (huggingface.co), or ModelScope (modelscope.cn). These hosts receive your device's IP address and a standard download request, as with any web download. No audio or account data is sent to them.</p>
+
+        <h3>Cloud transcription providers</h3>
+        <p>Cloud transcription uploads the selected recording to Firebase Cloud Functions, which forward it to the provider for the model you choose:</p>
+        <ul>
+            <li><strong>Google Gemini API</strong> for the Gemini transcription models.</li>
+            <li><strong>Microsoft Azure AI Speech</strong> for the MAI-Transcribe model.</li>
+            <li><strong>ElevenLabs</strong> (Scribe) as a second pass, only when you turn on word-timing enhancement.</li>
+        </ul>
+        <p>We attempt to delete uploaded audio from our storage when the job finishes. An hourly cleanup removes abandoned uploads older than one hour, normally within about two hours of upload. Service failures can delay deletion; cleanup is retried. Each provider processes the audio under its own terms and privacy policy.</p>
+
+        <h3>Payments</h3>
+        <p>You can top up cloud AI credit. Credit you do not spend on cloud transcription works as a donation that supports development. Stripe, Google Pay, and Google Play Integrity process the information needed for these payments and for fraud prevention, under their own terms and privacy policies.</p>
+        <p>Auto Top-Up is off unless you turn it on. If it is on when you top up, the card you pay with is saved with Stripe for later automatic top-ups. We store only Stripe's references to that card and to your Stripe customer record, plus the card brand and last four digits so the app can show which card is used; card numbers never reach our servers. When your credit balance falls below the threshold shown in Settings, the saved card is charged the amount shown there, at most five times in 24 hours. A confirmed failed charge turns Auto Top-Up off. If Stripe is temporarily unavailable and a charge result is unknown, we wait for confirmation before starting another automatic charge. You can remove your saved card in Settings; this also turns Auto Top-Up off. A payment already submitted may still complete. Deleting your account also requests removal of the saved card from Stripe.</p>
+
+        <h3>Retention and deletion</h3>
+        <p>Saved recordings remain in your chosen directory until you delete them. Failed saves are kept on your device with their destination and audio format and retried when you reopen the app. A save that still fails after repeated retries is deleted from the device 30 days after its last attempt. Completed cloud transcripts are stored with your account so interrupted requests can recover their results without another charge; deleting your account also deletes these transcripts. Synced account data remains until you delete individual speaker profiles or delete your account. The in-app Delete Account action removes the account, synced settings, speaker documents, cloud speaker samples, and pending cloud uploads. To stop the free starter credit from being claimed again by deleting and re-creating an account, we keep a one-way (SHA-256) hash of your Google account identifier and how much starter credit remained. The hash is made from your email address only if the sign-in carries no Google account identifier. It contains no audio or profile data and is not deleted with your account. Records of completed payments (the Stripe payment ID, your account ID, the amounts and the time) are kept after account deletion so each payment is credited only once. We also permanently keep a record that your account ID was deleted (the ID and the time of the deletion request), so cleanup can finish and a late payment or sync is never credited to or recreates the deleted account; it holds no other personal data. This also applies when the account is deleted outside the app; Stripe keeps its own payment records under its terms. Pending payments and payments awaiting manual support review may also remain after account deletion. Sensitive app data is excluded from Android cloud backup and device transfer.</p>
+
+        <p><a href="account-deletion.html">Account deletion instructions and support</a></p><h2>Contact Us</h2>
         <p>If you have any questions regarding privacy while using the Application, or have questions about our practices, please contact us via email at <a href="mailto:mortenfjordchristensen@gmail.com">mortenfjordchristensen@gmail.com</a>.</p>
-    </div>
-</body>
+
+<footer><a href="mailto:mortenfjordchristensen@gmail.com">Email support</a><a href="account-deletion.html">Account deletion</a><a href="privacy.html">Privacy policy</a></footer>
+</main></body>
 </html>

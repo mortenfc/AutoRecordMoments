@@ -1,104 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto Record Moments - Support</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background-color: #f8f9fa;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .container {
-            max-width: 800px;
-            margin: 20px;
-            padding: 30px;
-            background-color: #ffffff;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        h1 {
-            color: #2c3e50;
-            font-size: 2.5em;
-            margin-bottom: 0.5em;
-        }
-        h2 {
-            color: #c0392b; /* A subtle red for the deletion section */
-            font-size: 1.8em;
-            margin-top: 2em;
-            margin-bottom: 0.5em;
-            border-top: 1px solid #eee;
-            padding-top: 1em;
-        }
-        p, li {
-            font-size: 1.1em;
-            color: #555;
-            text-align: left;
-        }
-        .container > p {
-            text-align: center; /* Center the main description */
-        }
-        ol {
-            display: inline-block;
-            text-align: left;
-            margin-top: 1em;
-            padding-left: 2em;
-        }
-        .links {
-            margin-top: 2em;
-        }
-        a {
-            color: #3498db;
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.2s ease-in-out;
-        }
-        a:hover {
-            color: #2980b9;
-            text-decoration: underline;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Rolling audio recording, speaker-triggered saving and customizable transcription for Android.">
+<title>Capture the moments that matter — Auto Record Moments</title>
+<link rel="stylesheet" href="site.css">
 </head>
-<body>
-<div class="container">
-    <h1>Auto Record Moments</h1>
-    <p>An Android app that continuously records audio to a temporary buffer, ensuring you never miss a moment.</p>
-
-    <!-- Account Deletion Section -->
-    <div class="account-deletion">
-        <h2>Account Deletion Instructions</h2>
-        <p>To permanently delete your Auto Record Moments account and all associated data, please follow these steps:</p>
-        <ol>
-            <li>Open the Auto Record Moments app on your device.</li>
-            <li>Navigate to the <strong>Settings</strong> screen (tap the gear icon in the top bar).</li>
-            <li>If you are signed in, you will see a "Delete Account" section at the bottom of the screen.</li>
-            <li>Tap the <strong>"DELETE MY ACCOUNT"</strong> button.</li>
-            <li>Follow the on-screen confirmation prompts to complete the deletion.</li>
-        </ol>
-        <p style="text-align: center; font-style: italic; margin-top: 1em;">This process will permanently remove your account and all synced settings from our servers. This action cannot be undone.</p>
-    </div>
-
-    <div class="links">
-        <p style="text-align: center;">
-            For support, please email:
-            <a href="mailto:mortenfjordchristensen@gmail.com">mortenfjordchristensen@gmail.com</a>
-            <br>
-            Or in an emergency, call:
-            <a href="tel:+46724462028">+46724462028</a>
-        </p>
-        <p style="text-align: center;">
-            <a href="privacy.html">Privacy Policy</a>
-        </p>
-    </div>
-</div>
-</body>
+<body><main>
+<nav aria-label="Main navigation"><a href="index.html">Home</a><a href="guide.html">User guide</a><a href="account-deletion.html">Delete account</a><a href="privacy.html">Privacy</a></nav>
+<h1>Catch the moment.<br>Even after it happened.</h1>
+<p class="lead">Auto Record Moments keeps a rolling audio buffer on your Android phone. Start recording, then save the conversation, idea or sound you want to keep from the recent past.</p>
+<p>Choose a quick preset or make it your own: recording quality, buffer duration, voice-triggered saving and transcription all have settings you can tune.</p>
+<p class="note">This site describes the latest app developed in the private AutoRecordMomentsPro repository. Features depend on your installed version and phone; older releases may not include everything described here.</p>
+<h2>More than a record button</h2>
+<ul>
+<li><strong>Save the recent past.</strong> Keep a rolling buffer and save from the app or recording notification.</li>
+<li><strong>Auto-save by speaker.</strong> Enroll a voice and choose when its conversations should be saved.</li>
+<li><strong>Keep the sound you want.</strong> Preserve the full recording or trim away non-speech when saving.</li>
+<li><strong>Turn conversations into text.</strong> Use on-device or cloud transcription with speaker labels. Available acceleration and models depend on your phone.</li>
+</ul>
+<h2>Your recordings, your settings</h2>
+<p>Start with Small Moments, Typical Use, Extended Buffer or Music and detail. Then adjust sample rate, bit depth and buffer duration, with estimates for memory, file size and battery impact.</p>
+<p>Fine-tune voice recognition, quiet time before saving and whether short conversations join into one file. Choose transcription language, speaker separation and local or cloud processing.</p>
+<p><a href="guide.html">Explore customization and get started →</a></p>
+<h2>Choose how your audio is processed</h2>
+<p>On-device processing works offline after the required models are downloaded. Cloud transcription uses credits and uploads the selected audio. With cloud fallback, the app asks before uploading; Always Cloud uses your selected cloud model. Signing in also synchronizes settings and speaker profiles, including speaker samples where present.</p>
+<p><a href="privacy.html">Read what is stored, shared and retained</a></p>
+<h2 id="account-deletion">Account deletion and support</h2>
+<p>In the current app, open Settings and select <strong>Delete Account Permanently</strong> in the account section. Saved recordings on your phone are not removed by account deletion, and limited payment and abuse-prevention records remain.</p>
+<p><a href="account-deletion.html">Full deletion instructions and retained-data details</a></p>
+<p>Need help? <a href="mailto:mortenfjordchristensen@gmail.com">Email mortenfjordchristensen@gmail.com</a>.</p>
+<footer><a href="mailto:mortenfjordchristensen@gmail.com">Email support</a><a href="account-deletion.html">Account deletion</a><a href="privacy.html">Privacy policy</a></footer>
+</main></body>
 </html>

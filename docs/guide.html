@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Set up recording, customize automatic saving and choose how Auto Record Moments transcribes your audio.">
+<title>User guide and customization — Auto Record Moments</title>
+<link rel="stylesheet" href="site.css">
+</head>
+<body><main>
+<nav aria-label="Main navigation"><a href="index.html">Home</a><a href="guide.html">User guide</a><a href="account-deletion.html">Delete account</a><a href="privacy.html">Privacy</a></nav>
+<h1>Make it work your way</h1>
+<p class="note">These instructions describe the latest app. Available settings vary with your installed version, downloaded models and device.</p>
+<h2>Start with the basics</h2>
+<ol><li>Allow microphone access and choose a folder for saved recordings when prompted.</li><li>Choose an audio preset and buffer duration in Settings.</li><li>Start recording. New audio replaces the oldest audio in the rolling buffer.</li><li>Save from the app or its recording notification when something matters. The saved file goes to your chosen folder.</li></ol>
+<p>The buffer is temporary, not a permanent archive. Save what you want to keep. Automatic saving must be enabled separately.</p>
+<h2>Audio quality and buffer</h2>
+<ul><li><strong>Presets:</strong> Small Moments, Typical Use, Extended Buffer, and Music and detail provide starting points.</li><li><strong>Buffer duration:</strong> choose hours, minutes and seconds to control how far back you can save. Longer buffers use more memory.</li><li><strong>Sample rate and bit depth:</strong> balance audio detail with memory and file size. Settings shows resource and battery estimates, not guarantees.</li><li><strong>Auto-Trim:</strong> remove non-speech when saving. This also removes music; keep it off when you want the full sound.</li></ul>
+<h2>Auto-save by speaker</h2>
+<p>Enroll a voice and enable speaker-triggered saving. Live voice matching happens on your phone.</p>
+<ul><li><strong>Saved audio:</strong> keep full conversations with pauses and background sound, or save speech only.</li><li><strong>Save when:</strong> wait for the selected speaker to go quiet, or wait for everyone to go quiet.</li><li><strong>Quiet time:</strong> choose how long silence must last before saving. Shorter waits save sooner but may split conversations.</li><li><strong>Join short conversations:</strong> set a minimum conversation duration and how long to wait for more speech. Set the joining duration to zero to turn joining off.</li><li><strong>Recognition:</strong> adjust how long a person must speak and how many voice matches are required. More sensitive settings can also trigger on unwanted voices or TV.</li></ul>
+<h2>Transcription</h2>
+<ul><li><strong>Only On-Device:</strong> process locally; download the required models first.</li><li><strong>Fallback Cloud:</strong> try local processing first and ask before uploading if it needs help.</li><li><strong>Always Cloud:</strong> upload when transcribing without asking again. Speaker scans may also upload audio.</li></ul>
+<p>Choose a recording language or automatic detection, speaker separation and its engine, and supported word-timing options. Choose the cloud model and optional word enhancement when using cloud processing. On supported devices, you can enable on-device transcription after saving.</p>
+<p>Local processing does not spend cloud credits. Cloud transcription and optional enhancement use credits. Model availability and CPU, GPU or NPU acceleration depend on your phone.</p>
+<h2>Cloud credit and saved cards</h2>
+<p>Auto Top-Up is optional. When enabled, a manual top-up can save your card with Stripe for later charges at the threshold and amount shown in Settings. Review the card-saving notice before paying.</p>
+<p>Turning Auto Top-Up off stops future automatic attempts but keeps the saved card. Use <strong>Remove saved card</strong> in Settings to request its removal and turn Auto Top-Up off. If removal is pending, use the retry action. A payment already submitted may still complete.</p>
+<p>If a charge result is uncertain, the app waits for confirmation instead of starting another automatic charge. Credit can arrive after reconnection or backend reconciliation; do not assume a closed payment screen means payment failed.</p>
+<h2>Common questions</h2>
+<h3>Does deleting my account remove recordings from my phone?</h3>
+<p>No. Delete saved files from your chosen recording folder. <a href="account-deletion.html">Account deletion instructions</a> explain which cloud data is removed and retained.</p>
+<h3>Why are features missing on my phone?</h3>
+<p>You may have an older app version or a device that does not support a particular model or accelerator. The screenshots in the public repository are from the older app, not the current interface.</p>
+<h3>Where can I get help?</h3>
+<p>Email <a href="mailto:mortenfjordchristensen@gmail.com">mortenfjordchristensen@gmail.com</a> with your app version, phone model and a description of the issue. Do not send passwords, payment-card details or private recordings.</p>
+<footer><a href="mailto:mortenfjordchristensen@gmail.com">Email support</a><a href="account-deletion.html">Account deletion</a><a href="privacy.html">Privacy policy</a></footer>
+</main></body>
+</html>
