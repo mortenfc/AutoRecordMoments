@@ -45,7 +45,7 @@ make the setup your own:
 
 ## Get started
 
-1. Allow microphone access and choose a folder for saved recordings when prompted.
+1. Allow microphone and notification access, then confirm Start recording. Choose a folder when you first save, or before using automatic saving.
 2. Pick an audio preset and how much recent audio to keep.
 3. Start recording, then save when something matters. New audio replaces old audio in the
    temporary buffer until you save it; automatic saving is a separate option.
@@ -57,25 +57,28 @@ speaker samples where present. See the [privacy policy](docs/privacy.html) for d
 ## Support and account deletion
 
 Email [mortenfjordchristensen@gmail.com](mailto:mortenfjordchristensen@gmail.com) for help.
-In the current app, open **Settings → Delete Account Permanently** and confirm.
+In the current app, open **Settings → Account & privacy → Delete Account Permanently** and confirm.
+Without the app, email the same support address from your sign-in email with the subject
+**Account deletion request**; ownership may need to be verified.
 Account deletion does not delete recordings in your phone's chosen folder, and limited payment,
 deleted-account and starter-credit prevention records remain.
 [Read the full deletion instructions](docs/account-deletion.html).
 
 ## Current app screenshots
 
-Captured from the 2.0.0 app on 6 October 2026. Features and models vary by device.
+Captured from the 3.0.0 development build on 8 October 2026 (UTC). Features and models vary by device.
 
 <p>
-  <img src="docs/screenshots/2026-10-06/01-home.png" width="240" alt="Rolling recording and quick actions">
-  <img src="docs/screenshots/2026-10-06/02-settings.png" width="240" alt="Recording and automatic-save settings">
-  <img src="docs/screenshots/2026-10-06/03-audio-presets.png" width="240" alt="Audio presets">
-  <img src="docs/screenshots/2026-10-06/04-auto-save.png" width="240" alt="Conversation and silence controls">
-  <img src="docs/screenshots/2026-10-06/05-transcription.png" width="240" alt="Word timing, speaker separation and cloud model">
-  <img src="docs/screenshots/2026-10-06/06-audio-quality.png" width="240" alt="Sample rate and bit depth">
+  <img src="docs/screenshots/2026-10-08/01-home.png" width="240" alt="Rolling recording and quick actions">
+  <img src="docs/screenshots/2026-10-08/02-settings.png" width="240" alt="Recording and automatic-save settings">
+  <img src="docs/screenshots/2026-10-08/03-audio-presets.png" width="240" alt="Audio presets">
+  <img src="docs/screenshots/2026-10-08/04-auto-save.png" width="240" alt="Conversation and silence controls">
+  <img src="docs/screenshots/2026-10-08/05-transcription.png" width="240" alt="On-device speaker separation and word timing">
+  <img src="docs/screenshots/2026-10-08/06-audio-quality.png" width="240" alt="Sample rate and bit depth">
+  <img src="docs/screenshots/2026-10-08/07-home-dark.png" width="240" alt="Home in dark mode">
 </p>
 
-[Full-size screenshots and Play Console download](docs/screenshots/2026-10-06/README.md).
+[Full-size screenshots, download and capture details](docs/screenshots/2026-10-08/README.md).
 
 ## Source license
 

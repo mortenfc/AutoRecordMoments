@@ -1,0 +1,59 @@
+{
+  "captured_date_utc": "2026-10-08",
+  "capture_window_utc": "23:05\u201323:45",
+  "device": "NX809J",
+  "android_api": 36,
+  "app_version": "3.0.0",
+  "version_code": 300,
+  "package": "com.mfc.recentaudiobuffer.debug",
+  "image_size": [
+    1080,
+    1920
+  ],
+  "density_dpi": 400,
+  "font_scale": 1.0,
+  "format": "Unretouched Android screencap PNG (RGBA)",
+  "source_base_commit": "e9dca7cfb0c957a58845364ac84031165791ee15",
+  "source_state": "Local implementation changes on top of the base commit",
+  "main_kotlin_xml_sha256": "b7694eef322d917ce754367a0339d1b94602879f1b829769bcecb764f7072176",
+  "debug_apk_sha256": "3bcf570fb24e33cb7f0fadb2efabcafe809c8f34ca8df68f3dbdfac60e830465",
+  "screenshots": {
+    "01-home.png": "4f3ec2fca6180295f22a873b1e3b6dd3acc6e3c536dff5b2e95f46c7bb077d12",
+    "02-settings.png": "bc67115b7b5d410a652ba9880ca47dc0e46a844c12333cb99864c6d626f17892",
+    "03-audio-presets.png": "6c37269078333f1066081c40875a31e7972ec4e1049e7b506bca7492c2f81e01",
+    "04-auto-save.png": "4f31be401de009d0f4e4e48c4ceab8021923db686a48536ccd4a330d8af582c2",
+    "05-transcription.png": "fe1d8bd95cb9dbdb9526c4d587817e8ad912a36279f1e2d300efaaa09142415e",
+    "06-audio-quality.png": "98548b326050e897689deb864371ad9ed179219325760a6311e7183cb9b8544d",
+    "07-home-dark.png": "e88cfe872b8a59b64f7a2d3a0419ea93efc27d1869636ceb2577875779049c91"
+  },
+  "capture_provenance": {
+    "01-home.png": {
+      "debug_apk_sha256": "93a8097ff1af8a6e0e10c3b7dc3c5a3433d2e4d71eedd08641f0c1c89618674f",
+      "main_kotlin_xml_sha256": "1ec5590a4578c2d4a904ef592d5a95d01d2764d6fb7e8b69f83b308c094f9a48"
+    },
+    "02-settings.png": {
+      "debug_apk_sha256": "93d61598cf59eaaa01ba3b5b06b342d92496f3ff620a0a5f1333d78f8a17272a",
+      "main_kotlin_xml_sha256": "c7e143e03f89a6ff4a9d3ed65433ede5aee9aae35601c74c6e9b7bfaeb5c4c80"
+    },
+    "03-audio-presets.png": {
+      "debug_apk_sha256": "93d61598cf59eaaa01ba3b5b06b342d92496f3ff620a0a5f1333d78f8a17272a",
+      "main_kotlin_xml_sha256": "c7e143e03f89a6ff4a9d3ed65433ede5aee9aae35601c74c6e9b7bfaeb5c4c80"
+    },
+    "04-auto-save.png": {
+      "debug_apk_sha256": "93d61598cf59eaaa01ba3b5b06b342d92496f3ff620a0a5f1333d78f8a17272a",
+      "main_kotlin_xml_sha256": "c7e143e03f89a6ff4a9d3ed65433ede5aee9aae35601c74c6e9b7bfaeb5c4c80"
+    },
+    "05-transcription.png": {
+      "debug_apk_sha256": "93d61598cf59eaaa01ba3b5b06b342d92496f3ff620a0a5f1333d78f8a17272a",
+      "main_kotlin_xml_sha256": "c7e143e03f89a6ff4a9d3ed65433ede5aee9aae35601c74c6e9b7bfaeb5c4c80"
+    },
+    "06-audio-quality.png": {
+      "debug_apk_sha256": "93d61598cf59eaaa01ba3b5b06b342d92496f3ff620a0a5f1333d78f8a17272a",
+      "main_kotlin_xml_sha256": "c7e143e03f89a6ff4a9d3ed65433ede5aee9aae35601c74c6e9b7bfaeb5c4c80"
+    },
+    "07-home-dark.png": {
+      "debug_apk_sha256": "3bcf570fb24e33cb7f0fadb2efabcafe809c8f34ca8df68f3dbdfac60e830465",
+      "main_kotlin_xml_sha256": "b7694eef322d917ce754367a0339d1b94602879f1b829769bcecb764f7072176"
+    }
+  }
+}
