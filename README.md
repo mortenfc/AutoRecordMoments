@@ -80,6 +80,20 @@ Captured from the 3.0.0 development build on 8 October 2026 (UTC). Features and 
 
 [Full-size screenshots, download and capture details](docs/screenshots/2026-10-08/README.md).
 
+## AdMob app verification
+
+[docs/app-ads.txt](docs/app-ads.txt) contains the authorized AdMob publisher for
+the current app. GitHub Pages publishes this repository's `master` branch from
+`/docs`, so the file will be available at
+`https://mortenfc.github.io/AutoRecordMoments/app-ads.txt` after deployment.
+
+AdMob requires it at **`https://mortenfc.github.io/app-ads.txt`**, because it checks
+the root of the developer website's hostname. This project-site URL alone is
+insufficient. Publish the same file through a `mortenfc.github.io` user-site
+repository, or use a developer website whose root you can publish and update the
+Play Store website link accordingly. Then request **Verify app → Check for updates**
+in AdMob. See [Google's setup instructions](https://support.google.com/admob/answer/9363762?hl=en).
+
 ## Source license
 
 The source code in this repository is licensed under the GNU Affero General Public License v3.0;
